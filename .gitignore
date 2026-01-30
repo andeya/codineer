@@ -5,3 +5,9 @@
 .codineer/settings.local.json
 .codineer/sessions/
 .codineer-agents/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
