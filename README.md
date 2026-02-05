@@ -53,3 +53,40 @@ export XAI_API_KEY="xai-..."
 # OpenAI
 export OPENAI_API_KEY="sk-..."
 
+# Or use Anthropic OAuth:
+codineer login
+```
+
+### Run
+
+```bash
+# Interactive REPL
+codineer
+
+# One-shot prompt
+codineer prompt "explain the architecture of this project"
+
+# JSON output for scripting
+codineer -p "list all TODO items" --output-format json
+```
+
+## Core Features
+
+| Feature | Description |
+|---------|-------------|
+| **Interactive REPL** | Conversational coding sessions with Vim keybindings, tab completion, and history |
+| **Workspace Tools** | `bash`, `read_file`, `write_file`, `edit_file`, `glob`, `grep`, `web_fetch`, `web_search`, `todo_write`, `notebook_edit` |
+| **Slash Commands** | `/status`, `/compact`, `/config`, `/cost`, `/model`, `/permissions`, `/resume`, `/clear`, `/init`, `/diff`, `/export` |
+| **Agent & Skill System** | Discover and run agents/skills from `.codineer/agents/` and `.codineer/skills/` |
+| **Plugin System** | Install, manage, and extend with custom plugins and hooks |
+| **MCP Support** | Connect to external tool servers via Model Context Protocol (stdio, SSE, HTTP, WebSocket) |
+| **Git Integration** | Branch detection, worktree management, commit/PR workflows |
+| **Session Management** | Save, restore, and resume coding sessions |
+| **Sandbox** | Process isolation with Linux `unshare` or macOS `sandbox-exec` |
+
+## Configuration
+
+Codineer loads configuration from multiple sources (in precedence order):
+
+1. `.codineer/settings.local.json` — local overrides (gitignored)
+2. `.codineer/settings.json` — project settings
