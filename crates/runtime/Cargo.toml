@@ -1,0 +1,11 @@
+[package]
+name = "runtime"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+glob = "0.3"
+keyring = { version = "3", features = ["apple-native", "linux-native", "windows-native"] }
+lsp = { path = "../lsp" }
