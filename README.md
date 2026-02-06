@@ -90,3 +90,21 @@ Codineer loads configuration from multiple sources (in precedence order):
 
 1. `.codineer/settings.local.json` — local overrides (gitignored)
 2. `.codineer/settings.json` — project settings
+3. `~/.codineer/settings.json` — user-global settings
+
+Key settings: `model`, `permissionMode`, `mcpServers`, `sandbox`, `hooks`, `enabledPlugins`.
+
+See `codineer help` for full documentation of environment variables and configuration files.
+
+## Project Structure
+
+```text
+crates/
+├── api/              # AI provider clients + streaming
+├── codineer-cli/     # Interactive CLI binary
+├── commands/         # Slash commands & agent/skill discovery
+├── lsp/              # Language Server Protocol client
+├── plugins/          # Plugin system & hooks
+├── runtime/          # Session, config, MCP, prompt, sandbox
+└── tools/            # AI-callable tool definitions
+```
