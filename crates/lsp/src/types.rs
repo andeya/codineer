@@ -107,3 +107,57 @@ impl LspContextEnrichment {
             self.diagnostics.files.len()
         ));
 
+        if !self.diagnostics.files.is_empty() {
+            lines.push(String::new());
+            lines.push("Diagnostics:".to_string());
+            let mut rendered = 0usize;
+            for file in &self.diagnostics.files {
+                for diagnostic in &file.diagnostics {
+                    if rendered == MAX_RENDERED_DIAGNOSTICS {
+                        lines.push(" - Additional diagnostics omitted for brevity.".to_string());
+                        break;
+                    }
+                    let severity = diagnostic_severity_label(diagnostic.severity);
+                    lines.push(format!(
+                        " - {}:{}:{} [{}] {}",
+                        file.path.display(),
+                        diagnostic.range.start.line + 1,
+                        diagnostic.range.start.character + 1,
+                        severity,
+                        diagnostic.message.replace('\n', " ")
+                    ));
+                    rendered += 1;
+                }
+                if rendered == MAX_RENDERED_DIAGNOSTICS {
+                    break;
+                }
+            }
+        }
+
+        if !self.definitions.is_empty() {
+            lines.push(String::new());
+            lines.push("Definitions:".to_string());
+            lines.extend(
+                self.definitions
+                    .iter()
+                    .take(MAX_RENDERED_LOCATIONS)
+                    .map(|location| format!(" - {location}")),
+            );
+            if self.definitions.len() > MAX_RENDERED_LOCATIONS {
+                lines.push(" - Additional definitions omitted for brevity.".to_string());
+            }
+        }
+
+        if !self.references.is_empty() {
+            lines.push(String::new());
+            lines.push("References:".to_string());
+            lines.extend(
+                self.references
+                    .iter()
+                    .take(MAX_RENDERED_LOCATIONS)
+                    .map(|location| format!(" - {location}")),
+            );
+            if self.references.len() > MAX_RENDERED_LOCATIONS {
+                lines.push(" - Additional references omitted for brevity.".to_string());
+            }
+        }
