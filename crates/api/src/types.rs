@@ -53,3 +53,58 @@ impl InputMessage {
                     text: content.into(),
                 }],
                 is_error,
+            }],
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum InputContentBlock {
+    Text {
+        text: String,
+    },
+    ToolUse {
+        id: String,
+        name: String,
+        input: Value,
+    },
+    ToolResult {
+        tool_use_id: String,
+        content: Vec<ToolResultContentBlock>,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        is_error: bool,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ToolResultContentBlock {
+    Text { text: String },
+    Json { value: Value },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ToolDefinition {
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    pub input_schema: Value,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ToolChoice {
+    Auto,
+    Any,
+    Tool { name: String },
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct MessageResponse {
+    pub id: String,
+    #[serde(rename = "type")]
+    pub kind: String,
+    pub role: String,
+    pub content: Vec<OutputContentBlock>,
+    pub model: String,
