@@ -161,3 +161,112 @@ impl LspContextEnrichment {
                 lines.push(" - Additional references omitted for brevity.".to_string());
             }
         }
+
+        lines.join("\n")
+    }
+}
+
+#[must_use]
+pub(crate) fn normalize_extension(extension: &str) -> String {
+    if extension.starts_with('.') {
+        extension.to_ascii_lowercase()
+    } else {
+        format!(".{}", extension.to_ascii_lowercase())
+    }
+}
+
+fn diagnostic_severity_label(severity: Option<lsp_types::DiagnosticSeverity>) -> &'static str {
+    match severity {
+        Some(lsp_types::DiagnosticSeverity::ERROR) => "error",
+        Some(lsp_types::DiagnosticSeverity::WARNING) => "warning",
+        Some(lsp_types::DiagnosticSeverity::INFORMATION) => "info",
+        Some(lsp_types::DiagnosticSeverity::HINT) => "hint",
+        _ => "unknown",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use lsp_types::{DiagnosticSeverity, Position, Range};
+    use std::path::PathBuf;
+
+    #[test]
+    fn normalize_extension_handles_dot_prefix_and_casing() {
+        assert_eq!(normalize_extension("rs"), ".rs");
+        assert_eq!(normalize_extension(".rs"), ".rs");
+        assert_eq!(normalize_extension("RS"), ".rs");
+        assert_eq!(normalize_extension(".PY"), ".py");
+        assert_eq!(normalize_extension("ts"), ".ts");
+    }
+
+    #[test]
+    fn symbol_location_display_and_line_numbers() {
+        let location = SymbolLocation {
+            path: PathBuf::from("/src/main.rs"),
+            range: Range {
+                start: Position::new(9, 4),
+                end: Position::new(9, 10),
+            },
+        };
+        assert_eq!(location.start_line(), 10);
+        assert_eq!(location.start_character(), 5);
+        assert_eq!(format!("{location}"), "/src/main.rs:10:5");
+    }
+
+    #[test]
+    fn workspace_diagnostics_counts_total() {
+        let diag = WorkspaceDiagnostics {
+            files: vec![
+                FileDiagnostics {
+                    path: PathBuf::from("/a.rs"),
+                    uri: "file:///a.rs".to_string(),
+                    diagnostics: vec![Diagnostic::default(), Diagnostic::default()],
+                },
+                FileDiagnostics {
+                    path: PathBuf::from("/b.rs"),
+                    uri: "file:///b.rs".to_string(),
+                    diagnostics: vec![Diagnostic::default()],
+                },
+            ],
+        };
+        assert_eq!(diag.total_diagnostics(), 3);
+        assert!(!diag.is_empty());
+        assert!(WorkspaceDiagnostics::default().is_empty());
+    }
+
+    #[test]
+    fn context_enrichment_renders_prompt_section_with_diagnostics() {
+        let enrichment = LspContextEnrichment {
+            file_path: PathBuf::from("/src/lib.rs"),
+            diagnostics: WorkspaceDiagnostics {
+                files: vec![FileDiagnostics {
+                    path: PathBuf::from("/src/lib.rs"),
+                    uri: "file:///src/lib.rs".to_string(),
+                    diagnostics: vec![Diagnostic {
+                        message: "unused variable".to_string(),
+                        severity: Some(DiagnosticSeverity::WARNING),
+                        range: Range {
+                            start: Position::new(4, 0),
+                            end: Position::new(4, 5),
+                        },
+                        ..Diagnostic::default()
+                    }],
+                }],
+            },
+            definitions: vec![SymbolLocation {
+                path: PathBuf::from("/src/lib.rs"),
+                range: Range {
+                    start: Position::new(0, 0),
+                    end: Position::new(0, 5),
+                },
+            }],
+            references: vec![],
+        };
+        let rendered = enrichment.render_prompt_section();
+        assert!(rendered.contains("# LSP context"));
+        assert!(rendered.contains("[warning]"));
+        assert!(rendered.contains("unused variable"));
+        assert!(rendered.contains("Definitions:"));
+        assert!(!rendered.contains("References:"));
+    }
