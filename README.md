@@ -108,3 +108,21 @@ crates/
 ├── runtime/          # Session, config, MCP, prompt, sandbox
 └── tools/            # AI-callable tool definitions
 ```
+
+## Development
+
+```bash
+cargo fmt --all --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace
+```
+
+## License
+
+[MIT](LICENSE)
+
+---
+
+<p align="center">
+  Made with 🦀 by <a href="https://github.com/andeya">andeya</a>
+</p>
