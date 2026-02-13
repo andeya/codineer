@@ -62,3 +62,24 @@ codineer login
 # 交互式 REPL
 codineer
 
+# 一次性提示
+codineer prompt "解释这个项目的架构"
+
+# JSON 输出（适合脚本集成）
+codineer -p "列出所有 TODO 项" --output-format json
+```
+
+## 核心功能
+
+| 功能 | 说明 |
+|------|------|
+| **交互式 REPL** | 对话式编程会话，支持 Vim 键绑定、Tab 补全和历史记录 |
+| **工作区工具** | `bash`、`read_file`、`write_file`、`edit_file`、`glob`、`grep`、`web_fetch`、`web_search`、`todo_write`、`notebook_edit` |
+| **斜杠命令** | `/status`、`/compact`、`/config`、`/cost`、`/model`、`/permissions`、`/resume`、`/clear`、`/init`、`/diff`、`/export` |
+| **Agent 与 Skill 系统** | 从 `.codineer/agents/` 和 `.codineer/skills/` 发现并运行自定义智能体和技能 |
+| **插件系统** | 安装、管理和扩展自定义插件与钩子 |
+| **MCP 支持** | 通过 Model Context Protocol 连接外部工具服务器（stdio、SSE、HTTP、WebSocket） |
+| **Git 集成** | 分支检测、工作树管理、提交/PR 工作流 |
+| **会话管理** | 保存、恢复和续接编程会话 |
+| **安全沙箱** | Linux `unshare` 或 macOS `sandbox-exec` 进程隔离 |
+
