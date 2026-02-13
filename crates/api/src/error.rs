@@ -43,3 +43,48 @@ impl ApiError {
 
     #[must_use]
     pub fn is_retryable(&self) -> bool {
+        match self {
+            Self::Http(error) => error.is_connect() || error.is_timeout() || error.is_request(),
+            Self::Api { retryable, .. } => *retryable,
+            Self::RetriesExhausted { last_error, .. } => last_error.is_retryable(),
+            Self::MissingCredentials { .. }
+            | Self::ExpiredOAuthToken
+            | Self::Auth(_)
+            | Self::InvalidApiKeyEnv(_)
+            | Self::Io(_)
+            | Self::Json(_)
+            | Self::InvalidSseFrame(_)
+            | Self::BackoffOverflow { .. } => false,
+        }
+    }
+}
+
+impl Display for ApiError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::MissingCredentials { provider, env_vars } => write!(
+                f,
+                "missing {provider} credentials; export {} before calling the {provider} API",
+                env_vars.join(" or ")
+            ),
+            Self::ExpiredOAuthToken => {
+                write!(
+                    f,
+                    "saved OAuth token is expired and no refresh token is available"
+                )
+            }
+            Self::Auth(message) => write!(f, "auth error: {message}"),
+            Self::InvalidApiKeyEnv(error) => {
+                write!(f, "failed to read credential environment variable: {error}")
+            }
+            Self::Http(error) => write!(f, "http error: {error}"),
+            Self::Io(error) => write!(f, "io error: {error}"),
+            Self::Json(error) => write!(f, "json error: {error}"),
+            Self::Api {
+                status,
+                error_type,
+                message,
+                body,
+                ..
+            } => match (error_type, message) {
+                (Some(error_type), Some(message)) => {
