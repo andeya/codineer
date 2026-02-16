@@ -103,3 +103,55 @@ impl LspClient {
             .lock()
             .await
             .insert(path.to_path_buf(), 1);
+        Ok(())
+    }
+
+    pub(crate) async fn change_document(&self, path: &Path, text: &str) -> Result<(), LspError> {
+        if !self.is_document_open(path).await {
+            return self.open_document(path, text).await;
+        }
+
+        let uri = file_url(path)?;
+        let next_version = {
+            let mut open_documents = self.open_documents.lock().await;
+            let version = open_documents
+                .entry(path.to_path_buf())
+                .and_modify(|value| *value += 1)
+                .or_insert(1);
+            *version
+        };
+
+        self.notify(
+            "textDocument/didChange",
+            json!({
+                "textDocument": {
+                    "uri": uri,
+                    "version": next_version,
+                },
+                "contentChanges": [{
+                    "text": text,
+                }],
+            }),
+        )
+        .await
+    }
+
+    pub(crate) async fn save_document(&self, path: &Path) -> Result<(), LspError> {
+        if !self.is_document_open(path).await {
+            return Ok(());
+        }
+
+        self.notify(
+            "textDocument/didSave",
+            json!({
+                "textDocument": {
+                    "uri": file_url(path)?,
+                }
+            }),
+        )
+        .await
+    }
+
+    pub(crate) async fn close_document(&self, path: &Path) -> Result<(), LspError> {
+        if !self.is_document_open(path).await {
+            return Ok(());
