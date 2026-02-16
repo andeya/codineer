@@ -83,3 +83,24 @@ codineer -p "列出所有 TODO 项" --output-format json
 | **会话管理** | 保存、恢复和续接编程会话 |
 | **安全沙箱** | Linux `unshare` 或 macOS `sandbox-exec` 进程隔离 |
 
+## 配置
+
+Codineer 按以下优先级加载配置：
+
+1. `.codineer/settings.local.json` — 本地覆盖（已 gitignore）
+2. `.codineer/settings.json` — 项目级配置
+3. `~/.codineer/settings.json` — 用户全局配置
+
+关键配置项：`model`、`permissionMode`、`mcpServers`、`sandbox`、`hooks`、`enabledPlugins`。
+
+运行 `codineer help` 查看完整的环境变量和配置文件文档。
+
+## 项目结构
+
+```text
+crates/
+├── api/              # AI 供应商客户端 + 流式传输
+├── codineer-cli/     # 交互式 CLI 二进制
+├── commands/         # 斜杠命令与 Agent/Skill 发现
+├── lsp/              # Language Server Protocol 客户端
+├── plugins/          # 插件系统与钩子
