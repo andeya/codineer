@@ -115,3 +115,120 @@ impl OpenAiCompatClient {
         self
     }
 
+    pub async fn send_message(
+        &self,
+        request: &MessageRequest,
+    ) -> Result<MessageResponse, ApiError> {
+        let request = MessageRequest {
+            stream: false,
+            ..request.clone()
+        };
+        let response = self.send_with_retry(&request).await?;
+        let request_id = request_id_from_headers(response.headers());
+        let payload = response.json::<ChatCompletionResponse>().await?;
+        let mut normalized = normalize_response(&request.model, payload)?;
+        if normalized.request_id.is_none() {
+            normalized.request_id = request_id;
+        }
+        Ok(normalized)
+    }
+
+    pub async fn stream_message(
+        &self,
+        request: &MessageRequest,
+    ) -> Result<MessageStream, ApiError> {
+        let response = self
+            .send_with_retry(&request.clone().with_streaming())
+            .await?;
+        Ok(MessageStream {
+            request_id: request_id_from_headers(response.headers()),
+            response,
+            parser: OpenAiSseParser::new(),
+            pending: VecDeque::new(),
+            done: false,
+            state: StreamState::new(request.model.clone()),
+        })
+    }
+
+    async fn send_with_retry(
+        &self,
+        request: &MessageRequest,
+    ) -> Result<reqwest::Response, ApiError> {
+        let mut attempts = 0;
+
+        let last_error = loop {
+            attempts += 1;
+            let retryable_error = match self.send_raw_request(request).await {
+                Ok(response) => match expect_success(response).await {
+                    Ok(response) => return Ok(response),
+                    Err(error) if error.is_retryable() && attempts <= self.max_retries + 1 => error,
+                    Err(error) => return Err(error),
+                },
+                Err(error) if error.is_retryable() && attempts <= self.max_retries + 1 => error,
+                Err(error) => return Err(error),
+            };
+
+            if attempts > self.max_retries {
+                break retryable_error;
+            }
+
+            tokio::time::sleep(self.backoff_for_attempt(attempts)?).await;
+        };
+
+        Err(ApiError::RetriesExhausted {
+            attempts,
+            last_error: Box::new(last_error),
+        })
+    }
+
+    async fn send_raw_request(
+        &self,
+        request: &MessageRequest,
+    ) -> Result<reqwest::Response, ApiError> {
+        let request_url = chat_completions_endpoint(&self.base_url);
+        self.http
+            .post(&request_url)
+            .header("content-type", "application/json")
+            .bearer_auth(&self.api_key)
+            .json(&build_chat_completion_request(request))
+            .send()
+            .await
+            .map_err(ApiError::from)
+    }
+
+    fn backoff_for_attempt(&self, attempt: u32) -> Result<Duration, ApiError> {
+        let Some(multiplier) = 1_u32.checked_shl(attempt.saturating_sub(1)) else {
+            return Err(ApiError::BackoffOverflow {
+                attempt,
+                base_delay: self.initial_backoff,
+            });
+        };
+        Ok(self
+            .initial_backoff
+            .checked_mul(multiplier)
+            .map_or(self.max_backoff, |delay| delay.min(self.max_backoff)))
+    }
+}
+
+impl Provider for OpenAiCompatClient {
+    type Stream = MessageStream;
+
+    fn send_message<'a>(
+        &'a self,
+        request: &'a MessageRequest,
+    ) -> ProviderFuture<'a, MessageResponse> {
+        Box::pin(async move { self.send_message(request).await })
+    }
+
+    fn stream_message<'a>(
+        &'a self,
+        request: &'a MessageRequest,
+    ) -> ProviderFuture<'a, Self::Stream> {
+        Box::pin(async move { self.stream_message(request).await })
+    }
+}
+
+#[derive(Debug)]
+pub struct MessageStream {
+    request_id: Option<String>,
+    response: reqwest::Response,
