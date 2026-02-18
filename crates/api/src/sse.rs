@@ -45,3 +45,49 @@ impl SseParser {
             .map(|position| (position, 2))
             .or_else(|| {
                 self.buffer
+                    .windows(4)
+                    .position(|window| window == b"\r\n\r\n")
+                    .map(|position| (position, 4))
+            })?;
+
+        let (position, separator_len) = separator;
+        let frame = self
+            .buffer
+            .drain(..position + separator_len)
+            .collect::<Vec<_>>();
+        let frame_len = frame.len().saturating_sub(separator_len);
+        Some(String::from_utf8_lossy(&frame[..frame_len]).into_owned())
+    }
+}
+
+pub fn parse_frame(frame: &str) -> Result<Option<StreamEvent>, ApiError> {
+    let trimmed = frame.trim();
+    if trimmed.is_empty() {
+        return Ok(None);
+    }
+
+    let mut data_lines = Vec::new();
+    let mut event_name: Option<&str> = None;
+
+    for line in trimmed.lines() {
+        if line.starts_with(':') {
+            continue;
+        }
+        if let Some(name) = line.strip_prefix("event:") {
+            event_name = Some(name.trim());
+            continue;
+        }
+        if let Some(data) = line.strip_prefix("data:") {
+            data_lines.push(data.trim_start());
+        }
+    }
+
+    if matches!(event_name, Some("ping")) {
+        return Ok(None);
+    }
+
+    if data_lines.is_empty() {
+        return Ok(None);
+    }
+
+    let payload = data_lines.join("\n");
