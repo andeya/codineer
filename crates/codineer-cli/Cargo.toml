@@ -7,3 +7,12 @@ publish.workspace = true
 
 [[bin]]
 name = "codineer"
+path = "src/main.rs"
+
+[dependencies]
+api = { path = "../api" }
+commands = { path = "../commands" }
+crossterm = "0.28"
+pulldown-cmark = "0.13"
+rustyline = "15"
+runtime = { path = "../runtime" }
