@@ -115,3 +115,120 @@ pub struct CodineerApiClient {
     max_backoff: Duration,
 }
 
+impl CodineerApiClient {
+    #[must_use]
+    pub fn new(api_key: impl Into<String>) -> Self {
+        Self {
+            http: reqwest::Client::new(),
+            auth: AuthSource::ApiKey(api_key.into()),
+            base_url: DEFAULT_BASE_URL.to_string(),
+            max_retries: DEFAULT_MAX_RETRIES,
+            initial_backoff: DEFAULT_INITIAL_BACKOFF,
+            max_backoff: DEFAULT_MAX_BACKOFF,
+        }
+    }
+
+    #[must_use]
+    pub fn from_auth(auth: AuthSource) -> Self {
+        Self {
+            http: reqwest::Client::new(),
+            auth,
+            base_url: DEFAULT_BASE_URL.to_string(),
+            max_retries: DEFAULT_MAX_RETRIES,
+            initial_backoff: DEFAULT_INITIAL_BACKOFF,
+            max_backoff: DEFAULT_MAX_BACKOFF,
+        }
+    }
+
+    pub fn from_env() -> Result<Self, ApiError> {
+        Ok(Self::from_auth(AuthSource::from_env_or_saved()?).with_base_url(read_base_url()))
+    }
+
+    #[must_use]
+    pub fn with_auth_source(mut self, auth: AuthSource) -> Self {
+        self.auth = auth;
+        self
+    }
+
+    #[must_use]
+    pub fn with_auth_token(mut self, auth_token: Option<String>) -> Self {
+        match (
+            self.auth.api_key().map(ToOwned::to_owned),
+            auth_token.filter(|token| !token.is_empty()),
+        ) {
+            (Some(api_key), Some(bearer_token)) => {
+                self.auth = AuthSource::ApiKeyAndBearer {
+                    api_key,
+                    bearer_token,
+                };
+            }
+            (Some(api_key), None) => {
+                self.auth = AuthSource::ApiKey(api_key);
+            }
+            (None, Some(bearer_token)) => {
+                self.auth = AuthSource::BearerToken(bearer_token);
+            }
+            (None, None) => {
+                self.auth = AuthSource::None;
+            }
+        }
+        self
+    }
+
+    #[must_use]
+    pub fn with_base_url(mut self, base_url: impl Into<String>) -> Self {
+        self.base_url = base_url.into();
+        self
+    }
+
+    #[must_use]
+    pub fn with_retry_policy(
+        mut self,
+        max_retries: u32,
+        initial_backoff: Duration,
+        max_backoff: Duration,
+    ) -> Self {
+        self.max_retries = max_retries;
+        self.initial_backoff = initial_backoff;
+        self.max_backoff = max_backoff;
+        self
+    }
+
+    #[must_use]
+    pub fn auth_source(&self) -> &AuthSource {
+        &self.auth
+    }
+
+    pub async fn send_message(
+        &self,
+        request: &MessageRequest,
+    ) -> Result<MessageResponse, ApiError> {
+        let request = MessageRequest {
+            stream: false,
+            ..request.clone()
+        };
+        let response = self.send_with_retry(&request).await?;
+        let request_id = request_id_from_headers(response.headers());
+        let mut response = response
+            .json::<MessageResponse>()
+            .await
+            .map_err(ApiError::from)?;
+        if response.request_id.is_none() {
+            response.request_id = request_id;
+        }
+        Ok(response)
+    }
+
+    pub async fn stream_message(
+        &self,
+        request: &MessageRequest,
+    ) -> Result<MessageStream, ApiError> {
+        let response = self
+            .send_with_retry(&request.clone().with_streaming())
+            .await?;
+        Ok(MessageStream {
+            request_id: request_id_from_headers(response.headers()),
+            response,
+            parser: SseParser::new(),
+            pending: VecDeque::new(),
+            done: false,
