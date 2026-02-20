@@ -47,3 +47,99 @@ const MODEL_REGISTRY: &[(&str, ProviderMetadata)] = &[
             base_url_env: "ANTHROPIC_BASE_URL",
             default_base_url: codineer_provider::DEFAULT_BASE_URL,
         },
+    ),
+    (
+        "sonnet",
+        ProviderMetadata {
+            provider: ProviderKind::CodineerApi,
+            auth_env: "ANTHROPIC_API_KEY",
+            base_url_env: "ANTHROPIC_BASE_URL",
+            default_base_url: codineer_provider::DEFAULT_BASE_URL,
+        },
+    ),
+    (
+        "haiku",
+        ProviderMetadata {
+            provider: ProviderKind::CodineerApi,
+            auth_env: "ANTHROPIC_API_KEY",
+            base_url_env: "ANTHROPIC_BASE_URL",
+            default_base_url: codineer_provider::DEFAULT_BASE_URL,
+        },
+    ),
+    (
+        "claude-opus-4-6",
+        ProviderMetadata {
+            provider: ProviderKind::CodineerApi,
+            auth_env: "ANTHROPIC_API_KEY",
+            base_url_env: "ANTHROPIC_BASE_URL",
+            default_base_url: codineer_provider::DEFAULT_BASE_URL,
+        },
+    ),
+    (
+        "claude-sonnet-4-6",
+        ProviderMetadata {
+            provider: ProviderKind::CodineerApi,
+            auth_env: "ANTHROPIC_API_KEY",
+            base_url_env: "ANTHROPIC_BASE_URL",
+            default_base_url: codineer_provider::DEFAULT_BASE_URL,
+        },
+    ),
+    (
+        "claude-haiku-4-5-20251213",
+        ProviderMetadata {
+            provider: ProviderKind::CodineerApi,
+            auth_env: "ANTHROPIC_API_KEY",
+            base_url_env: "ANTHROPIC_BASE_URL",
+            default_base_url: codineer_provider::DEFAULT_BASE_URL,
+        },
+    ),
+    (
+        "grok",
+        ProviderMetadata {
+            provider: ProviderKind::Xai,
+            auth_env: "XAI_API_KEY",
+            base_url_env: "XAI_BASE_URL",
+            default_base_url: openai_compat::DEFAULT_XAI_BASE_URL,
+        },
+    ),
+    (
+        "grok-3",
+        ProviderMetadata {
+            provider: ProviderKind::Xai,
+            auth_env: "XAI_API_KEY",
+            base_url_env: "XAI_BASE_URL",
+            default_base_url: openai_compat::DEFAULT_XAI_BASE_URL,
+        },
+    ),
+    (
+        "grok-mini",
+        ProviderMetadata {
+            provider: ProviderKind::Xai,
+            auth_env: "XAI_API_KEY",
+            base_url_env: "XAI_BASE_URL",
+            default_base_url: openai_compat::DEFAULT_XAI_BASE_URL,
+        },
+    ),
+    (
+        "grok-3-mini",
+        ProviderMetadata {
+            provider: ProviderKind::Xai,
+            auth_env: "XAI_API_KEY",
+            base_url_env: "XAI_BASE_URL",
+            default_base_url: openai_compat::DEFAULT_XAI_BASE_URL,
+        },
+    ),
+    (
+        "grok-2",
+        ProviderMetadata {
+            provider: ProviderKind::Xai,
+            auth_env: "XAI_API_KEY",
+            base_url_env: "XAI_BASE_URL",
+            default_base_url: openai_compat::DEFAULT_XAI_BASE_URL,
+        },
+    ),
+    (
+        "gpt-4o",
+        ProviderMetadata {
+            provider: ProviderKind::OpenAi,
+            auth_env: "OPENAI_API_KEY",
