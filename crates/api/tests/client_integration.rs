@@ -47,3 +47,51 @@ async fn send_message_posts_json_and_parses_response() {
     assert_eq!(response.request_id.as_deref(), Some("req_body_123"));
     assert_eq!(
         response.content,
+        vec![OutputContentBlock::Text {
+            text: "Hello from Codineer".to_string(),
+        }]
+    );
+
+    let captured = state.lock().await;
+    let request = captured.first().expect("server should capture request");
+    assert_eq!(request.method, "POST");
+    assert_eq!(request.path, "/v1/messages");
+    assert_eq!(
+        request.headers.get("x-api-key").map(String::as_str),
+        Some("test-key")
+    );
+    assert_eq!(
+        request.headers.get("authorization").map(String::as_str),
+        Some("Bearer proxy-token")
+    );
+    let body: serde_json::Value =
+        serde_json::from_str(&request.body).expect("request body should be json");
+    assert_eq!(
+        body.get("model").and_then(serde_json::Value::as_str),
+        Some("claude-sonnet-4-6")
+    );
+    assert!(body.get("stream").is_none());
+    assert_eq!(body["tools"][0]["name"], json!("get_weather"));
+    assert_eq!(body["tool_choice"]["type"], json!("auto"));
+}
+
+#[tokio::test]
+async fn stream_message_parses_sse_events_with_tool_use() {
+    let state = Arc::new(Mutex::new(Vec::<CapturedRequest>::new()));
+    let sse = concat!(
+        "event: message_start\n",
+        "data: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_stream\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"model\":\"claude-sonnet-4-6\",\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":8,\"output_tokens\":0}}}\n\n",
+        "event: content_block_start\n",
+        "data: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu_123\",\"name\":\"get_weather\",\"input\":{}}}\n\n",
+        "event: content_block_delta\n",
+        "data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\\\"city\\\":\\\"Paris\\\"}\"}}\n\n",
+        "event: content_block_stop\n",
+        "data: {\"type\":\"content_block_stop\",\"index\":0}\n\n",
+        "event: message_delta\n",
+        "data: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"tool_use\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":8,\"output_tokens\":1}}\n\n",
+        "event: message_stop\n",
+        "data: {\"type\":\"message_stop\"}\n\n",
+        "data: [DONE]\n\n"
+    );
+    let server = spawn_server(
+        state.clone(),
