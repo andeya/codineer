@@ -167,3 +167,45 @@ while True:
         tokio::time::timeout(Duration::from_secs(2), async {
             loop {
                 if manager
+                    .collect_workspace_diagnostics()
+                    .await
+                    .expect("diagnostics snapshot should load")
+                    .total_diagnostics()
+                    > 0
+                {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("diagnostics should arrive from mock server");
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn collects_diagnostics_and_symbol_navigation_from_mock_server() {
+        let Some(python) = python3_path() else {
+            return;
+        };
+
+        // given
+        let root = temp_dir("manager");
+        fs::create_dir_all(root.join("src")).expect("workspace root should exist");
+        let script_path = write_mock_server_script(&root);
+        let source_path = root.join("src").join("main.rs");
+        fs::write(&source_path, "fn main() {}\nlet value = 1;\n")
+            .expect("source file should exist");
+        let manager = LspManager::new(vec![LspServerConfig {
+            name: "rust-analyzer".to_string(),
+            command: python,
+            args: vec![script_path.display().to_string()],
+            env: BTreeMap::new(),
+            workspace_root: root.clone(),
+            initialization_options: None,
+            extension_to_language: BTreeMap::from([(".rs".to_string(), "rust".to_string())]),
+        }])
+        .expect("manager should build");
+        manager
+            .open_document(
+                &source_path,
+                &fs::read_to_string(&source_path).expect("source read should succeed"),
