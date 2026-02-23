@@ -209,3 +209,45 @@ while True:
             .open_document(
                 &source_path,
                 &fs::read_to_string(&source_path).expect("source read should succeed"),
+            )
+            .await
+            .expect("document should open");
+        wait_for_diagnostics(&manager).await;
+
+        // when
+        let diagnostics = manager
+            .collect_workspace_diagnostics()
+            .await
+            .expect("diagnostics should be available");
+        let definitions = manager
+            .go_to_definition(&source_path, Position::new(0, 0))
+            .await
+            .expect("definition request should succeed");
+        let references = manager
+            .find_references(&source_path, Position::new(0, 0), true)
+            .await
+            .expect("references request should succeed");
+
+        // then
+        assert_eq!(diagnostics.files.len(), 1);
+        assert_eq!(diagnostics.total_diagnostics(), 1);
+        assert_eq!(
+            diagnostics.files[0].diagnostics[0].severity,
+            Some(DiagnosticSeverity::ERROR)
+        );
+        assert_eq!(definitions.len(), 1);
+        assert_eq!(definitions[0].start_line(), 1);
+        assert_eq!(references.len(), 2);
+
+        manager.shutdown().await.expect("shutdown should succeed");
+        fs::remove_dir_all(root).expect("temp workspace should be removed");
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn renders_runtime_context_enrichment_for_prompt_usage() {
+        let Some(python) = python3_path() else {
+            return;
+        };
+
+        // given
+        let root = temp_dir("prompt");
