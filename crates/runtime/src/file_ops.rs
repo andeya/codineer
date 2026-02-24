@@ -405,3 +405,85 @@ fn matches_optional_filters(
 
     true
 }
+
+fn apply_limit<T>(
+    items: Vec<T>,
+    limit: Option<usize>,
+    offset: Option<usize>,
+) -> (Vec<T>, Option<usize>, Option<usize>) {
+    let offset_value = offset.unwrap_or(0);
+    let mut items = items.into_iter().skip(offset_value).collect::<Vec<_>>();
+    let explicit_limit = limit.unwrap_or(250);
+    if explicit_limit == 0 {
+        return (items, None, (offset_value > 0).then_some(offset_value));
+    }
+
+    let truncated = items.len() > explicit_limit;
+    items.truncate(explicit_limit);
+    (
+        items,
+        truncated.then_some(explicit_limit),
+        (offset_value > 0).then_some(offset_value),
+    )
+}
+
+fn make_patch(original: &str, updated: &str) -> Vec<StructuredPatchHunk> {
+    let mut lines = Vec::new();
+    for line in original.lines() {
+        lines.push(format!("-{line}"));
+    }
+    for line in updated.lines() {
+        lines.push(format!("+{line}"));
+    }
+
+    vec![StructuredPatchHunk {
+        old_start: 1,
+        old_lines: original.lines().count(),
+        new_start: 1,
+        new_lines: updated.lines().count(),
+        lines,
+    }]
+}
+
+fn workspace_root() -> io::Result<PathBuf> {
+    if let Ok(override_root) = std::env::var("CODINEER_WORKSPACE_ROOT") {
+        return Ok(PathBuf::from(override_root));
+    }
+    std::env::current_dir()
+}
+
+fn enforce_workspace_boundary(resolved: &Path) -> io::Result<()> {
+    let root = workspace_root()?
+        .canonicalize()
+        .unwrap_or_else(|_| workspace_root().unwrap_or_default());
+    if !resolved.starts_with(&root) {
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            format!(
+                "path '{}' is outside the workspace root '{}'; access denied",
+                resolved.display(),
+                root.display(),
+            ),
+        ));
+    }
+    Ok(())
+}
+
+fn normalize_path(path: &str) -> io::Result<PathBuf> {
+    let candidate = if Path::new(path).is_absolute() {
+        PathBuf::from(path)
+    } else {
+        std::env::current_dir()?.join(path)
+    };
+    let resolved = candidate.canonicalize()?;
+    enforce_workspace_boundary(&resolved)?;
+    Ok(resolved)
+}
+
+fn normalize_path_allow_missing(path: &str) -> io::Result<PathBuf> {
+    let candidate = if Path::new(path).is_absolute() {
+        PathBuf::from(path)
+    } else {
+        std::env::current_dir()?.join(path)
+    };
+
