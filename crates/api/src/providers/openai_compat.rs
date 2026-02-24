@@ -291,3 +291,61 @@ impl OpenAiSseParser {
                 events.push(event);
             }
         }
+
+        Ok(events)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TextPhase {
+    Pending,
+    Active,
+    Done,
+}
+
+#[derive(Debug)]
+struct StreamState {
+    model: String,
+    message_started: bool,
+    text_phase: TextPhase,
+    finished: bool,
+    stop_reason: Option<String>,
+    usage: Option<Usage>,
+    tool_calls: BTreeMap<u32, ToolCallState>,
+}
+
+impl StreamState {
+    fn new(model: String) -> Self {
+        Self {
+            model,
+            message_started: false,
+            text_phase: TextPhase::Pending,
+            finished: false,
+            stop_reason: None,
+            usage: None,
+            tool_calls: BTreeMap::new(),
+        }
+    }
+
+    fn ingest_chunk(&mut self, chunk: ChatCompletionChunk) -> Vec<StreamEvent> {
+        let mut events = Vec::new();
+        if !self.message_started {
+            self.message_started = true;
+            events.push(StreamEvent::MessageStart(MessageStartEvent {
+                message: MessageResponse {
+                    id: chunk.id.clone(),
+                    kind: "message".to_string(),
+                    role: "assistant".to_string(),
+                    content: Vec::new(),
+                    model: chunk.model.clone().unwrap_or_else(|| self.model.clone()),
+                    stop_reason: None,
+                    stop_sequence: None,
+                    usage: Usage {
+                        input_tokens: 0,
+                        cache_creation_input_tokens: 0,
+                        cache_read_input_tokens: 0,
+                        output_tokens: 0,
+                    },
+                    request_id: None,
+                },
+            }));
