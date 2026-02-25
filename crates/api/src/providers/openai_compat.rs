@@ -408,3 +408,120 @@ impl StreamState {
                             state.stopped = true;
                             events.push(StreamEvent::ContentBlockStop(ContentBlockStopEvent {
                                 index: state.block_index(),
+                            }));
+                        }
+                    }
+                }
+            }
+        }
+
+        events
+    }
+
+    fn finish(&mut self) -> Vec<StreamEvent> {
+        if self.finished {
+            return Vec::new();
+        }
+        self.finished = true;
+
+        let mut events = Vec::new();
+        if self.text_phase == TextPhase::Active {
+            self.text_phase = TextPhase::Done;
+            events.push(StreamEvent::ContentBlockStop(ContentBlockStopEvent {
+                index: 0,
+            }));
+        }
+
+        for state in self.tool_calls.values_mut() {
+            if !state.started {
+                if let Some(start_event) = state.start_event() {
+                    state.started = true;
+                    events.push(StreamEvent::ContentBlockStart(start_event));
+                    if let Some(delta_event) = state.delta_event() {
+                        events.push(StreamEvent::ContentBlockDelta(delta_event));
+                    }
+                }
+            }
+            if state.started && !state.stopped {
+                state.stopped = true;
+                events.push(StreamEvent::ContentBlockStop(ContentBlockStopEvent {
+                    index: state.block_index(),
+                }));
+            }
+        }
+
+        if self.message_started {
+            events.push(StreamEvent::MessageDelta(MessageDeltaEvent {
+                delta: MessageDelta {
+                    stop_reason: Some(
+                        self.stop_reason
+                            .clone()
+                            .unwrap_or_else(|| "end_turn".to_string()),
+                    ),
+                    stop_sequence: None,
+                },
+                usage: self.usage.clone().unwrap_or(Usage {
+                    input_tokens: 0,
+                    cache_creation_input_tokens: 0,
+                    cache_read_input_tokens: 0,
+                    output_tokens: 0,
+                }),
+            }));
+            events.push(StreamEvent::MessageStop(MessageStopEvent {}));
+        }
+        events
+    }
+}
+
+#[derive(Debug, Default)]
+struct ToolCallState {
+    openai_index: u32,
+    id: Option<String>,
+    name: Option<String>,
+    arguments: String,
+    emitted_len: usize,
+    started: bool,
+    stopped: bool,
+}
+
+impl ToolCallState {
+    fn apply(&mut self, tool_call: DeltaToolCall) {
+        self.openai_index = tool_call.index;
+        if let Some(id) = tool_call.id {
+            self.id = Some(id);
+        }
+        if let Some(name) = tool_call.function.name {
+            self.name = Some(name);
+        }
+        if let Some(arguments) = tool_call.function.arguments {
+            self.arguments.push_str(&arguments);
+        }
+    }
+
+    const fn block_index(&self) -> u32 {
+        self.openai_index + 1
+    }
+
+    fn start_event(&self) -> Option<ContentBlockStartEvent> {
+        let name = self.name.clone()?;
+        let id = self
+            .id
+            .clone()
+            .unwrap_or_else(|| format!("tool_call_{}", self.openai_index));
+        Some(ContentBlockStartEvent {
+            index: self.block_index(),
+            content_block: OutputContentBlock::ToolUse {
+                id,
+                name,
+                input: json!({}),
+            },
+        })
+    }
+
+    fn delta_event(&mut self) -> Option<ContentBlockDeltaEvent> {
+        if self.emitted_len >= self.arguments.len() {
+            return None;
+        }
+        let delta = self.arguments[self.emitted_len..].to_string();
+        self.emitted_len = self.arguments.len();
+        Some(ContentBlockDeltaEvent {
