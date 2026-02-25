@@ -385,3 +385,80 @@ impl RuntimePluginConfig {
         &self.enabled_plugins
     }
 
+    #[must_use]
+    pub fn external_directories(&self) -> &[String] {
+        &self.external_directories
+    }
+
+    #[must_use]
+    pub fn install_root(&self) -> Option<&str> {
+        self.install_root.as_deref()
+    }
+
+    #[must_use]
+    pub fn registry_path(&self) -> Option<&str> {
+        self.registry_path.as_deref()
+    }
+
+    #[must_use]
+    pub fn bundled_root(&self) -> Option<&str> {
+        self.bundled_root.as_deref()
+    }
+
+    pub fn set_plugin_state(&mut self, plugin_id: String, enabled: bool) {
+        self.enabled_plugins.insert(plugin_id, enabled);
+    }
+
+    #[must_use]
+    pub fn state_for(&self, plugin_id: &str, default_enabled: bool) -> bool {
+        self.enabled_plugins
+            .get(plugin_id)
+            .copied()
+            .unwrap_or(default_enabled)
+    }
+}
+
+#[must_use]
+pub fn default_config_home() -> PathBuf {
+    std::env::var_os("CODINEER_CONFIG_HOME")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".codineer")))
+        .unwrap_or_else(|| PathBuf::from(".codineer"))
+}
+
+impl RuntimeHookConfig {
+    #[must_use]
+    pub fn new(pre_tool_use: Vec<String>, post_tool_use: Vec<String>) -> Self {
+        Self {
+            pre_tool_use,
+            post_tool_use,
+        }
+    }
+
+    #[must_use]
+    pub fn pre_tool_use(&self) -> &[String] {
+        &self.pre_tool_use
+    }
+
+    #[must_use]
+    pub fn post_tool_use(&self) -> &[String] {
+        &self.post_tool_use
+    }
+
+    #[must_use]
+    pub fn merged(&self, other: &Self) -> Self {
+        let mut merged = self.clone();
+        merged.extend(other);
+        merged
+    }
+
+    pub fn extend(&mut self, other: &Self) {
+        extend_unique(&mut self.pre_tool_use, other.pre_tool_use());
+        extend_unique(&mut self.post_tool_use, other.post_tool_use());
+    }
+}
+
+impl McpConfigCollection {
+    #[must_use]
+    pub fn servers(&self) -> &BTreeMap<String, ScopedMcpServerConfig> {
+        &self.servers
