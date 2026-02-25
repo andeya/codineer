@@ -415,3 +415,55 @@ where
 
         let trimmed = line.trim_end_matches(['\r', '\n']);
         if let Some((name, value)) = trimmed.split_once(':') {
+            if name.eq_ignore_ascii_case("Content-Length") {
+                let value = value.trim().to_string();
+                content_length = Some(
+                    value
+                        .parse::<usize>()
+                        .map_err(|_| LspError::InvalidContentLength(value.clone()))?,
+                );
+            }
+        } else {
+            return Err(LspError::InvalidHeader(trimmed.to_string()));
+        }
+    }
+
+    let content_length = content_length.ok_or(LspError::MissingContentLength)?;
+    let mut body = vec![0_u8; content_length];
+    reader.read_exact(&mut body).await?;
+    Ok(Some(serde_json::from_slice(&body)?))
+}
+
+fn file_url(path: &Path) -> Result<String, LspError> {
+    url::Url::from_file_path(path)
+        .map(|url| url.to_string())
+        .map_err(|()| LspError::PathToUrl(path.to_path_buf()))
+}
+
+fn location_to_symbol_locations(locations: Vec<Location>) -> Vec<SymbolLocation> {
+    locations
+        .into_iter()
+        .filter_map(|location| {
+            uri_to_path(&location.uri.to_string()).map(|path| SymbolLocation {
+                path,
+                range: location.range,
+            })
+        })
+        .collect()
+}
+
+fn location_links_to_symbol_locations(links: Vec<LocationLink>) -> Vec<SymbolLocation> {
+    links
+        .into_iter()
+        .filter_map(|link| {
+            uri_to_path(&link.target_uri.to_string()).map(|path| SymbolLocation {
+                path,
+                range: link.target_selection_range,
+            })
+        })
+        .collect()
+}
+
+fn uri_to_path(uri: &str) -> Option<PathBuf> {
+    url::Url::parse(uri).ok()?.to_file_path().ok()
+}
