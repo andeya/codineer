@@ -308,3 +308,80 @@ impl RuntimeConfig {
     pub fn plugins(&self) -> &RuntimePluginConfig {
         &self.feature_config.plugins
     }
+
+    #[must_use]
+    pub fn oauth(&self) -> Option<&OAuthConfig> {
+        self.feature_config.oauth.as_ref()
+    }
+
+    #[must_use]
+    pub fn model(&self) -> Option<&str> {
+        self.feature_config.model.as_deref()
+    }
+
+    #[must_use]
+    pub fn permission_mode(&self) -> Option<ResolvedPermissionMode> {
+        self.feature_config.permission_mode
+    }
+
+    #[must_use]
+    pub fn sandbox(&self) -> &SandboxConfig {
+        &self.feature_config.sandbox
+    }
+}
+
+impl RuntimeFeatureConfig {
+    #[must_use]
+    pub fn with_hooks(mut self, hooks: RuntimeHookConfig) -> Self {
+        self.hooks = hooks;
+        self
+    }
+
+    #[must_use]
+    pub fn with_plugins(mut self, plugins: RuntimePluginConfig) -> Self {
+        self.plugins = plugins;
+        self
+    }
+
+    #[must_use]
+    pub fn hooks(&self) -> &RuntimeHookConfig {
+        &self.hooks
+    }
+
+    #[must_use]
+    pub fn plugins(&self) -> &RuntimePluginConfig {
+        &self.plugins
+    }
+
+    #[must_use]
+    pub fn mcp(&self) -> &McpConfigCollection {
+        &self.mcp
+    }
+
+    #[must_use]
+    pub fn oauth(&self) -> Option<&OAuthConfig> {
+        self.oauth.as_ref()
+    }
+
+    #[must_use]
+    pub fn model(&self) -> Option<&str> {
+        self.model.as_deref()
+    }
+
+    #[must_use]
+    pub fn permission_mode(&self) -> Option<ResolvedPermissionMode> {
+        self.permission_mode
+    }
+
+    #[must_use]
+    pub fn sandbox(&self) -> &SandboxConfig {
+        &self.sandbox
+    }
+}
+
+impl RuntimePluginConfig {
+    #[must_use]
+    pub fn enabled_plugins(&self) -> &BTreeMap<String, bool> {
+        &self.enabled_plugins
+    }
+
