@@ -143,3 +143,76 @@ fn push_unicode_escape(rendered: &mut String, control: char) {
     }
 }
 
+struct Parser<'a> {
+    chars: Vec<char>,
+    index: usize,
+    _source: &'a str,
+}
+
+impl<'a> Parser<'a> {
+    fn new(source: &'a str) -> Self {
+        Self {
+            chars: source.chars().collect(),
+            index: 0,
+            _source: source,
+        }
+    }
+
+    fn parse_value(&mut self) -> Result<JsonValue, JsonError> {
+        self.skip_whitespace();
+        match self.peek() {
+            Some('n') => self.parse_literal("null", JsonValue::Null),
+            Some('t') => self.parse_literal("true", JsonValue::Bool(true)),
+            Some('f') => self.parse_literal("false", JsonValue::Bool(false)),
+            Some('"') => self.parse_string().map(JsonValue::String),
+            Some('[') => self.parse_array(),
+            Some('{') => self.parse_object(),
+            Some('-' | '0'..='9') => self.parse_number().map(JsonValue::Number),
+            Some(other) => Err(JsonError::new(format!("unexpected character: {other}"))),
+            None => Err(JsonError::new("unexpected end of input")),
+        }
+    }
+
+    fn parse_literal(&mut self, expected: &str, value: JsonValue) -> Result<JsonValue, JsonError> {
+        for expected_char in expected.chars() {
+            if self.next() != Some(expected_char) {
+                return Err(JsonError::new(format!(
+                    "invalid literal: expected {expected}"
+                )));
+            }
+        }
+        Ok(value)
+    }
+
+    fn parse_string(&mut self) -> Result<String, JsonError> {
+        self.expect('"')?;
+        let mut value = String::new();
+        while let Some(ch) = self.next() {
+            match ch {
+                '"' => return Ok(value),
+                '\\' => value.push(self.parse_escape()?),
+                plain => value.push(plain),
+            }
+        }
+        Err(JsonError::new("unterminated string"))
+    }
+
+    fn parse_escape(&mut self) -> Result<char, JsonError> {
+        match self.next() {
+            Some('"') => Ok('"'),
+            Some('\\') => Ok('\\'),
+            Some('/') => Ok('/'),
+            Some('b') => Ok('\u{08}'),
+            Some('f') => Ok('\u{0C}'),
+            Some('n') => Ok('\n'),
+            Some('r') => Ok('\r'),
+            Some('t') => Ok('\t'),
+            Some('u') => self.parse_unicode_escape(),
+            Some(other) => Err(JsonError::new(format!("invalid escape sequence: {other}"))),
+            None => Err(JsonError::new("unexpected end of input in escape sequence")),
+        }
+    }
+
+    fn parse_unicode_escape(&mut self) -> Result<char, JsonError> {
+        let mut value = 0_u32;
+        for _ in 0..4 {
