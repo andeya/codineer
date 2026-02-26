@@ -462,3 +462,81 @@ impl McpConfigCollection {
     #[must_use]
     pub fn servers(&self) -> &BTreeMap<String, ScopedMcpServerConfig> {
         &self.servers
+    }
+
+    #[must_use]
+    pub fn get(&self, name: &str) -> Option<&ScopedMcpServerConfig> {
+        self.servers.get(name)
+    }
+}
+
+impl ScopedMcpServerConfig {
+    #[must_use]
+    pub fn transport(&self) -> McpTransport {
+        self.config.transport()
+    }
+}
+
+impl McpServerConfig {
+    #[must_use]
+    pub fn transport(&self) -> McpTransport {
+        match self {
+            Self::Stdio(_) => McpTransport::Stdio,
+            Self::Sse(_) => McpTransport::Sse,
+            Self::Http(_) => McpTransport::Http,
+            Self::Ws(_) => McpTransport::Ws,
+            Self::Sdk(_) => McpTransport::Sdk,
+            Self::ManagedProxy(_) => McpTransport::ManagedProxy,
+        }
+    }
+}
+
+fn read_optional_json_object(
+    path: &Path,
+) -> Result<Option<BTreeMap<String, JsonValue>>, ConfigError> {
+    let is_flat_config =
+        path.file_name().and_then(|name| name.to_str()) == Some(".codineer.json");
+    let contents = match fs::read_to_string(path) {
+        Ok(contents) => contents,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(ConfigError::Io(error)),
+    };
+
+    if contents.trim().is_empty() {
+        return Ok(Some(BTreeMap::new()));
+    }
+
+    let parsed = match JsonValue::parse(&contents) {
+        Ok(parsed) => parsed,
+        Err(error) if is_flat_config => {
+            eprintln!(
+                "warning: ignoring malformed config '{}': {error}",
+                path.display()
+            );
+            return Ok(None);
+        }
+        Err(error) => return Err(ConfigError::Parse(format!("{}: {error}", path.display()))),
+    };
+    let Some(object) = parsed.as_object() else {
+        if is_flat_config {
+            eprintln!(
+                "warning: ignoring config '{}': expected JSON object at top level",
+                path.display()
+            );
+            return Ok(None);
+        }
+        return Err(ConfigError::Parse(format!(
+            "{}: top-level settings value must be a JSON object",
+            path.display()
+        )));
+    };
+    Ok(Some(object.clone()))
+}
+
+fn merge_mcp_servers(
+    target: &mut BTreeMap<String, ScopedMcpServerConfig>,
+    source: ConfigSource,
+    root: &BTreeMap<String, JsonValue>,
+    path: &Path,
+) -> Result<(), ConfigError> {
+    let Some(mcp_servers) = root.get("mcpServers") else {
