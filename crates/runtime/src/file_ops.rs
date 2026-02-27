@@ -568,3 +568,84 @@ mod tests {
 
         let grep_output = grep_search(&GrepSearchInput {
             pattern: String::from("hello"),
+            path: Some(dir.to_string_lossy().into_owned()),
+            glob: Some(String::from("**/*.rs")),
+            output_mode: Some(String::from("content")),
+            before: None,
+            after: None,
+            context_short: None,
+            context: None,
+            line_numbers: Some(true),
+            case_insensitive: Some(false),
+            file_type: None,
+            head_limit: Some(10),
+            offset: Some(0),
+            multiline: Some(false),
+        })
+        .expect("grep should succeed");
+        assert!(grep_output.content.unwrap_or_default().contains("hello"));
+    }
+
+    #[test]
+    fn rejects_absolute_path_outside_workspace() {
+        allow_temp_workspace();
+        let result = read_file("/etc/passwd", None, None);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::PermissionDenied);
+    }
+
+    #[test]
+    fn rejects_relative_path_traversal_above_workspace() {
+        allow_temp_workspace();
+        let result = read_file("../../../etc/passwd", None, None);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn rejects_write_outside_workspace() {
+        allow_temp_workspace();
+        let result = write_file("/tmp/should-not-exist-codineer-test-sentinel", "malicious");
+        let denied = result.is_err()
+            && result
+                .as_ref()
+                .unwrap_err()
+                .kind()
+                .eq(&std::io::ErrorKind::PermissionDenied);
+        if !denied {
+            let _ = std::fs::remove_file("/tmp/should-not-exist-codineer-test-sentinel");
+        }
+        assert!(denied, "write outside workspace must be denied");
+    }
+
+    #[test]
+    fn allows_operations_within_workspace() {
+        allow_temp_workspace();
+        let path = temp_path("inside-workspace.txt");
+        write_file(path.to_string_lossy().as_ref(), "safe content")
+            .expect("write within workspace should succeed");
+        let read_output = read_file(path.to_string_lossy().as_ref(), None, None)
+            .expect("read within workspace should succeed");
+        assert_eq!(read_output.file.content, "safe content");
+    }
+
+    #[test]
+    fn edit_rejects_identical_old_and_new_string() {
+        allow_temp_workspace();
+        let path = temp_path("edit-reject.txt");
+        write_file(path.to_string_lossy().as_ref(), "content").expect("write");
+        let result = edit_file(path.to_string_lossy().as_ref(), "content", "content", false);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().kind(), std::io::ErrorKind::InvalidInput);
+    }
+
+    #[test]
+    fn edit_rejects_missing_old_string() {
+        allow_temp_workspace();
+        let path = temp_path("edit-missing.txt");
+        write_file(path.to_string_lossy().as_ref(), "alpha beta").expect("write");
+        let result = edit_file(path.to_string_lossy().as_ref(), "gamma", "delta", false);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().kind(), std::io::ErrorKind::NotFound);
+    }
+}
