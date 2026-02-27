@@ -85,3 +85,176 @@ pub struct McpInitializeResult {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct McpInitializeServerInfo {
+    pub name: String,
+    pub version: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct McpListToolsParams {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cursor: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct McpTool {
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(rename = "inputSchema", skip_serializing_if = "Option::is_none")]
+    pub input_schema: Option<JsonValue>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub annotations: Option<JsonValue>,
+    #[serde(rename = "_meta", skip_serializing_if = "Option::is_none")]
+    pub meta: Option<JsonValue>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct McpListToolsResult {
+    pub tools: Vec<McpTool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct McpToolCallParams {
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub arguments: Option<JsonValue>,
+    #[serde(rename = "_meta", skip_serializing_if = "Option::is_none")]
+    pub meta: Option<JsonValue>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct McpToolCallContent {
+    #[serde(rename = "type")]
+    pub kind: String,
+    #[serde(flatten)]
+    pub data: BTreeMap<String, JsonValue>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct McpToolCallResult {
+    #[serde(default)]
+    pub content: Vec<McpToolCallContent>,
+    #[serde(default)]
+    pub structured_content: Option<JsonValue>,
+    #[serde(default)]
+    pub is_error: Option<bool>,
+    #[serde(rename = "_meta", skip_serializing_if = "Option::is_none")]
+    pub meta: Option<JsonValue>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct McpListResourcesParams {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cursor: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct McpResource {
+    pub uri: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(rename = "mimeType", skip_serializing_if = "Option::is_none")]
+    pub mime_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub annotations: Option<JsonValue>,
+    #[serde(rename = "_meta", skip_serializing_if = "Option::is_none")]
+    pub meta: Option<JsonValue>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct McpListResourcesResult {
+    pub resources: Vec<McpResource>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct McpReadResourceParams {
+    pub uri: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct McpResourceContents {
+    pub uri: String,
+    #[serde(rename = "mimeType", skip_serializing_if = "Option::is_none")]
+    pub mime_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub blob: Option<String>,
+    #[serde(rename = "_meta", skip_serializing_if = "Option::is_none")]
+    pub meta: Option<JsonValue>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct McpReadResourceResult {
+    pub contents: Vec<McpResourceContents>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ManagedMcpTool {
+    pub server_name: String,
+    pub qualified_name: String,
+    pub raw_name: String,
+    pub tool: McpTool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnsupportedMcpServer {
+    pub server_name: String,
+    pub transport: McpTransport,
+    pub reason: String,
+}
+
+#[derive(Debug)]
+pub enum McpServerManagerError {
+    Io(io::Error),
+    JsonRpc {
+        server_name: String,
+        method: &'static str,
+        error: JsonRpcError,
+    },
+    InvalidResponse {
+        server_name: String,
+        method: &'static str,
+        details: String,
+    },
+    UnknownTool {
+        qualified_name: String,
+    },
+    UnknownServer {
+        server_name: String,
+    },
+}
+
+impl std::fmt::Display for McpServerManagerError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Io(error) => write!(f, "{error}"),
+            Self::JsonRpc {
+                server_name,
+                method,
+                error,
+            } => write!(
+                f,
+                "MCP server `{server_name}` returned JSON-RPC error for {method}: {} ({})",
+                error.message, error.code
+            ),
+            Self::InvalidResponse {
+                server_name,
+                method,
+                details,
+            } => write!(
+                f,
+                "MCP server `{server_name}` returned invalid response for {method}: {details}"
