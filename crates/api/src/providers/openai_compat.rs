@@ -525,3 +525,61 @@ impl ToolCallState {
         let delta = self.arguments[self.emitted_len..].to_string();
         self.emitted_len = self.arguments.len();
         Some(ContentBlockDeltaEvent {
+            index: self.block_index(),
+            delta: ContentBlockDelta::InputJsonDelta {
+                partial_json: delta,
+            },
+        })
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct ChatCompletionResponse {
+    id: String,
+    model: String,
+    choices: Vec<ChatChoice>,
+    #[serde(default)]
+    usage: Option<OpenAiUsage>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ChatChoice {
+    message: ChatMessage,
+    #[serde(default)]
+    finish_reason: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ChatMessage {
+    role: String,
+    #[serde(default)]
+    content: Option<String>,
+    #[serde(default)]
+    tool_calls: Vec<ResponseToolCall>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ResponseToolCall {
+    id: String,
+    function: ResponseToolFunction,
+}
+
+#[derive(Debug, Deserialize)]
+struct ResponseToolFunction {
+    name: String,
+    arguments: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct OpenAiUsage {
+    #[serde(default)]
+    prompt_tokens: u32,
+    #[serde(default)]
+    completion_tokens: u32,
+}
+
+#[derive(Debug, Deserialize)]
+struct ChatCompletionChunk {
+    id: String,
+    #[serde(default)]
+    model: Option<String>,
