@@ -641,3 +641,61 @@ struct ApiErrorEnvelope {
 struct ApiErrorBody {
     #[serde(rename = "type")]
     error_type: String,
+    message: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ALT_REQUEST_ID_HEADER, REQUEST_ID_HEADER};
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    use std::sync::{Mutex, OnceLock};
+    use std::thread;
+    use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+    use runtime::{clear_oauth_credentials, save_oauth_credentials, OAuthConfig};
+
+    use super::{
+        now_unix_timestamp, oauth_token_is_expired, resolve_saved_oauth_token,
+        resolve_startup_auth_source, AuthSource, CodineerApiClient, OAuthTokenSet,
+    };
+    use crate::types::{ContentBlockDelta, MessageRequest};
+
+    fn env_lock() -> std::sync::MutexGuard<'static, ()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    fn temp_config_home() -> std::path::PathBuf {
+        std::env::temp_dir().join(format!(
+            "api-oauth-test-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("time")
+                .as_nanos()
+        ))
+    }
+
+    fn cleanup_temp_config_home(config_home: &std::path::Path) {
+        match std::fs::remove_dir_all(config_home) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => panic!("cleanup temp dir: {error}"),
+        }
+    }
+
+    fn sample_oauth_config(token_url: String) -> OAuthConfig {
+        OAuthConfig {
+            client_id: "runtime-client".to_string(),
+            authorize_url: "https://console.test/oauth/authorize".to_string(),
+            token_url,
+            callback_port: Some(4545),
+            manual_redirect_url: Some("https://console.test/oauth/callback".to_string()),
+            scopes: vec!["org:read".to_string(), "user:write".to_string()],
+        }
+    }
+
+    fn spawn_token_server(response_body: &'static str) -> String {
