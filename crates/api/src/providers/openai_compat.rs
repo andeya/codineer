@@ -583,3 +583,62 @@ struct ChatCompletionChunk {
     id: String,
     #[serde(default)]
     model: Option<String>,
+    #[serde(default)]
+    choices: Vec<ChunkChoice>,
+    #[serde(default)]
+    usage: Option<OpenAiUsage>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ChunkChoice {
+    delta: ChunkDelta,
+    #[serde(default)]
+    finish_reason: Option<String>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct ChunkDelta {
+    #[serde(default)]
+    content: Option<String>,
+    #[serde(default)]
+    tool_calls: Vec<DeltaToolCall>,
+}
+
+#[derive(Debug, Deserialize)]
+struct DeltaToolCall {
+    #[serde(default)]
+    index: u32,
+    #[serde(default)]
+    id: Option<String>,
+    #[serde(default)]
+    function: DeltaFunction,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct DeltaFunction {
+    #[serde(default)]
+    name: Option<String>,
+    #[serde(default)]
+    arguments: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ErrorEnvelope {
+    error: ErrorBody,
+}
+
+#[derive(Debug, Deserialize)]
+struct ErrorBody {
+    #[serde(rename = "type")]
+    error_type: Option<String>,
+    message: Option<String>,
+}
+
+fn build_chat_completion_request(request: &MessageRequest) -> Value {
+    let mut messages = Vec::new();
+    if let Some(system) = request.system.as_ref().filter(|value| !value.is_empty()) {
+        messages.push(json!({
+            "role": "system",
+            "content": system,
+        }));
+    }
