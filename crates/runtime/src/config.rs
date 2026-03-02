@@ -617,3 +617,80 @@ fn parse_optional_permission_mode(
     root: &JsonValue,
 ) -> Result<Option<ResolvedPermissionMode>, ConfigError> {
     let Some(object) = root.as_object() else {
+        return Ok(None);
+    };
+    if let Some(mode) = object.get("permissionMode").and_then(JsonValue::as_str) {
+        return parse_permission_mode_label(mode, "merged settings.permissionMode").map(Some);
+    }
+    let Some(mode) = object
+        .get("permissions")
+        .and_then(JsonValue::as_object)
+        .and_then(|permissions| permissions.get("defaultMode"))
+        .and_then(JsonValue::as_str)
+    else {
+        return Ok(None);
+    };
+    parse_permission_mode_label(mode, "merged settings.permissions.defaultMode").map(Some)
+}
+
+fn parse_permission_mode_label(
+    mode: &str,
+    context: &str,
+) -> Result<ResolvedPermissionMode, ConfigError> {
+    match mode {
+        "default" | "plan" | "read-only" => Ok(ResolvedPermissionMode::ReadOnly),
+        "acceptEdits" | "auto" | "workspace-write" => Ok(ResolvedPermissionMode::WorkspaceWrite),
+        "dontAsk" | "danger-full-access" => Ok(ResolvedPermissionMode::DangerFullAccess),
+        other => Err(ConfigError::Parse(format!(
+            "{context}: unsupported permission mode {other}"
+        ))),
+    }
+}
+
+fn parse_optional_sandbox_config(root: &JsonValue) -> Result<SandboxConfig, ConfigError> {
+    let Some(object) = root.as_object() else {
+        return Ok(SandboxConfig::default());
+    };
+    let Some(sandbox_value) = object.get("sandbox") else {
+        return Ok(SandboxConfig::default());
+    };
+    let sandbox = expect_object(sandbox_value, "merged settings.sandbox")?;
+    let filesystem_mode = optional_string(sandbox, "filesystemMode", "merged settings.sandbox")?
+        .map(parse_filesystem_mode_label)
+        .transpose()?;
+    Ok(SandboxConfig {
+        enabled: optional_bool(sandbox, "enabled", "merged settings.sandbox")?,
+        namespace_restrictions: optional_bool(
+            sandbox,
+            "namespaceRestrictions",
+            "merged settings.sandbox",
+        )?,
+        network_isolation: optional_bool(sandbox, "networkIsolation", "merged settings.sandbox")?,
+        filesystem_mode,
+        allowed_mounts: optional_string_array(sandbox, "allowedMounts", "merged settings.sandbox")?
+            .unwrap_or_default(),
+    })
+}
+
+fn parse_filesystem_mode_label(value: &str) -> Result<FilesystemIsolationMode, ConfigError> {
+    match value {
+        "off" => Ok(FilesystemIsolationMode::Off),
+        "workspace-only" => Ok(FilesystemIsolationMode::WorkspaceOnly),
+        "allow-list" => Ok(FilesystemIsolationMode::AllowList),
+        other => Err(ConfigError::Parse(format!(
+            "merged settings.sandbox.filesystemMode: unsupported filesystem mode {other}"
+        ))),
+    }
+}
+
+fn parse_optional_oauth_config(
+    root: &JsonValue,
+    context: &str,
+) -> Result<Option<OAuthConfig>, ConfigError> {
+    let Some(oauth_value) = root.as_object().and_then(|object| object.get("oauth")) else {
+        return Ok(None);
+    };
+    let object = expect_object(oauth_value, context)?;
+    let client_id = expect_string(object, "clientId", context)?.to_string();
+    let authorize_url = expect_string(object, "authorizeUrl", context)?.to_string();
+    let token_url = expect_string(object, "tokenUrl", context)?.to_string();
