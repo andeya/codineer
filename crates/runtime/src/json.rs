@@ -216,3 +216,75 @@ impl<'a> Parser<'a> {
     fn parse_unicode_escape(&mut self) -> Result<char, JsonError> {
         let mut value = 0_u32;
         for _ in 0..4 {
+            let Some(ch) = self.next() else {
+                return Err(JsonError::new("unexpected end of input in unicode escape"));
+            };
+            value = (value << 4)
+                | ch.to_digit(16)
+                    .ok_or_else(|| JsonError::new("invalid unicode escape"))?;
+        }
+        char::from_u32(value).ok_or_else(|| JsonError::new("invalid unicode scalar value"))
+    }
+
+    fn parse_array(&mut self) -> Result<JsonValue, JsonError> {
+        self.expect('[')?;
+        let mut values = Vec::new();
+        loop {
+            self.skip_whitespace();
+            if self.try_consume(']') {
+                break;
+            }
+            values.push(self.parse_value()?);
+            self.skip_whitespace();
+            if self.try_consume(']') {
+                break;
+            }
+            self.expect(',')?;
+        }
+        Ok(JsonValue::Array(values))
+    }
+
+    fn parse_object(&mut self) -> Result<JsonValue, JsonError> {
+        self.expect('{')?;
+        let mut entries = BTreeMap::new();
+        loop {
+            self.skip_whitespace();
+            if self.try_consume('}') {
+                break;
+            }
+            let key = self.parse_string()?;
+            self.skip_whitespace();
+            self.expect(':')?;
+            let value = self.parse_value()?;
+            entries.insert(key, value);
+            self.skip_whitespace();
+            if self.try_consume('}') {
+                break;
+            }
+            self.expect(',')?;
+        }
+        Ok(JsonValue::Object(entries))
+    }
+
+    fn parse_number(&mut self) -> Result<i64, JsonError> {
+        let mut value = String::new();
+        if self.try_consume('-') {
+            value.push('-');
+        }
+
+        while let Some(ch @ '0'..='9') = self.peek() {
+            value.push(ch);
+            self.index += 1;
+        }
+
+        if value.is_empty() || value == "-" {
+            return Err(JsonError::new("invalid number"));
+        }
+
+        value
+            .parse::<i64>()
+            .map_err(|_| JsonError::new("number out of range"))
+    }
+
+    fn expect(&mut self, expected: char) -> Result<(), JsonError> {
+        match self.next() {
