@@ -47,3 +47,52 @@ pub fn unwrap_ccr_proxy_url(url: &str) -> String {
 
     let Some(query_start) = url.find('?') else {
         return url.to_string();
+    };
+    let query = &url[query_start + 1..];
+    for pair in query.split('&') {
+        let mut parts = pair.splitn(2, '=');
+        if matches!(parts.next(), Some("mcp_url")) {
+            if let Some(value) = parts.next() {
+                return percent_decode(value);
+            }
+        }
+    }
+
+    url.to_string()
+}
+
+#[must_use]
+pub fn mcp_server_signature(config: &McpServerConfig) -> Option<String> {
+    match config {
+        McpServerConfig::Stdio(config) => {
+            let mut command = vec![config.command.clone()];
+            command.extend(config.args.clone());
+            Some(format!("stdio:{}", render_command_signature(&command)))
+        }
+        McpServerConfig::Sse(config) | McpServerConfig::Http(config) => {
+            Some(format!("url:{}", unwrap_ccr_proxy_url(&config.url)))
+        }
+        McpServerConfig::Ws(config) => Some(format!("url:{}", unwrap_ccr_proxy_url(&config.url))),
+        McpServerConfig::ManagedProxy(config) => {
+            Some(format!("url:{}", unwrap_ccr_proxy_url(&config.url)))
+        }
+        McpServerConfig::Sdk(_) => None,
+    }
+}
+
+#[must_use]
+pub fn scoped_mcp_config_hash(config: &ScopedMcpServerConfig) -> String {
+    let rendered = match &config.config {
+        McpServerConfig::Stdio(stdio) => format!(
+            "stdio|{}|{}|{}",
+            stdio.command,
+            render_command_signature(&stdio.args),
+            render_env_signature(&stdio.env)
+        ),
+        McpServerConfig::Sse(remote) => format!(
+            "sse|{}|{}|{}|{}",
+            remote.url,
+            render_env_signature(&remote.headers),
+            remote.headers_helper.as_deref().unwrap_or(""),
+            render_oauth_signature(remote.oauth.as_ref())
+        ),
