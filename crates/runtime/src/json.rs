@@ -288,3 +288,76 @@ impl<'a> Parser<'a> {
 
     fn expect(&mut self, expected: char) -> Result<(), JsonError> {
         match self.next() {
+            Some(actual) if actual == expected => Ok(()),
+            Some(actual) => Err(JsonError::new(format!(
+                "expected '{expected}', found '{actual}'"
+            ))),
+            None => Err(JsonError::new(format!(
+                "expected '{expected}', found end of input"
+            ))),
+        }
+    }
+
+    fn try_consume(&mut self, expected: char) -> bool {
+        if self.peek() == Some(expected) {
+            self.index += 1;
+            true
+        } else {
+            false
+        }
+    }
+
+    fn skip_whitespace(&mut self) {
+        while matches!(self.peek(), Some(' ' | '\n' | '\r' | '\t')) {
+            self.index += 1;
+        }
+    }
+
+    fn peek(&self) -> Option<char> {
+        self.chars.get(self.index).copied()
+    }
+
+    fn next(&mut self) -> Option<char> {
+        let ch = self.peek()?;
+        self.index += 1;
+        Some(ch)
+    }
+
+    fn is_eof(&self) -> bool {
+        self.index >= self.chars.len()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{render_string, JsonValue};
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn renders_and_parses_json_values() {
+        let mut object = BTreeMap::new();
+        object.insert("flag".to_string(), JsonValue::Bool(true));
+        object.insert(
+            "items".to_string(),
+            JsonValue::Array(vec![
+                JsonValue::Number(4),
+                JsonValue::String("ok".to_string()),
+            ]),
+        );
+
+        let rendered = JsonValue::Object(object).render();
+        let parsed = JsonValue::parse(&rendered).expect("json should parse");
+
+        assert_eq!(parsed.as_object().expect("object").len(), 2);
+    }
+
+    #[test]
+    fn escapes_control_characters() {
+        assert_eq!(render_string("a\n\t\"b"), "\"a\\n\\t\\\"b\"");
+    }
+
+    #[test]
+    fn renders_all_escape_sequences() {
+        assert_eq!(render_string("\r"), "\"\\r\"");
+        assert_eq!(render_string("\u{08}"), "\"\\b\"");
+        assert_eq!(render_string("\u{0C}"), "\"\\f\"");
