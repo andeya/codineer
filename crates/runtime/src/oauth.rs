@@ -162,3 +162,85 @@ impl OAuthAuthorizationRequest {
             .join("&");
         format!(
             "{}{}{}",
+            self.authorize_url,
+            if self.authorize_url.contains('?') {
+                '&'
+            } else {
+                '?'
+            },
+            query
+        )
+    }
+}
+
+impl OAuthTokenExchangeRequest {
+    #[must_use]
+    pub fn from_config(
+        config: &OAuthConfig,
+        code: impl Into<String>,
+        state: impl Into<String>,
+        verifier: impl Into<String>,
+        redirect_uri: impl Into<String>,
+    ) -> Self {
+        Self {
+            grant_type: "authorization_code",
+            code: code.into(),
+            redirect_uri: redirect_uri.into(),
+            client_id: config.client_id.clone(),
+            code_verifier: verifier.into(),
+            state: state.into(),
+        }
+    }
+
+    #[must_use]
+    pub fn form_params(&self) -> BTreeMap<&str, String> {
+        BTreeMap::from([
+            ("grant_type", self.grant_type.to_string()),
+            ("code", self.code.clone()),
+            ("redirect_uri", self.redirect_uri.clone()),
+            ("client_id", self.client_id.clone()),
+            ("code_verifier", self.code_verifier.clone()),
+            ("state", self.state.clone()),
+        ])
+    }
+}
+
+impl OAuthRefreshRequest {
+    #[must_use]
+    pub fn from_config(
+        config: &OAuthConfig,
+        refresh_token: impl Into<String>,
+        scopes: Option<Vec<String>>,
+    ) -> Self {
+        Self {
+            grant_type: "refresh_token",
+            refresh_token: refresh_token.into(),
+            client_id: config.client_id.clone(),
+            scopes: scopes.unwrap_or_else(|| config.scopes.clone()),
+        }
+    }
+
+    #[must_use]
+    pub fn form_params(&self) -> BTreeMap<&str, String> {
+        BTreeMap::from([
+            ("grant_type", self.grant_type.to_string()),
+            ("refresh_token", self.refresh_token.clone()),
+            ("client_id", self.client_id.clone()),
+            ("scope", self.scopes.join(" ")),
+        ])
+    }
+}
+
+pub fn generate_pkce_pair() -> io::Result<PkceCodePair> {
+    let verifier = generate_random_token(32)?;
+    Ok(PkceCodePair {
+        challenge: code_challenge_s256(&verifier),
+        verifier,
+        challenge_method: PkceChallengeMethod::S256,
+    })
+}
+
+pub fn generate_state() -> io::Result<String> {
+    generate_random_token(32)
+}
+
