@@ -772,3 +772,80 @@ fn parse_optional_mcp_oauth_config(
             .map(str::to_string),
         xaa: optional_bool(oauth, "xaa", context)?,
     }))
+}
+
+fn expect_object<'a>(
+    value: &'a JsonValue,
+    context: &str,
+) -> Result<&'a BTreeMap<String, JsonValue>, ConfigError> {
+    value
+        .as_object()
+        .ok_or_else(|| ConfigError::Parse(format!("{context}: expected JSON object")))
+}
+
+fn expect_string<'a>(
+    object: &'a BTreeMap<String, JsonValue>,
+    key: &str,
+    context: &str,
+) -> Result<&'a str, ConfigError> {
+    object
+        .get(key)
+        .and_then(JsonValue::as_str)
+        .ok_or_else(|| ConfigError::Parse(format!("{context}: missing string field {key}")))
+}
+
+fn optional_string<'a>(
+    object: &'a BTreeMap<String, JsonValue>,
+    key: &str,
+    context: &str,
+) -> Result<Option<&'a str>, ConfigError> {
+    match object.get(key) {
+        Some(value) => value
+            .as_str()
+            .map(Some)
+            .ok_or_else(|| ConfigError::Parse(format!("{context}: field {key} must be a string"))),
+        None => Ok(None),
+    }
+}
+
+fn optional_bool(
+    object: &BTreeMap<String, JsonValue>,
+    key: &str,
+    context: &str,
+) -> Result<Option<bool>, ConfigError> {
+    match object.get(key) {
+        Some(value) => value
+            .as_bool()
+            .map(Some)
+            .ok_or_else(|| ConfigError::Parse(format!("{context}: field {key} must be a boolean"))),
+        None => Ok(None),
+    }
+}
+
+fn optional_u16(
+    object: &BTreeMap<String, JsonValue>,
+    key: &str,
+    context: &str,
+) -> Result<Option<u16>, ConfigError> {
+    match object.get(key) {
+        Some(value) => {
+            let Some(number) = value.as_i64() else {
+                return Err(ConfigError::Parse(format!(
+                    "{context}: field {key} must be an integer"
+                )));
+            };
+            let number = u16::try_from(number).map_err(|_| {
+                ConfigError::Parse(format!("{context}: field {key} is out of range"))
+            })?;
+            Ok(Some(number))
+        }
+        None => Ok(None),
+    }
+}
+
+fn parse_bool_map(value: &JsonValue, context: &str) -> Result<BTreeMap<String, bool>, ConfigError> {
+    let Some(map) = value.as_object() else {
+        return Err(ConfigError::Parse(format!(
+            "{context}: expected JSON object"
+        )));
+    };
