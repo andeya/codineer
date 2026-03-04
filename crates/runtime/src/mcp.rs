@@ -96,3 +96,52 @@ pub fn scoped_mcp_config_hash(config: &ScopedMcpServerConfig) -> String {
             remote.headers_helper.as_deref().unwrap_or(""),
             render_oauth_signature(remote.oauth.as_ref())
         ),
+        McpServerConfig::Http(remote) => format!(
+            "http|{}|{}|{}|{}",
+            remote.url,
+            render_env_signature(&remote.headers),
+            remote.headers_helper.as_deref().unwrap_or(""),
+            render_oauth_signature(remote.oauth.as_ref())
+        ),
+        McpServerConfig::Ws(ws) => format!(
+            "ws|{}|{}|{}",
+            ws.url,
+            render_env_signature(&ws.headers),
+            ws.headers_helper.as_deref().unwrap_or("")
+        ),
+        McpServerConfig::Sdk(sdk) => format!("sdk|{}", sdk.name),
+        McpServerConfig::ManagedProxy(proxy) => {
+            format!("claudeai-proxy|{}|{}", proxy.url, proxy.id)
+        }
+    };
+    stable_hex_hash(&rendered)
+}
+
+fn render_command_signature(command: &[String]) -> String {
+    let escaped = command
+        .iter()
+        .map(|part| part.replace('\\', "\\\\").replace('|', "\\|"))
+        .collect::<Vec<_>>();
+    format!("[{}]", escaped.join("|"))
+}
+
+fn render_env_signature(map: &std::collections::BTreeMap<String, String>) -> String {
+    map.iter()
+        .map(|(key, value)| format!("{key}={value}"))
+        .collect::<Vec<_>>()
+        .join(";")
+}
+
+fn render_oauth_signature(oauth: Option<&crate::config::McpOAuthConfig>) -> String {
+    oauth.map_or_else(String::new, |oauth| {
+        format!(
+            "{}|{}|{}|{}",
+            oauth.client_id.as_deref().unwrap_or(""),
+            oauth
+                .callback_port
+                .map_or_else(String::new, |port| port.to_string()),
+            oauth.auth_server_metadata_url.as_deref().unwrap_or(""),
+            oauth.xaa.map_or_else(String::new, |flag| flag.to_string())
+        )
+    })
+}
