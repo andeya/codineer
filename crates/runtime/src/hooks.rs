@@ -151,3 +151,54 @@ impl HookRunner {
                     return HookRunResult {
                         denied: true,
                         messages,
+                    };
+                }
+                HookCommandOutcome::Warn { message } => messages.push(message),
+            }
+        }
+
+        HookRunResult::allow(messages)
+    }
+
+    fn run_command(command: &str, request: HookCommandRequest<'_>) -> HookCommandOutcome {
+        let mut child = shell_command(command);
+        child.stdin(std::process::Stdio::piped());
+        child.stdout(std::process::Stdio::piped());
+        child.stderr(std::process::Stdio::piped());
+        child.env("HOOK_EVENT", request.event.as_str());
+        child.env("HOOK_TOOL_NAME", request.tool_name);
+        child.env("HOOK_TOOL_INPUT", request.tool_input);
+        child.env(
+            "HOOK_TOOL_IS_ERROR",
+            if request.is_error { "1" } else { "0" },
+        );
+        if let Some(tool_output) = request.tool_output {
+            child.env("HOOK_TOOL_OUTPUT", tool_output);
+        }
+
+        match child.output_with_stdin(request.payload.as_bytes()) {
+            Ok(output) => {
+                let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+                let message = (!stdout.is_empty()).then_some(stdout);
+                match output.status.code() {
+                    Some(0) => HookCommandOutcome::Allow { message },
+                    Some(2) => HookCommandOutcome::Deny { message },
+                    Some(code) => HookCommandOutcome::Warn {
+                        message: format_hook_warning(
+                            command,
+                            code,
+                            message.as_deref(),
+                            stderr.as_str(),
+                        ),
+                    },
+                    None => HookCommandOutcome::Warn {
+                        message: format!(
+                            "{} hook `{command}` terminated by signal while handling `{}`",
+                            request.event.as_str(),
+                            request.tool_name
+                        ),
+                    },
+                }
+            }
+            Err(error) => HookCommandOutcome::Warn {
