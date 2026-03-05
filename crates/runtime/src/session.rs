@@ -141,3 +141,74 @@ impl Session {
 
 impl Default for Session {
     fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ConversationMessage {
+    #[must_use]
+    pub fn user_text(text: impl Into<String>) -> Self {
+        Self {
+            role: MessageRole::User,
+            blocks: vec![ContentBlock::Text { text: text.into() }],
+            usage: None,
+        }
+    }
+
+    #[must_use]
+    pub fn assistant(blocks: Vec<ContentBlock>) -> Self {
+        Self {
+            role: MessageRole::Assistant,
+            blocks,
+            usage: None,
+        }
+    }
+
+    #[must_use]
+    pub fn assistant_with_usage(blocks: Vec<ContentBlock>, usage: Option<TokenUsage>) -> Self {
+        Self {
+            role: MessageRole::Assistant,
+            blocks,
+            usage,
+        }
+    }
+
+    #[must_use]
+    pub fn tool_result(
+        tool_use_id: impl Into<String>,
+        tool_name: impl Into<String>,
+        output: impl Into<String>,
+        is_error: bool,
+    ) -> Self {
+        Self {
+            role: MessageRole::Tool,
+            blocks: vec![ContentBlock::ToolResult {
+                tool_use_id: tool_use_id.into(),
+                tool_name: tool_name.into(),
+                output: output.into(),
+                is_error,
+            }],
+            usage: None,
+        }
+    }
+
+    #[must_use]
+    pub fn to_json(&self) -> JsonValue {
+        let mut object = BTreeMap::new();
+        object.insert(
+            "role".to_string(),
+            JsonValue::String(
+                match self.role {
+                    MessageRole::System => "system",
+                    MessageRole::User => "user",
+                    MessageRole::Assistant => "assistant",
+                    MessageRole::Tool => "tool",
+                }
+                .to_string(),
+            ),
+        );
+        object.insert(
+            "blocks".to_string(),
+            JsonValue::Array(self.blocks.iter().map(ContentBlock::to_json).collect()),
+        );
+        if let Some(usage) = self.usage {
