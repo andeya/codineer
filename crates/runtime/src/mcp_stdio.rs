@@ -258,3 +258,89 @@ impl std::fmt::Display for McpServerManagerError {
             } => write!(
                 f,
                 "MCP server `{server_name}` returned invalid response for {method}: {details}"
+            ),
+            Self::UnknownTool { qualified_name } => {
+                write!(f, "unknown MCP tool `{qualified_name}`")
+            }
+            Self::UnknownServer { server_name } => write!(f, "unknown MCP server `{server_name}`"),
+        }
+    }
+}
+
+impl std::error::Error for McpServerManagerError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Io(error) => Some(error),
+            Self::JsonRpc { .. }
+            | Self::InvalidResponse { .. }
+            | Self::UnknownTool { .. }
+            | Self::UnknownServer { .. } => None,
+        }
+    }
+}
+
+impl From<io::Error> for McpServerManagerError {
+    fn from(value: io::Error) -> Self {
+        Self::Io(value)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ToolRoute {
+    server_name: String,
+    raw_name: String,
+}
+
+#[derive(Debug)]
+struct ManagedMcpServer {
+    bootstrap: McpClientBootstrap,
+    process: Option<McpStdioProcess>,
+    initialized: bool,
+}
+
+impl ManagedMcpServer {
+    fn new(bootstrap: McpClientBootstrap) -> Self {
+        Self {
+            bootstrap,
+            process: None,
+            initialized: false,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct McpServerManager {
+    servers: BTreeMap<String, ManagedMcpServer>,
+    unsupported_servers: Vec<UnsupportedMcpServer>,
+    tool_index: BTreeMap<String, ToolRoute>,
+    next_request_id: u64,
+}
+
+impl McpServerManager {
+    #[must_use]
+    pub fn from_runtime_config(config: &RuntimeConfig) -> Self {
+        Self::from_servers(config.mcp().servers())
+    }
+
+    #[must_use]
+    pub fn from_servers(servers: &BTreeMap<String, ScopedMcpServerConfig>) -> Self {
+        let mut managed_servers = BTreeMap::new();
+        let mut unsupported_servers = Vec::new();
+
+        for (server_name, server_config) in servers {
+            if server_config.transport() == McpTransport::Stdio {
+                let bootstrap = McpClientBootstrap::from_scoped_config(server_name, server_config);
+                managed_servers.insert(server_name.clone(), ManagedMcpServer::new(bootstrap));
+            } else {
+                unsupported_servers.push(UnsupportedMcpServer {
+                    server_name: server_name.clone(),
+                    transport: server_config.transport(),
+                    reason: format!(
+                        "transport {:?} is not supported by McpServerManager",
+                        server_config.transport()
+                    ),
+                });
+            }
+        }
+
+        Self {
