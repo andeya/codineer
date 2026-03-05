@@ -145,3 +145,51 @@ fn render_oauth_signature(oauth: Option<&crate::config::McpOAuthConfig>) -> Stri
         )
     })
 }
+
+fn stable_hex_hash(value: &str) -> String {
+    let mut hash = 0xcbf2_9ce4_8422_2325_u64;
+    for byte in value.as_bytes() {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x0100_0000_01b3);
+    }
+    format!("{hash:016x}")
+}
+
+fn collapse_underscores(value: &str) -> String {
+    let mut collapsed = String::with_capacity(value.len());
+    let mut last_was_underscore = false;
+    for ch in value.chars() {
+        if ch == '_' {
+            if !last_was_underscore {
+                collapsed.push(ch);
+            }
+            last_was_underscore = true;
+        } else {
+            collapsed.push(ch);
+            last_was_underscore = false;
+        }
+    }
+    collapsed
+}
+
+fn percent_decode(value: &str) -> String {
+    let bytes = value.as_bytes();
+    let mut decoded = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        match bytes[index] {
+            b'%' if index + 2 < bytes.len() => {
+                let hex = &value[index + 1..index + 3];
+                if let Ok(byte) = u8::from_str_radix(hex, 16) {
+                    decoded.push(byte);
+                    index += 3;
+                    continue;
+                }
+                decoded.push(bytes[index]);
+                index += 1;
+            }
+            b'+' => {
+                decoded.push(b' ');
+                index += 1;
+            }
+            byte => {
