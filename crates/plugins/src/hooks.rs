@@ -48,3 +48,52 @@ impl HookRunResult {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct HookRunner {
+    hooks: PluginHooks,
+}
+
+impl HookRunner {
+    #[must_use]
+    pub fn new(hooks: PluginHooks) -> Self {
+        Self { hooks }
+    }
+
+    pub fn from_registry(plugin_registry: &PluginRegistry) -> Result<Self, PluginError> {
+        Ok(Self::new(plugin_registry.aggregated_hooks()?))
+    }
+
+    #[must_use]
+    pub fn run_pre_tool_use(&self, tool_name: &str, tool_input: &str) -> HookRunResult {
+        run_hook_commands(
+            HookEvent::PreToolUse,
+            &self.hooks.pre_tool_use,
+            tool_name,
+            tool_input,
+            None,
+            false,
+        )
+    }
+
+    #[must_use]
+    pub fn run_post_tool_use(
+        &self,
+        tool_name: &str,
+        tool_input: &str,
+        tool_output: &str,
+        is_error: bool,
+    ) -> HookRunResult {
+        run_hook_commands(
+            HookEvent::PostToolUse,
+            &self.hooks.post_tool_use,
+            tool_name,
+            tool_input,
+            Some(tool_output),
+            is_error,
+        )
+    }
+}
+
+fn run_hook_commands(
+    event: HookEvent,
+    commands: &[String],
+    tool_name: &str,
