@@ -193,3 +193,52 @@ fn percent_decode(value: &str) -> String {
                 index += 1;
             }
             byte => {
+                decoded.push(byte);
+                index += 1;
+            }
+        }
+    }
+    String::from_utf8_lossy(&decoded).into_owned()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use crate::config::{
+        ConfigSource, McpRemoteServerConfig, McpServerConfig, McpStdioServerConfig,
+        McpWebSocketServerConfig, ScopedMcpServerConfig,
+    };
+
+    use super::{
+        mcp_server_signature, mcp_tool_name, normalize_name_for_mcp, scoped_mcp_config_hash,
+        unwrap_ccr_proxy_url,
+    };
+
+    #[test]
+    fn normalizes_server_names_for_mcp_tooling() {
+        assert_eq!(normalize_name_for_mcp("github.com"), "github_com");
+        assert_eq!(normalize_name_for_mcp("tool name!"), "tool_name_");
+        assert_eq!(
+            normalize_name_for_mcp("claude.ai Example   Server!!"),
+            "claude_ai_Example_Server"
+        );
+        assert_eq!(
+            mcp_tool_name("claude.ai Example Server", "weather tool"),
+            "mcp__claude_ai_Example_Server__weather_tool"
+        );
+    }
+
+    #[test]
+    fn unwraps_ccr_proxy_urls_for_signature_matching() {
+        let wrapped = "https://api.anthropic.com/v2/session_ingress/shttp/mcp/123?mcp_url=https%3A%2F%2Fvendor.example%2Fmcp&other=1";
+        assert_eq!(unwrap_ccr_proxy_url(wrapped), "https://vendor.example/mcp");
+        assert_eq!(
+            unwrap_ccr_proxy_url("https://vendor.example/mcp"),
+            "https://vendor.example/mcp"
+        );
+    }
+
+    #[test]
+    fn computes_signatures_for_stdio_and_remote_servers() {
+        let stdio = McpServerConfig::Stdio(McpStdioServerConfig {
