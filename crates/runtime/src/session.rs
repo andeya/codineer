@@ -283,3 +283,74 @@ impl ContentBlock {
                 object.insert(
                     "tool_use_id".to_string(),
                     JsonValue::String(tool_use_id.clone()),
+                );
+                object.insert(
+                    "tool_name".to_string(),
+                    JsonValue::String(tool_name.clone()),
+                );
+                object.insert("output".to_string(), JsonValue::String(output.clone()));
+                object.insert("is_error".to_string(), JsonValue::Bool(*is_error));
+            }
+        }
+        JsonValue::Object(object)
+    }
+
+    fn from_json(value: &JsonValue) -> Result<Self, SessionError> {
+        let object = value
+            .as_object()
+            .ok_or_else(|| SessionError::Format("block must be an object".to_string()))?;
+        match object
+            .get("type")
+            .and_then(JsonValue::as_str)
+            .ok_or_else(|| SessionError::Format("missing block type".to_string()))?
+        {
+            "text" => Ok(Self::Text {
+                text: required_string(object, "text")?,
+            }),
+            "tool_use" => Ok(Self::ToolUse {
+                id: required_string(object, "id")?,
+                name: required_string(object, "name")?,
+                input: required_string(object, "input")?,
+            }),
+            "tool_result" => Ok(Self::ToolResult {
+                tool_use_id: required_string(object, "tool_use_id")?,
+                tool_name: required_string(object, "tool_name")?,
+                output: required_string(object, "output")?,
+                is_error: object
+                    .get("is_error")
+                    .and_then(JsonValue::as_bool)
+                    .ok_or_else(|| SessionError::Format("missing is_error".to_string()))?,
+            }),
+            other => Err(SessionError::Format(format!(
+                "unsupported block type: {other}"
+            ))),
+        }
+    }
+}
+
+fn usage_to_json(usage: TokenUsage) -> JsonValue {
+    let mut object = BTreeMap::new();
+    object.insert(
+        "input_tokens".to_string(),
+        JsonValue::Number(i64::from(usage.input_tokens)),
+    );
+    object.insert(
+        "output_tokens".to_string(),
+        JsonValue::Number(i64::from(usage.output_tokens)),
+    );
+    object.insert(
+        "cache_creation_input_tokens".to_string(),
+        JsonValue::Number(i64::from(usage.cache_creation_input_tokens)),
+    );
+    object.insert(
+        "cache_read_input_tokens".to_string(),
+        JsonValue::Number(i64::from(usage.cache_read_input_tokens)),
+    );
+    JsonValue::Object(object)
+}
+
+fn usage_from_json(value: &JsonValue) -> Result<TokenUsage, SessionError> {
+    let object = value
+        .as_object()
+        .ok_or_else(|| SessionError::Format("usage must be an object".to_string()))?;
+    Ok(TokenUsage {
