@@ -289,3 +289,51 @@ async fn surfaces_retry_exhaustion_for_persistent_retryable_errors() {
 async fn live_stream_smoke_test() {
     let client = ApiClient::from_env().expect("ANTHROPIC_API_KEY must be set");
     let mut stream = client
+        .stream_message(&MessageRequest {
+            model: std::env::var("CODINEER_MODEL")
+                .unwrap_or_else(|_| "claude-sonnet-4-6".to_string()),
+            max_tokens: 32,
+            messages: vec![InputMessage::user_text(
+                "Reply with exactly: hello from rust",
+            )],
+            system: None,
+            tools: None,
+            tool_choice: None,
+            stream: false,
+        })
+        .await
+        .expect("live stream should start");
+
+    while let Some(_event) = stream
+        .next_event()
+        .await
+        .expect("live stream should yield events")
+    {}
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct CapturedRequest {
+    method: String,
+    path: String,
+    headers: HashMap<String, String>,
+    body: String,
+}
+
+struct TestServer {
+    base_url: String,
+    join_handle: tokio::task::JoinHandle<()>,
+}
+
+impl TestServer {
+    fn base_url(&self) -> String {
+        self.base_url.clone()
+    }
+}
+
+impl Drop for TestServer {
+    fn drop(&mut self) {
+        self.join_handle.abort();
+    }
+}
+
+async fn spawn_server(
