@@ -361,3 +361,147 @@ mod tests {
         assert_eq!(render_string("\r"), "\"\\r\"");
         assert_eq!(render_string("\u{08}"), "\"\\b\"");
         assert_eq!(render_string("\u{0C}"), "\"\\f\"");
+        assert_eq!(render_string("\\"), "\"\\\\\"");
+        assert!(render_string("\u{01}").contains("\\u0001"));
+    }
+
+    #[test]
+    fn renders_primitive_types() {
+        assert_eq!(JsonValue::Null.render(), "null");
+        assert_eq!(JsonValue::Bool(true).render(), "true");
+        assert_eq!(JsonValue::Bool(false).render(), "false");
+        assert_eq!(JsonValue::Number(42).render(), "42");
+        assert_eq!(JsonValue::Number(-7).render(), "-7");
+        assert_eq!(JsonValue::String("hi".into()).render(), "\"hi\"");
+        assert_eq!(JsonValue::Array(vec![]).render(), "[]");
+    }
+
+    #[test]
+    fn as_accessors_return_none_for_wrong_types() {
+        let null = JsonValue::Null;
+        assert!(null.as_object().is_none());
+        assert!(null.as_array().is_none());
+        assert!(null.as_str().is_none());
+        assert!(null.as_bool().is_none());
+        assert!(null.as_i64().is_none());
+
+        let num = JsonValue::Number(5);
+        assert!(num.as_str().is_none());
+        assert!(num.as_bool().is_none());
+        assert!(num.as_object().is_none());
+        assert!(num.as_array().is_none());
+        assert_eq!(num.as_i64(), Some(5));
+
+        let b = JsonValue::Bool(true);
+        assert_eq!(b.as_bool(), Some(true));
+        assert!(b.as_i64().is_none());
+    }
+
+    #[test]
+    fn parses_null_true_false_literals() {
+        assert_eq!(JsonValue::parse("null").unwrap(), JsonValue::Null);
+        assert_eq!(JsonValue::parse("true").unwrap(), JsonValue::Bool(true));
+        assert_eq!(JsonValue::parse("false").unwrap(), JsonValue::Bool(false));
+    }
+
+    #[test]
+    fn parses_numbers_including_negative() {
+        assert_eq!(JsonValue::parse("0").unwrap(), JsonValue::Number(0));
+        assert_eq!(JsonValue::parse("-42").unwrap(), JsonValue::Number(-42));
+        assert_eq!(JsonValue::parse("12345").unwrap(), JsonValue::Number(12345));
+    }
+
+    #[test]
+    fn parses_string_escapes() {
+        let parsed = JsonValue::parse(r#""a\nb\t\\\/\"\u0041""#).unwrap();
+        assert_eq!(parsed.as_str().unwrap(), "a\nb\t\\/\"A");
+    }
+
+    #[test]
+    fn parses_arrays_and_nested_objects() {
+        let parsed = JsonValue::parse(r#"[1, "two", [3], {"k": null}]"#).unwrap();
+        let arr = parsed.as_array().unwrap();
+        assert_eq!(arr.len(), 4);
+        assert_eq!(arr[0].as_i64(), Some(1));
+        assert_eq!(arr[2].as_array().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn rejects_trailing_content() {
+        let err = JsonValue::parse("null extra").unwrap_err();
+        assert!(err.to_string().contains("trailing"));
+    }
+
+    #[test]
+    fn rejects_invalid_literal() {
+        assert!(JsonValue::parse("nul").is_err());
+        assert!(JsonValue::parse("tru").is_err());
+        assert!(JsonValue::parse("fals").is_err());
+    }
+
+    #[test]
+    fn rejects_unexpected_character() {
+        let err = JsonValue::parse("@").unwrap_err();
+        assert!(err.to_string().contains("unexpected character"));
+    }
+
+    #[test]
+    fn rejects_empty_input() {
+        let err = JsonValue::parse("").unwrap_err();
+        assert!(err.to_string().contains("end of input"));
+    }
+
+    #[test]
+    fn rejects_unterminated_string() {
+        let err = JsonValue::parse(r#""no end"#).unwrap_err();
+        assert!(err.to_string().contains("unterminated"));
+    }
+
+    #[test]
+    fn rejects_invalid_escape() {
+        let err = JsonValue::parse(r#""\x""#).unwrap_err();
+        assert!(err.to_string().contains("invalid escape"));
+    }
+
+    #[test]
+    fn rejects_truncated_unicode_escape() {
+        let err = JsonValue::parse(r#""\u00""#).unwrap_err();
+        assert!(err.to_string().contains("unicode escape"));
+    }
+
+    #[test]
+    fn rejects_bad_unicode_hex() {
+        let err = JsonValue::parse(r#""\u00GG""#).unwrap_err();
+        assert!(err.to_string().contains("unicode"));
+    }
+
+    #[test]
+    fn rejects_bare_minus() {
+        let err = JsonValue::parse("-").unwrap_err();
+        assert!(err.to_string().contains("invalid number"));
+    }
+
+    #[test]
+    fn rejects_number_overflow() {
+        let err = JsonValue::parse("99999999999999999999").unwrap_err();
+        assert!(err.to_string().contains("out of range"));
+    }
+
+    #[test]
+    fn rejects_bad_array_separator() {
+        let err = JsonValue::parse("[1 2]").unwrap_err();
+        assert!(err.to_string().contains("expected"));
+    }
+
+    #[test]
+    fn rejects_bad_object_separator() {
+        let err = JsonValue::parse(r#"{"a":1 "b":2}"#).unwrap_err();
+        assert!(err.to_string().contains("expected"));
+    }
+
+    #[test]
+    fn json_error_display() {
+        let err = super::JsonError::new("test error");
+        assert_eq!(err.to_string(), "test error");
+    }
+}
