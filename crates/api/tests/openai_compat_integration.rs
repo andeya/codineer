@@ -229,3 +229,95 @@ async fn provider_client_dispatches_xai_requests_from_env() {
     assert_eq!(
         request.headers.get("authorization").map(String::as_str),
         Some("Bearer xai-test-key")
+    );
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct CapturedRequest {
+    path: String,
+    headers: HashMap<String, String>,
+    body: String,
+}
+
+struct TestServer {
+    base_url: String,
+    join_handle: tokio::task::JoinHandle<()>,
+}
+
+impl TestServer {
+    fn base_url(&self) -> String {
+        self.base_url.clone()
+    }
+}
+
+impl Drop for TestServer {
+    fn drop(&mut self) {
+        self.join_handle.abort();
+    }
+}
+
+async fn spawn_server(
+    state: Arc<Mutex<Vec<CapturedRequest>>>,
+    responses: Vec<String>,
+) -> TestServer {
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("listener should bind");
+    let address = listener.local_addr().expect("listener addr");
+    let join_handle = tokio::spawn(async move {
+        for response in responses {
+            let (mut socket, _) = listener.accept().await.expect("accept");
+            let mut buffer = Vec::new();
+            let mut header_end = None;
+            loop {
+                let mut chunk = [0_u8; 1024];
+                let read = socket.read(&mut chunk).await.expect("read request");
+                if read == 0 {
+                    break;
+                }
+                buffer.extend_from_slice(&chunk[..read]);
+                if let Some(position) = find_header_end(&buffer) {
+                    header_end = Some(position);
+                    break;
+                }
+            }
+
+            let header_end = header_end.expect("headers should exist");
+            let (header_bytes, remaining) = buffer.split_at(header_end);
+            let header_text = String::from_utf8(header_bytes.to_vec()).expect("utf8 headers");
+            let mut lines = header_text.split("\r\n");
+            let request_line = lines.next().expect("request line");
+            let path = request_line
+                .split_whitespace()
+                .nth(1)
+                .expect("path")
+                .to_string();
+            let mut headers = HashMap::new();
+            let mut content_length = 0_usize;
+            for line in lines {
+                if line.is_empty() {
+                    continue;
+                }
+                let (name, value) = line.split_once(':').expect("header");
+                let value = value.trim().to_string();
+                if name.eq_ignore_ascii_case("content-length") {
+                    content_length = value.parse().expect("content length");
+                }
+                headers.insert(name.to_ascii_lowercase(), value);
+            }
+
+            let mut body = remaining[4..].to_vec();
+            while body.len() < content_length {
+                let mut chunk = vec![0_u8; content_length - body.len()];
+                let read = socket.read(&mut chunk).await.expect("read body");
+                if read == 0 {
+                    break;
+                }
+                body.extend_from_slice(&chunk[..read]);
+            }
+
+            state.lock().await.push(CapturedRequest {
+                path,
+                headers,
+                body: String::from_utf8(body).expect("utf8 body"),
+            });
