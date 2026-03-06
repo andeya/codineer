@@ -564,3 +564,117 @@ impl Plugin for PluginDefinition {
     fn validate(&self) -> Result<(), PluginError> {
         match self {
             Self::Builtin(plugin) => plugin.validate(),
+            Self::Bundled(plugin) => plugin.validate(),
+            Self::External(plugin) => plugin.validate(),
+        }
+    }
+
+    fn initialize(&self) -> Result<(), PluginError> {
+        match self {
+            Self::Builtin(plugin) => plugin.initialize(),
+            Self::Bundled(plugin) => plugin.initialize(),
+            Self::External(plugin) => plugin.initialize(),
+        }
+    }
+
+    fn shutdown(&self) -> Result<(), PluginError> {
+        match self {
+            Self::Builtin(plugin) => plugin.shutdown(),
+            Self::Bundled(plugin) => plugin.shutdown(),
+            Self::External(plugin) => plugin.shutdown(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct RegisteredPlugin {
+    definition: PluginDefinition,
+    enabled: bool,
+}
+
+impl RegisteredPlugin {
+    #[must_use]
+    pub fn new(definition: PluginDefinition, enabled: bool) -> Self {
+        Self {
+            definition,
+            enabled,
+        }
+    }
+
+    #[must_use]
+    pub fn metadata(&self) -> &PluginMetadata {
+        self.definition.metadata()
+    }
+
+    #[must_use]
+    pub fn hooks(&self) -> &PluginHooks {
+        self.definition.hooks()
+    }
+
+    #[must_use]
+    pub fn tools(&self) -> &[PluginTool] {
+        self.definition.tools()
+    }
+
+    #[must_use]
+    pub fn is_enabled(&self) -> bool {
+        self.enabled
+    }
+
+    pub fn validate(&self) -> Result<(), PluginError> {
+        self.definition.validate()
+    }
+
+    pub fn initialize(&self) -> Result<(), PluginError> {
+        self.definition.initialize()
+    }
+
+    pub fn shutdown(&self) -> Result<(), PluginError> {
+        self.definition.shutdown()
+    }
+
+    #[must_use]
+    pub fn summary(&self) -> PluginSummary {
+        PluginSummary {
+            metadata: self.metadata().clone(),
+            enabled: self.enabled,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PluginSummary {
+    pub metadata: PluginMetadata,
+    pub enabled: bool,
+}
+
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct PluginRegistry {
+    plugins: Vec<RegisteredPlugin>,
+}
+
+impl PluginRegistry {
+    #[must_use]
+    pub fn new(mut plugins: Vec<RegisteredPlugin>) -> Self {
+        plugins.sort_by(|left, right| left.metadata().id.cmp(&right.metadata().id));
+        Self { plugins }
+    }
+
+    #[must_use]
+    pub fn plugins(&self) -> &[RegisteredPlugin] {
+        &self.plugins
+    }
+
+    #[must_use]
+    pub fn get(&self, plugin_id: &str) -> Option<&RegisteredPlugin> {
+        self.plugins
+            .iter()
+            .find(|plugin| plugin.metadata().id == plugin_id)
+    }
+
+    #[must_use]
+    pub fn contains(&self, plugin_id: &str) -> bool {
+        self.get(plugin_id).is_some()
+    }
+
+    #[must_use]
