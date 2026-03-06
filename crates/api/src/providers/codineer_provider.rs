@@ -933,3 +933,119 @@ mod tests {
         let token_url = spawn_token_server(
             "{\"access_token\":\"refreshed-token\",\"expires_at\":9999999999,\"scopes\":[\"scope:a\"]}",
         );
+        let resolved = resolve_saved_oauth_token(&sample_oauth_config(token_url))
+            .expect("resolve refreshed token")
+            .expect("token set present");
+        assert_eq!(resolved.access_token, "refreshed-token");
+        assert_eq!(resolved.refresh_token.as_deref(), Some("refresh-token"));
+        let stored = runtime::load_oauth_credentials()
+            .expect("load stored credentials")
+            .expect("stored token set");
+        assert_eq!(stored.refresh_token.as_deref(), Some("refresh-token"));
+
+        clear_oauth_credentials().expect("clear credentials");
+        std::env::remove_var("CODINEER_CONFIG_HOME");
+        cleanup_temp_config_home(&config_home);
+    }
+
+    #[test]
+    fn message_request_stream_helper_sets_stream_true() {
+        let request = MessageRequest {
+            model: "claude-opus-4-6".to_string(),
+            max_tokens: 64,
+            messages: vec![],
+            system: None,
+            tools: None,
+            tool_choice: None,
+            stream: false,
+        };
+
+        assert!(request.with_streaming().stream);
+    }
+
+    #[test]
+    fn backoff_doubles_until_maximum() {
+        let client = CodineerApiClient::new("test-key").with_retry_policy(
+            3,
+            Duration::from_millis(10),
+            Duration::from_millis(25),
+        );
+        assert_eq!(
+            client.backoff_for_attempt(1).expect("attempt 1"),
+            Duration::from_millis(10)
+        );
+        assert_eq!(
+            client.backoff_for_attempt(2).expect("attempt 2"),
+            Duration::from_millis(20)
+        );
+        assert_eq!(
+            client.backoff_for_attempt(3).expect("attempt 3"),
+            Duration::from_millis(25)
+        );
+    }
+
+    #[test]
+    fn retryable_statuses_are_detected() {
+        assert!(super::is_retryable_status(
+            reqwest::StatusCode::TOO_MANY_REQUESTS
+        ));
+        assert!(super::is_retryable_status(
+            reqwest::StatusCode::INTERNAL_SERVER_ERROR
+        ));
+        assert!(!super::is_retryable_status(
+            reqwest::StatusCode::UNAUTHORIZED
+        ));
+    }
+
+    #[test]
+    fn tool_delta_variant_round_trips() {
+        let delta = ContentBlockDelta::InputJsonDelta {
+            partial_json: "{\"city\":\"Paris\"}".to_string(),
+        };
+        let encoded = serde_json::to_string(&delta).expect("delta should serialize");
+        let decoded: ContentBlockDelta =
+            serde_json::from_str(&encoded).expect("delta should deserialize");
+        assert_eq!(decoded, delta);
+    }
+
+    #[test]
+    fn request_id_uses_primary_or_fallback_header() {
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert(REQUEST_ID_HEADER, "req_primary".parse().expect("header"));
+        assert_eq!(
+            super::request_id_from_headers(&headers).as_deref(),
+            Some("req_primary")
+        );
+
+        headers.clear();
+        headers.insert(
+            ALT_REQUEST_ID_HEADER,
+            "req_fallback".parse().expect("header"),
+        );
+        assert_eq!(
+            super::request_id_from_headers(&headers).as_deref(),
+            Some("req_fallback")
+        );
+    }
+
+    #[test]
+    fn auth_source_applies_headers() {
+        let auth = AuthSource::ApiKeyAndBearer {
+            api_key: "test-key".to_string(),
+            bearer_token: "proxy-token".to_string(),
+        };
+        let request = auth
+            .apply(reqwest::Client::new().post("https://example.test"))
+            .build()
+            .expect("request build");
+        let headers = request.headers();
+        assert_eq!(
+            headers.get("x-api-key").and_then(|v| v.to_str().ok()),
+            Some("test-key")
+        );
+        assert_eq!(
+            headers.get("authorization").and_then(|v| v.to_str().ok()),
+            Some("Bearer proxy-token")
+        );
+    }
+}
