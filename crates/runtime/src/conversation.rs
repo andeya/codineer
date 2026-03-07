@@ -178,3 +178,92 @@ where
             let request = ApiRequest {
                 system_prompt: self.system_prompt.clone(),
                 messages: self.session.messages.clone(),
+            };
+            let events = self.api_client.stream(request)?;
+            let (assistant_message, usage) = build_assistant_message(events)?;
+            if let Some(usage) = usage {
+                self.usage_tracker.record(usage);
+            }
+            let pending_tool_uses = assistant_message
+                .blocks
+                .iter()
+                .filter_map(|block| match block {
+                    ContentBlock::ToolUse { id, name, input } => {
+                        Some((id.clone(), name.clone(), input.clone()))
+                    }
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+
+            self.session.messages.push(assistant_message.clone());
+            assistant_messages.push(assistant_message);
+
+            if pending_tool_uses.is_empty() {
+                break;
+            }
+
+            for (tool_use_id, tool_name, input) in pending_tool_uses {
+                let permission_outcome = if let Some(prompt) = prompter.as_mut() {
+                    self.permission_policy
+                        .authorize(&tool_name, &input, Some(*prompt))
+                } else {
+                    self.permission_policy.authorize(&tool_name, &input, None)
+                };
+
+                let result_message = match permission_outcome {
+                    PermissionOutcome::Allow => {
+                        let pre_hook_result = self.hook_runner.run_pre_tool_use(&tool_name, &input);
+                        if pre_hook_result.is_denied() {
+                            let deny_message = format!("PreToolUse hook denied tool `{tool_name}`");
+                            ConversationMessage::tool_result(
+                                tool_use_id,
+                                tool_name,
+                                format_hook_message(&pre_hook_result, &deny_message),
+                                true,
+                            )
+                        } else {
+                            let (mut output, mut is_error) =
+                                match self.tool_executor.execute(&tool_name, &input) {
+                                    Ok(output) => (output, false),
+                                    Err(error) => (error.to_string(), true),
+                                };
+                            output = merge_hook_feedback(pre_hook_result.messages(), output, false);
+
+                            let post_hook_result = self
+                                .hook_runner
+                                .run_post_tool_use(&tool_name, &input, &output, is_error);
+                            if post_hook_result.is_denied() {
+                                is_error = true;
+                            }
+                            output = merge_hook_feedback(
+                                post_hook_result.messages(),
+                                output,
+                                post_hook_result.is_denied(),
+                            );
+
+                            ConversationMessage::tool_result(
+                                tool_use_id,
+                                tool_name,
+                                output,
+                                is_error,
+                            )
+                        }
+                    }
+                    PermissionOutcome::Deny { reason } => {
+                        ConversationMessage::tool_result(tool_use_id, tool_name, reason, true)
+                    }
+                };
+                self.session.messages.push(result_message.clone());
+                tool_results.push(result_message);
+            }
+        }
+
+        Ok(TurnSummary {
+            assistant_messages,
+            tool_results,
+            iterations,
+            usage: self.usage_tracker.cumulative_usage(),
+        })
+    }
+
+    #[must_use]
