@@ -700,3 +700,62 @@ fn translate_message(message: &InputMessage) -> Vec<Value> {
                 InputContentBlock::Text { text } => Some(json!({
                     "role": "user",
                     "content": text,
+                })),
+                InputContentBlock::ToolResult {
+                    tool_use_id,
+                    content,
+                    is_error,
+                } => Some(json!({
+                    "role": "tool",
+                    "tool_call_id": tool_use_id,
+                    "content": flatten_tool_result_content(content),
+                    "is_error": is_error,
+                })),
+                InputContentBlock::ToolUse { .. } => None,
+            })
+            .collect(),
+    }
+}
+
+fn flatten_tool_result_content(content: &[ToolResultContentBlock]) -> String {
+    content
+        .iter()
+        .map(|block| match block {
+            ToolResultContentBlock::Text { text } => text.clone(),
+            ToolResultContentBlock::Json { value } => value.to_string(),
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn openai_tool_definition(tool: &ToolDefinition) -> Value {
+    json!({
+        "type": "function",
+        "function": {
+            "name": tool.name,
+            "description": tool.description,
+            "parameters": tool.input_schema,
+        }
+    })
+}
+
+fn openai_tool_choice(tool_choice: &ToolChoice) -> Value {
+    match tool_choice {
+        ToolChoice::Auto => Value::String("auto".to_string()),
+        ToolChoice::Any => Value::String("required".to_string()),
+        ToolChoice::Tool { name } => json!({
+            "type": "function",
+            "function": { "name": name },
+        }),
+    }
+}
+
+fn normalize_response(
+    model: &str,
+    response: ChatCompletionResponse,
+) -> Result<MessageResponse, ApiError> {
+    let choice = response
+        .choices
+        .into_iter()
+        .next()
+        .ok_or(ApiError::InvalidSseFrame(
