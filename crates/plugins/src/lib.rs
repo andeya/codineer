@@ -678,3 +678,116 @@ impl PluginRegistry {
     }
 
     #[must_use]
+    pub fn summaries(&self) -> Vec<PluginSummary> {
+        self.plugins.iter().map(RegisteredPlugin::summary).collect()
+    }
+
+    pub fn aggregated_hooks(&self) -> Result<PluginHooks, PluginError> {
+        self.plugins
+            .iter()
+            .filter(|plugin| plugin.is_enabled())
+            .try_fold(PluginHooks::default(), |acc, plugin| {
+                plugin.validate()?;
+                Ok(acc.merged_with(plugin.hooks()))
+            })
+    }
+
+    pub fn aggregated_tools(&self) -> Result<Vec<PluginTool>, PluginError> {
+        let mut tools = Vec::new();
+        let mut seen_names = BTreeMap::new();
+        for plugin in self.plugins.iter().filter(|plugin| plugin.is_enabled()) {
+            plugin.validate()?;
+            for tool in plugin.tools() {
+                if let Some(existing_plugin) =
+                    seen_names.insert(tool.definition().name.clone(), tool.plugin_id().to_string())
+                {
+                    return Err(PluginError::InvalidManifest(format!(
+                        "plugin tool `{}` is defined by both `{existing_plugin}` and `{}`",
+                        tool.definition().name,
+                        tool.plugin_id()
+                    )));
+                }
+                tools.push(tool.clone());
+            }
+        }
+        Ok(tools)
+    }
+
+    pub fn initialize(&self) -> Result<(), PluginError> {
+        for plugin in self.plugins.iter().filter(|plugin| plugin.is_enabled()) {
+            plugin.validate()?;
+            plugin.initialize()?;
+        }
+        Ok(())
+    }
+
+    pub fn shutdown(&self) -> Result<(), PluginError> {
+        for plugin in self
+            .plugins
+            .iter()
+            .rev()
+            .filter(|plugin| plugin.is_enabled())
+        {
+            plugin.shutdown()?;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PluginManagerConfig {
+    pub config_home: PathBuf,
+    pub enabled_plugins: BTreeMap<String, bool>,
+    pub external_dirs: Vec<PathBuf>,
+    pub install_root: Option<PathBuf>,
+    pub registry_path: Option<PathBuf>,
+    pub bundled_root: Option<PathBuf>,
+}
+
+impl PluginManagerConfig {
+    #[must_use]
+    pub fn new(config_home: impl Into<PathBuf>) -> Self {
+        Self {
+            config_home: config_home.into(),
+            enabled_plugins: BTreeMap::new(),
+            external_dirs: Vec::new(),
+            install_root: None,
+            registry_path: None,
+            bundled_root: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PluginManager {
+    config: PluginManagerConfig,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InstallOutcome {
+    pub plugin_id: String,
+    pub version: String,
+    pub install_path: PathBuf,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UpdateOutcome {
+    pub plugin_id: String,
+    pub old_version: String,
+    pub new_version: String,
+    pub install_path: PathBuf,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PluginManifestValidationError {
+    EmptyField {
+        field: &'static str,
+    },
+    EmptyEntryField {
+        kind: &'static str,
+        field: &'static str,
+        name: Option<String>,
+    },
+    InvalidPermission {
+        permission: String,
+    },
