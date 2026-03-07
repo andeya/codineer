@@ -354,3 +354,145 @@ fn usage_from_json(value: &JsonValue) -> Result<TokenUsage, SessionError> {
         .as_object()
         .ok_or_else(|| SessionError::Format("usage must be an object".to_string()))?;
     Ok(TokenUsage {
+        input_tokens: required_u32(object, "input_tokens")?,
+        output_tokens: required_u32(object, "output_tokens")?,
+        cache_creation_input_tokens: required_u32(object, "cache_creation_input_tokens")?,
+        cache_read_input_tokens: required_u32(object, "cache_read_input_tokens")?,
+    })
+}
+
+fn required_string(
+    object: &BTreeMap<String, JsonValue>,
+    key: &str,
+) -> Result<String, SessionError> {
+    object
+        .get(key)
+        .and_then(JsonValue::as_str)
+        .map(ToOwned::to_owned)
+        .ok_or_else(|| SessionError::Format(format!("missing {key}")))
+}
+
+fn required_u32(object: &BTreeMap<String, JsonValue>, key: &str) -> Result<u32, SessionError> {
+    let value = object
+        .get(key)
+        .and_then(JsonValue::as_i64)
+        .ok_or_else(|| SessionError::Format(format!("missing {key}")))?;
+    u32::try_from(value).map_err(|_| SessionError::Format(format!("{key} out of range")))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ContentBlock, ConversationMessage, MessageRole, Session};
+    use crate::usage::TokenUsage;
+    use std::fs;
+    use std::path::Path;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn persists_and_restores_session_json() {
+        let mut session = Session::new();
+        session
+            .messages
+            .push(ConversationMessage::user_text("hello"));
+        session
+            .messages
+            .push(ConversationMessage::assistant_with_usage(
+                vec![
+                    ContentBlock::Text {
+                        text: "thinking".to_string(),
+                    },
+                    ContentBlock::ToolUse {
+                        id: "tool-1".to_string(),
+                        name: "bash".to_string(),
+                        input: "echo hi".to_string(),
+                    },
+                ],
+                Some(TokenUsage {
+                    input_tokens: 10,
+                    output_tokens: 4,
+                    cache_creation_input_tokens: 1,
+                    cache_read_input_tokens: 2,
+                }),
+            ));
+        session.messages.push(ConversationMessage::tool_result(
+            "tool-1", "bash", "hi", false,
+        ));
+
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time should be after epoch")
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!("runtime-session-{nanos}.json"));
+        session.save_to_path(&path).expect("session should save");
+        let restored = Session::load_from_path(&path).expect("session should load");
+        fs::remove_file(&path).expect("temp file should be removable");
+
+        assert_eq!(restored, session);
+        assert_eq!(restored.messages[2].role, MessageRole::Tool);
+        assert_eq!(
+            restored.messages[1].usage.expect("usage").total_tokens(),
+            17
+        );
+    }
+
+    #[test]
+    fn round_trips_system_role_message() {
+        let json_str = r#"{"version":1,"messages":[{"role":"system","blocks":[{"type":"text","text":"sys prompt"}]}]}"#;
+        let parsed = crate::json::JsonValue::parse(json_str).unwrap();
+        let session = Session::from_json(&parsed).unwrap();
+        assert_eq!(session.messages[0].role, MessageRole::System);
+
+        let rendered = session.to_json();
+        let restored = Session::from_json(&rendered).unwrap();
+        assert_eq!(restored, session);
+    }
+
+    #[test]
+    fn rejects_unsupported_message_role() {
+        let json_str = r#"{"version":1,"messages":[{"role":"admin","blocks":[]}]}"#;
+        let parsed = crate::json::JsonValue::parse(json_str).unwrap();
+        let err = Session::from_json(&parsed).unwrap_err();
+        assert!(err.to_string().contains("unsupported message role"));
+    }
+
+    #[test]
+    fn rejects_unsupported_block_type() {
+        let json_str = r#"{"version":1,"messages":[{"role":"user","blocks":[{"type":"video","url":"x"}]}]}"#;
+        let parsed = crate::json::JsonValue::parse(json_str).unwrap();
+        let err = Session::from_json(&parsed).unwrap_err();
+        assert!(err.to_string().contains("unsupported block type"));
+    }
+
+    #[test]
+    fn rejects_missing_version() {
+        let json_str = r#"{"messages":[]}"#;
+        let parsed = crate::json::JsonValue::parse(json_str).unwrap();
+        let err = Session::from_json(&parsed).unwrap_err();
+        assert!(err.to_string().contains("version"));
+    }
+
+    #[test]
+    fn rejects_non_object_root() {
+        let parsed = crate::json::JsonValue::parse("[1,2]").unwrap();
+        let err = Session::from_json(&parsed).unwrap_err();
+        assert!(err.to_string().contains("object"));
+    }
+
+    #[test]
+    fn load_from_nonexistent_path_returns_io_error() {
+        let err = Session::load_from_path(Path::new("/nonexistent/path/session.json")).unwrap_err();
+        assert!(matches!(err, super::SessionError::Io(_)));
+    }
+
+    #[test]
+    fn session_error_display_covers_all_variants() {
+        let io_err = super::SessionError::Io(std::io::Error::new(std::io::ErrorKind::NotFound, "not found"));
+        assert!(io_err.to_string().contains("not found"));
+
+        let json_err = super::SessionError::Json(crate::json::JsonError::new("bad"));
+        assert!(json_err.to_string().contains("bad"));
+
+        let fmt_err = super::SessionError::Format("bad format".into());
+        assert!(fmt_err.to_string().contains("bad format"));
+    }
+}
