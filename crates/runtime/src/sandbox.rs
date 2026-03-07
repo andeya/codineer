@@ -162,3 +162,85 @@ pub fn resolve_sandbox_status(config: &SandboxConfig, cwd: &Path) -> SandboxStat
 
 #[must_use]
 pub fn resolve_sandbox_status_for_request(request: &SandboxRequest, cwd: &Path) -> SandboxStatus {
+    let container = detect_container_environment();
+    let linux_supported = cfg!(target_os = "linux") && command_exists("unshare");
+    let macos_supported = cfg!(target_os = "macos") && command_exists("sandbox-exec");
+    let namespace_supported = linux_supported || macos_supported;
+    let network_supported = namespace_supported;
+    let filesystem_active =
+        request.enabled && request.filesystem_mode != FilesystemIsolationMode::Off;
+    let mut fallback_reasons = Vec::new();
+
+    if request.enabled && request.namespace_restrictions && !namespace_supported {
+        fallback_reasons.push(
+            "process isolation unavailable (requires Linux `unshare` or macOS `sandbox-exec`)"
+                .to_string(),
+        );
+    }
+    if request.enabled && request.network_isolation && !network_supported {
+        fallback_reasons.push(
+            "network isolation unavailable (requires Linux `unshare` or macOS `sandbox-exec`)"
+                .to_string(),
+        );
+    }
+    if request.enabled
+        && request.filesystem_mode == FilesystemIsolationMode::AllowList
+        && request.allowed_mounts.is_empty()
+    {
+        fallback_reasons
+            .push("filesystem allow-list requested without configured mounts".to_string());
+    }
+
+    let active = request.enabled
+        && (!request.namespace_restrictions || namespace_supported)
+        && (!request.network_isolation || network_supported);
+
+    let allowed_mounts = normalize_mounts(&request.allowed_mounts, cwd);
+
+    SandboxStatus {
+        enabled: request.enabled,
+        requested: request.clone(),
+        sandbox: FeatureStatus {
+            supported: namespace_supported,
+            active,
+        },
+        namespace: FeatureStatus {
+            supported: namespace_supported,
+            active: request.enabled && request.namespace_restrictions && namespace_supported,
+        },
+        network: FeatureStatus {
+            supported: network_supported,
+            active: request.enabled && request.network_isolation && network_supported,
+        },
+        filesystem_mode: request.filesystem_mode,
+        filesystem_active,
+        allowed_mounts,
+        in_container: container.in_container,
+        container_markers: container.markers,
+        fallback_reason: (!fallback_reasons.is_empty()).then(|| fallback_reasons.join("; ")),
+    }
+}
+
+#[must_use]
+pub fn build_sandbox_command(
+    command: &str,
+    cwd: &Path,
+    status: &SandboxStatus,
+) -> Option<SandboxCommand> {
+    if !status.enabled || (!status.namespace.active && !status.network.active) {
+        return None;
+    }
+
+    if cfg!(target_os = "linux") {
+        build_linux_sandbox_command(command, cwd, status)
+    } else if cfg!(target_os = "macos") {
+        build_macos_sandbox_command(command, cwd, status)
+    } else {
+        None
+    }
+}
+
+fn build_linux_sandbox_command(
+    command: &str,
+    cwd: &Path,
+    status: &SandboxStatus,
