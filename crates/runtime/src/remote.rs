@@ -49,3 +49,103 @@ pub struct RemoteSessionContext {
 pub struct UpstreamProxyBootstrap {
     pub remote: RemoteSessionContext,
     pub upstream_proxy_enabled: bool,
+    pub token_path: PathBuf,
+    pub ca_bundle_path: PathBuf,
+    pub system_ca_path: PathBuf,
+    pub token: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UpstreamProxyState {
+    pub enabled: bool,
+    pub proxy_url: Option<String>,
+    pub ca_bundle_path: Option<PathBuf>,
+    pub no_proxy: String,
+}
+
+impl RemoteSessionContext {
+    #[must_use]
+    pub fn from_env() -> Self {
+        Self::from_env_map(&env::vars().collect())
+    }
+
+    #[must_use]
+    pub fn from_env_map(env_map: &BTreeMap<String, String>) -> Self {
+        Self {
+            enabled: env_truthy(env_map.get("CODINEER_REMOTE")),
+            session_id: env_map
+                .get("CODINEER_REMOTE_SESSION_ID")
+                .filter(|value| !value.is_empty())
+                .cloned(),
+            base_url: env_map
+                .get("ANTHROPIC_BASE_URL")
+                .filter(|value| !value.is_empty())
+                .cloned()
+                .unwrap_or_else(|| DEFAULT_REMOTE_BASE_URL.to_string()),
+        }
+    }
+}
+
+impl UpstreamProxyBootstrap {
+    #[must_use]
+    pub fn from_env() -> Self {
+        Self::from_env_map(&env::vars().collect())
+    }
+
+    #[must_use]
+    pub fn from_env_map(env_map: &BTreeMap<String, String>) -> Self {
+        let remote = RemoteSessionContext::from_env_map(env_map);
+        let token_path = env_map
+            .get("CCR_SESSION_TOKEN_PATH")
+            .filter(|value| !value.is_empty())
+            .map_or_else(|| PathBuf::from(DEFAULT_SESSION_TOKEN_PATH), PathBuf::from);
+        let system_ca_path = env_map
+            .get("CCR_SYSTEM_CA_BUNDLE")
+            .filter(|value| !value.is_empty())
+            .map_or_else(|| PathBuf::from(DEFAULT_SYSTEM_CA_BUNDLE), PathBuf::from);
+        let ca_bundle_path = env_map
+            .get("CCR_CA_BUNDLE_PATH")
+            .filter(|value| !value.is_empty())
+            .map_or_else(default_ca_bundle_path, PathBuf::from);
+        let token = read_token(&token_path).ok().flatten();
+
+        Self {
+            remote,
+            upstream_proxy_enabled: env_truthy(env_map.get("CCR_UPSTREAM_PROXY_ENABLED")),
+            token_path,
+            ca_bundle_path,
+            system_ca_path,
+            token,
+        }
+    }
+
+    #[must_use]
+    pub fn should_enable(&self) -> bool {
+        self.remote.enabled
+            && self.upstream_proxy_enabled
+            && self.remote.session_id.is_some()
+            && self.token.is_some()
+    }
+
+    #[must_use]
+    pub fn ws_url(&self) -> String {
+        upstream_proxy_ws_url(&self.remote.base_url)
+    }
+
+    #[must_use]
+    pub fn state_for_port(&self, port: u16) -> UpstreamProxyState {
+        if !self.should_enable() {
+            return UpstreamProxyState::disabled();
+        }
+        UpstreamProxyState {
+            enabled: true,
+            proxy_url: Some(format!("http://127.0.0.1:{port}")),
+            ca_bundle_path: Some(self.ca_bundle_path.clone()),
+            no_proxy: no_proxy_list(),
+        }
+    }
+}
+
+impl UpstreamProxyState {
+    #[must_use]
+    pub fn disabled() -> Self {
