@@ -817,3 +817,62 @@ fn next_sse_frame(buffer: &mut Vec<u8>) -> Option<String> {
 
     let (position, separator_len) = separator;
     let frame = buffer.drain(..position + separator_len).collect::<Vec<_>>();
+    let frame_len = frame.len().saturating_sub(separator_len);
+    Some(String::from_utf8_lossy(&frame[..frame_len]).into_owned())
+}
+
+fn parse_sse_frame(frame: &str) -> Result<Option<ChatCompletionChunk>, ApiError> {
+    let trimmed = frame.trim();
+    if trimmed.is_empty() {
+        return Ok(None);
+    }
+
+    let mut data_lines = Vec::new();
+    for line in trimmed.lines() {
+        if line.starts_with(':') {
+            continue;
+        }
+        if let Some(data) = line.strip_prefix("data:") {
+            data_lines.push(data.trim_start());
+        }
+    }
+    if data_lines.is_empty() {
+        return Ok(None);
+    }
+    let payload = data_lines.join("\n");
+    if payload == "[DONE]" {
+        return Ok(None);
+    }
+    serde_json::from_str(&payload)
+        .map(Some)
+        .map_err(ApiError::from)
+}
+
+fn read_env_non_empty(key: &str) -> Result<Option<String>, ApiError> {
+    match std::env::var(key) {
+        Ok(value) if !value.is_empty() => Ok(Some(value)),
+        Ok(_) | Err(std::env::VarError::NotPresent) => Ok(None),
+        Err(error) => Err(ApiError::from(error)),
+    }
+}
+
+#[must_use]
+pub fn has_api_key(key: &str) -> bool {
+    read_env_non_empty(key)
+        .ok()
+        .and_then(std::convert::identity)
+        .is_some()
+}
+
+#[must_use]
+pub fn read_base_url(config: OpenAiCompatConfig) -> String {
+    std::env::var(config.base_url_env).unwrap_or_else(|_| config.default_base_url.to_string())
+}
+
+fn chat_completions_endpoint(base_url: &str) -> String {
+    let trimmed = base_url.trim_end_matches('/');
+    if trimmed.ends_with("/chat/completions") {
+        trimmed.to_string()
+    } else {
+        format!("{trimmed}/chat/completions")
+    }
