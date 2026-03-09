@@ -244,3 +244,84 @@ pub fn generate_state() -> io::Result<String> {
     generate_random_token(32)
 }
 
+#[must_use]
+pub fn code_challenge_s256(verifier: &str) -> String {
+    let digest = Sha256::digest(verifier.as_bytes());
+    base64url_encode(&digest)
+}
+
+#[must_use]
+pub fn loopback_redirect_uri(port: u16) -> String {
+    format!("http://localhost:{port}/callback")
+}
+
+pub fn credentials_path() -> io::Result<PathBuf> {
+    Ok(credentials_home_dir()?.join("credentials.json"))
+}
+
+const KEYRING_SERVICE: &str = "codineer";
+const KEYRING_USER: &str = "oauth";
+
+fn keyring_entry() -> Option<keyring::Entry> {
+    keyring::Entry::new(KEYRING_SERVICE, KEYRING_USER).ok()
+}
+
+fn load_from_keyring() -> Option<OAuthTokenSet> {
+    let entry = keyring_entry()?;
+    let json = entry.get_password().ok()?;
+    let stored: StoredOAuthCredentials = serde_json::from_str(&json).ok()?;
+    Some(stored.into())
+}
+
+fn save_to_keyring(token_set: &OAuthTokenSet) -> bool {
+    let Some(entry) = keyring_entry() else {
+        return false;
+    };
+    let stored = StoredOAuthCredentials::from(token_set.clone());
+    let Ok(json) = serde_json::to_string(&stored) else {
+        return false;
+    };
+    entry.set_password(&json).is_ok()
+}
+
+fn clear_from_keyring() {
+    if let Some(entry) = keyring_entry() {
+        let _ = entry.delete_credential();
+    }
+}
+
+pub fn load_oauth_credentials() -> io::Result<Option<OAuthTokenSet>> {
+    if let Some(token_set) = load_from_keyring() {
+        return Ok(Some(token_set));
+    }
+
+    let path = credentials_path()?;
+    let root = read_credentials_root(&path)?;
+    let Some(oauth) = root.get("oauth") else {
+        return Ok(None);
+    };
+    if oauth.is_null() {
+        return Ok(None);
+    }
+    let stored = serde_json::from_value::<StoredOAuthCredentials>(oauth.clone())
+        .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+    let token_set: OAuthTokenSet = stored.into();
+
+    if save_to_keyring(&token_set) {
+        let mut migrated_root = root;
+        migrated_root.remove("oauth");
+        let _ = write_credentials_root(&path, &migrated_root);
+    }
+
+    Ok(Some(token_set))
+}
+
+pub fn save_oauth_credentials(token_set: &OAuthTokenSet) -> io::Result<()> {
+    if save_to_keyring(token_set) {
+        return Ok(());
+    }
+
+    let path = credentials_path()?;
+    let mut root = read_credentials_root(&path)?;
+    root.insert(
+        "oauth".to_string(),
