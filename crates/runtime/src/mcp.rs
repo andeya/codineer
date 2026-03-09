@@ -291,3 +291,52 @@ mod tests {
                 headers_helper: None,
                 oauth: None,
             }),
+        };
+        assert_ne!(
+            scoped_mcp_config_hash(&user),
+            scoped_mcp_config_hash(&changed)
+        );
+    }
+
+    #[test]
+    fn mcp_tool_prefix_formats_correctly() {
+        assert_eq!(super::mcp_tool_prefix("my server"), "mcp__my_server__");
+    }
+
+    #[test]
+    fn unwrap_ccr_proxy_url_handles_ccr_sessions_marker() {
+        let url = "https://api.anthropic.com/v2/ccr-sessions/abc?mcp_url=https%3A%2F%2Fexample.com%2Fmcp";
+        assert_eq!(unwrap_ccr_proxy_url(url), "https://example.com/mcp");
+    }
+
+    #[test]
+    fn unwrap_ccr_proxy_url_no_query_returns_full_url() {
+        let url = "https://api.anthropic.com/v2/session_ingress/shttp/mcp/123";
+        assert_eq!(unwrap_ccr_proxy_url(url), url);
+    }
+
+    #[test]
+    fn unwrap_ccr_proxy_url_query_without_mcp_url_returns_original() {
+        let url = "https://api.anthropic.com/v2/ccr-sessions/abc?other=val";
+        assert_eq!(unwrap_ccr_proxy_url(url), url);
+    }
+
+    #[test]
+    fn signature_returns_none_for_sdk() {
+        use crate::config::McpSdkServerConfig;
+
+        let sdk = McpServerConfig::Sdk(McpSdkServerConfig {
+            name: "built-in".into(),
+        });
+        assert_eq!(mcp_server_signature(&sdk), None);
+    }
+
+    #[test]
+    fn signature_for_managed_proxy() {
+        use crate::config::McpManagedProxyServerConfig;
+
+        let proxy = McpServerConfig::ManagedProxy(McpManagedProxyServerConfig {
+            url: "https://proxy.example".into(),
+            id: "p1".into(),
+        });
+        assert_eq!(
