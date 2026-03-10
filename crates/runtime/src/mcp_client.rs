@@ -174,3 +174,61 @@ mod tests {
                         "https://issuer.example/.well-known/oauth-authorization-server".to_string(),
                     ),
                     xaa: Some(true),
+                }),
+            }),
+        };
+
+        let bootstrap = McpClientBootstrap::from_scoped_config("remote server", &config);
+        assert_eq!(bootstrap.normalized_name, "remote_server");
+        match bootstrap.transport {
+            McpClientTransport::Http(transport) => {
+                assert_eq!(transport.url, "https://vendor.example/mcp");
+                assert_eq!(transport.headers_helper.as_deref(), Some("helper.sh"));
+                assert!(transport.auth.requires_user_auth());
+                match transport.auth {
+                    McpClientAuth::OAuth(oauth) => {
+                        assert_eq!(oauth.client_id.as_deref(), Some("client-id"));
+                    }
+                    other @ McpClientAuth::None => panic!("expected oauth auth, got {other:?}"),
+                }
+            }
+            other => panic!("expected http transport, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn bootstraps_websocket_and_sdk_transports_without_oauth() {
+        let ws = ScopedMcpServerConfig {
+            scope: ConfigSource::Local,
+            config: McpServerConfig::Ws(McpWebSocketServerConfig {
+                url: "wss://vendor.example/mcp".to_string(),
+                headers: BTreeMap::new(),
+                headers_helper: None,
+            }),
+        };
+        let sdk = ScopedMcpServerConfig {
+            scope: ConfigSource::Local,
+            config: McpServerConfig::Sdk(McpSdkServerConfig {
+                name: "sdk-server".to_string(),
+            }),
+        };
+
+        let ws_bootstrap = McpClientBootstrap::from_scoped_config("ws server", &ws);
+        match ws_bootstrap.transport {
+            McpClientTransport::WebSocket(transport) => {
+                assert_eq!(transport.url, "wss://vendor.example/mcp");
+                assert!(!transport.auth.requires_user_auth());
+            }
+            other => panic!("expected websocket transport, got {other:?}"),
+        }
+
+        let sdk_bootstrap = McpClientBootstrap::from_scoped_config("sdk server", &sdk);
+        assert_eq!(sdk_bootstrap.signature, None);
+        match sdk_bootstrap.transport {
+            McpClientTransport::Sdk(transport) => {
+                assert_eq!(transport.name, "sdk-server");
+            }
+            other => panic!("expected sdk transport, got {other:?}"),
+        }
+    }
+}
