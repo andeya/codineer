@@ -115,3 +115,62 @@ impl McpClientAuth {
     pub const fn requires_user_auth(&self) -> bool {
         matches!(self, Self::OAuth(_))
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use crate::config::{
+        ConfigSource, McpOAuthConfig, McpRemoteServerConfig, McpSdkServerConfig, McpServerConfig,
+        McpStdioServerConfig, McpWebSocketServerConfig, ScopedMcpServerConfig,
+    };
+
+    use super::{McpClientAuth, McpClientBootstrap, McpClientTransport};
+
+    #[test]
+    fn bootstraps_stdio_servers_into_transport_targets() {
+        let config = ScopedMcpServerConfig {
+            scope: ConfigSource::User,
+            config: McpServerConfig::Stdio(McpStdioServerConfig {
+                command: "uvx".to_string(),
+                args: vec!["mcp-server".to_string()],
+                env: BTreeMap::from([("TOKEN".to_string(), "secret".to_string())]),
+            }),
+        };
+
+        let bootstrap = McpClientBootstrap::from_scoped_config("stdio-server", &config);
+        assert_eq!(bootstrap.normalized_name, "stdio-server");
+        assert_eq!(bootstrap.tool_prefix, "mcp__stdio-server__");
+        assert_eq!(
+            bootstrap.signature.as_deref(),
+            Some("stdio:[uvx|mcp-server]")
+        );
+        match bootstrap.transport {
+            McpClientTransport::Stdio(transport) => {
+                assert_eq!(transport.command, "uvx");
+                assert_eq!(transport.args, vec!["mcp-server"]);
+                assert_eq!(
+                    transport.env.get("TOKEN").map(String::as_str),
+                    Some("secret")
+                );
+            }
+            other => panic!("expected stdio transport, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn bootstraps_remote_servers_with_oauth_auth() {
+        let config = ScopedMcpServerConfig {
+            scope: ConfigSource::Project,
+            config: McpServerConfig::Http(McpRemoteServerConfig {
+                url: "https://vendor.example/mcp".to_string(),
+                headers: BTreeMap::from([("X-Test".to_string(), "1".to_string())]),
+                headers_helper: Some("helper.sh".to_string()),
+                oauth: Some(McpOAuthConfig {
+                    client_id: Some("client-id".to_string()),
+                    callback_port: Some(7777),
+                    auth_server_metadata_url: Some(
+                        "https://issuer.example/.well-known/oauth-authorization-server".to_string(),
+                    ),
+                    xaa: Some(true),
