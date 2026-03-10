@@ -252,3 +252,66 @@ mod tests {
         };
 
         assert!(matches!(
+            policy.authorize("bash", "echo hi", Some(&mut prompter)),
+            PermissionOutcome::Deny { reason } if reason == "not now"
+        ));
+    }
+
+    #[test]
+    fn prompt_mode_always_prompts_for_dangerous_tools() {
+        let policy = PermissionPolicy::new(PermissionMode::Prompt)
+            .with_tool_requirement("bash", PermissionMode::DangerFullAccess);
+        let mut prompter = RecordingPrompter {
+            seen: Vec::new(),
+            allow: true,
+        };
+
+        let outcome = policy.authorize("bash", "rm -rf /", Some(&mut prompter));
+        assert_eq!(outcome, PermissionOutcome::Allow);
+        assert_eq!(
+            prompter.seen.len(),
+            1,
+            "Prompt mode must invoke the prompter"
+        );
+    }
+
+    #[test]
+    fn prompt_mode_prompts_for_read_only_tools_too() {
+        let policy = PermissionPolicy::new(PermissionMode::Prompt)
+            .with_tool_requirement("read_file", PermissionMode::ReadOnly);
+        let mut prompter = RecordingPrompter {
+            seen: Vec::new(),
+            allow: true,
+        };
+
+        let outcome = policy.authorize("read_file", "{}", Some(&mut prompter));
+        assert_eq!(outcome, PermissionOutcome::Allow);
+        assert_eq!(
+            prompter.seen.len(),
+            1,
+            "Prompt mode should prompt even for read-only tools"
+        );
+    }
+
+    #[test]
+    fn prompt_mode_denies_without_prompter() {
+        let policy = PermissionPolicy::new(PermissionMode::Prompt)
+            .with_tool_requirement("bash", PermissionMode::DangerFullAccess);
+
+        assert!(matches!(
+            policy.authorize("bash", "echo hi", None),
+            PermissionOutcome::Deny { reason } if reason.contains("requires approval")
+        ));
+    }
+
+    #[test]
+    fn read_only_denies_write_tools() {
+        let policy = PermissionPolicy::new(PermissionMode::ReadOnly)
+            .with_tool_requirement("write_file", PermissionMode::WorkspaceWrite);
+
+        assert!(matches!(
+            policy.authorize("write_file", "{}", None),
+            PermissionOutcome::Deny { .. }
+        ));
+    }
+}
