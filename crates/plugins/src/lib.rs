@@ -904,3 +904,116 @@ impl PluginManager {
     #[must_use]
     pub fn new(config: PluginManagerConfig) -> Self {
         Self { config }
+    }
+
+    #[must_use]
+    pub fn bundled_root() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("bundled")
+    }
+
+    #[must_use]
+    pub fn install_root(&self) -> PathBuf {
+        self.config
+            .install_root
+            .clone()
+            .unwrap_or_else(|| self.config.config_home.join("plugins").join("installed"))
+    }
+
+    #[must_use]
+    pub fn registry_path(&self) -> PathBuf {
+        self.config.registry_path.clone().unwrap_or_else(|| {
+            self.config
+                .config_home
+                .join("plugins")
+                .join(REGISTRY_FILE_NAME)
+        })
+    }
+
+    #[must_use]
+    pub fn settings_path(&self) -> PathBuf {
+        self.config.config_home.join(SETTINGS_FILE_NAME)
+    }
+
+    pub fn plugin_registry(&self) -> Result<PluginRegistry, PluginError> {
+        Ok(PluginRegistry::new(
+            self.discover_plugins()?
+                .into_iter()
+                .map(|plugin| {
+                    let enabled = self.is_enabled(plugin.metadata());
+                    RegisteredPlugin::new(plugin, enabled)
+                })
+                .collect(),
+        ))
+    }
+
+    pub fn list_plugins(&self) -> Result<Vec<PluginSummary>, PluginError> {
+        Ok(self.plugin_registry()?.summaries())
+    }
+
+    pub fn list_installed_plugins(&self) -> Result<Vec<PluginSummary>, PluginError> {
+        Ok(self.installed_plugin_registry()?.summaries())
+    }
+
+    pub fn discover_plugins(&self) -> Result<Vec<PluginDefinition>, PluginError> {
+        self.sync_bundled_plugins()?;
+        let mut plugins = builtin_plugins();
+        plugins.extend(self.discover_installed_plugins()?);
+        plugins.extend(self.discover_external_directory_plugins(&plugins)?);
+        Ok(plugins)
+    }
+
+    pub fn aggregated_hooks(&self) -> Result<PluginHooks, PluginError> {
+        self.plugin_registry()?.aggregated_hooks()
+    }
+
+    pub fn aggregated_tools(&self) -> Result<Vec<PluginTool>, PluginError> {
+        self.plugin_registry()?.aggregated_tools()
+    }
+
+    pub fn validate_plugin_source(&self, source: &str) -> Result<PluginManifest, PluginError> {
+        let path = resolve_local_source(source)?;
+        load_plugin_from_directory(&path)
+    }
+
+    pub fn install(&mut self, source: &str) -> Result<InstallOutcome, PluginError> {
+        let install_source = parse_install_source(source)?;
+        let temp_root = self.install_root().join(".tmp");
+        let staged_source = materialize_source(&install_source, &temp_root)?;
+        let cleanup_source = matches!(install_source, PluginInstallSource::GitUrl { .. });
+        let manifest = load_plugin_from_directory(&staged_source)?;
+
+        let plugin_id = plugin_id(&manifest.name, EXTERNAL_MARKETPLACE);
+        let install_path = self.install_root().join(sanitize_plugin_id(&plugin_id));
+        if install_path.exists() {
+            fs::remove_dir_all(&install_path)?;
+        }
+        copy_dir_all(&staged_source, &install_path)?;
+        if cleanup_source {
+            let _ = fs::remove_dir_all(&staged_source);
+        }
+
+        let now = unix_time_ms();
+        let record = InstalledPluginRecord {
+            kind: PluginKind::External,
+            id: plugin_id.clone(),
+            name: manifest.name,
+            version: manifest.version.clone(),
+            description: manifest.description,
+            install_path: install_path.clone(),
+            source: install_source,
+            installed_at_unix_ms: now,
+            updated_at_unix_ms: now,
+        };
+
+        let mut registry = self.load_registry()?;
+        registry.plugins.insert(plugin_id.clone(), record);
+        self.store_registry(&registry)?;
+        self.write_enabled_state(&plugin_id, Some(true))?;
+        self.config.enabled_plugins.insert(plugin_id.clone(), true);
+
+        Ok(InstallOutcome {
+            plugin_id,
+            version: manifest.version,
+            install_path,
+        })
+    }
