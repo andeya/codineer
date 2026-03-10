@@ -88,3 +88,93 @@ pub struct SystemPromptBuilder {
     output_style_prompt: Option<String>,
     os_name: Option<String>,
     os_version: Option<String>,
+    append_sections: Vec<String>,
+    project_context: Option<ProjectContext>,
+    config: Option<RuntimeConfig>,
+}
+
+impl SystemPromptBuilder {
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    #[must_use]
+    pub fn with_output_style(mut self, name: impl Into<String>, prompt: impl Into<String>) -> Self {
+        self.output_style_name = Some(name.into());
+        self.output_style_prompt = Some(prompt.into());
+        self
+    }
+
+    #[must_use]
+    pub fn with_os(mut self, os_name: impl Into<String>, os_version: impl Into<String>) -> Self {
+        self.os_name = Some(os_name.into());
+        self.os_version = Some(os_version.into());
+        self
+    }
+
+    #[must_use]
+    pub fn with_project_context(mut self, project_context: ProjectContext) -> Self {
+        self.project_context = Some(project_context);
+        self
+    }
+
+    #[must_use]
+    pub fn with_runtime_config(mut self, config: RuntimeConfig) -> Self {
+        self.config = Some(config);
+        self
+    }
+
+    #[must_use]
+    pub fn append_section(mut self, section: impl Into<String>) -> Self {
+        self.append_sections.push(section.into());
+        self
+    }
+
+    #[must_use]
+    pub fn with_lsp_context(mut self, enrichment: &LspContextEnrichment) -> Self {
+        if !enrichment.is_empty() {
+            self.append_sections
+                .push(enrichment.render_prompt_section());
+        }
+        self
+    }
+
+    #[must_use]
+    pub fn build(&self) -> Vec<String> {
+        let mut sections = Vec::new();
+        sections.push(get_simple_intro_section(self.output_style_name.is_some()));
+        if let (Some(name), Some(prompt)) = (&self.output_style_name, &self.output_style_prompt) {
+            sections.push(format!("# Output Style: {name}\n{prompt}"));
+        }
+        sections.push(get_simple_system_section());
+        sections.push(get_simple_doing_tasks_section());
+        sections.push(get_actions_section());
+        sections.push(SYSTEM_PROMPT_DYNAMIC_BOUNDARY.to_string());
+        sections.push(self.environment_section());
+        if let Some(project_context) = &self.project_context {
+            sections.push(render_project_context(project_context));
+            if !project_context.instruction_files.is_empty() {
+                sections.push(render_instruction_files(&project_context.instruction_files));
+            }
+        }
+        if let Some(config) = &self.config {
+            sections.push(render_config_section(config));
+        }
+        sections.extend(self.append_sections.iter().cloned());
+        sections
+    }
+
+    #[must_use]
+    pub fn render(&self) -> String {
+        self.build().join("\n\n")
+    }
+
+    fn environment_section(&self) -> String {
+        let cwd = self.project_context.as_ref().map_or_else(
+            || "unknown".to_string(),
+            |context| context.cwd.display().to_string(),
+        );
+        let date = self.project_context.as_ref().map_or_else(
+            || "unknown".to_string(),
+            |context| context.current_date.clone(),
