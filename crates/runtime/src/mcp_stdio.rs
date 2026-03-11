@@ -777,3 +777,89 @@ impl McpStdioProcess {
 pub fn spawn_mcp_stdio_process(bootstrap: &McpClientBootstrap) -> io::Result<McpStdioProcess> {
     match &bootstrap.transport {
         McpClientTransport::Stdio(transport) => McpStdioProcess::spawn(transport),
+        other => Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!(
+                "MCP bootstrap transport for {} is not stdio: {other:?}",
+                bootstrap.server_name
+            ),
+        )),
+    }
+}
+
+fn apply_env(command: &mut Command, env: &BTreeMap<String, String>) {
+    for (key, value) in env {
+        command.env(key, value);
+    }
+}
+
+fn encode_frame(payload: &[u8]) -> Vec<u8> {
+    let header = format!("Content-Length: {}\r\n\r\n", payload.len());
+    let mut framed = header.into_bytes();
+    framed.extend_from_slice(payload);
+    framed
+}
+
+fn default_initialize_params() -> McpInitializeParams {
+    McpInitializeParams {
+        protocol_version: "2025-03-26".to_string(),
+        capabilities: JsonValue::Object(serde_json::Map::new()),
+        client_info: McpInitializeClientInfo {
+            name: "runtime".to_string(),
+            version: env!("CARGO_PKG_VERSION").to_string(),
+        },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+    use std::fs;
+    use std::io::ErrorKind;
+    use std::os::unix::fs::PermissionsExt;
+    use std::path::{Path, PathBuf};
+    use std::process::Command;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    use serde_json::json;
+    use tokio::runtime::Builder;
+
+    use crate::config::{
+        ConfigSource, McpRemoteServerConfig, McpSdkServerConfig, McpServerConfig,
+        McpStdioServerConfig, McpWebSocketServerConfig, ScopedMcpServerConfig,
+    };
+    use crate::mcp::mcp_tool_name;
+    use crate::mcp_client::McpClientBootstrap;
+
+    use super::{
+        spawn_mcp_stdio_process, JsonRpcId, JsonRpcRequest, JsonRpcResponse,
+        McpInitializeClientInfo, McpInitializeParams, McpInitializeResult, McpInitializeServerInfo,
+        McpListToolsResult, McpReadResourceParams, McpReadResourceResult, McpServerManager,
+        McpServerManagerError, McpStdioProcess, McpTool, McpToolCallParams,
+    };
+
+    fn temp_dir() -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time should be after epoch")
+            .as_nanos();
+        std::env::temp_dir().join(format!("runtime-mcp-stdio-{nanos}"))
+    }
+
+    fn write_echo_script() -> PathBuf {
+        let root = temp_dir();
+        fs::create_dir_all(&root).expect("temp dir");
+        let script_path = root.join("echo-mcp.sh");
+        fs::write(
+            &script_path,
+            "#!/bin/sh\nprintf 'READY:%s\\n' \"$MCP_TEST_TOKEN\"\nIFS= read -r line\nprintf 'ECHO:%s\\n' \"$line\"\n",
+        )
+        .expect("write script");
+        let mut permissions = fs::metadata(&script_path).expect("metadata").permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(&script_path, permissions).expect("chmod");
+        script_path
+    }
+
+    fn write_jsonrpc_script() -> PathBuf {
+        let root = temp_dir();
