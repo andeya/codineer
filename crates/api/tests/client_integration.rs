@@ -386,3 +386,51 @@ async fn spawn_server(
                 let (name, value) = line.split_once(':').expect("header should have colon");
                 let value = value.trim().to_string();
                 if name.eq_ignore_ascii_case("content-length") {
+                    content_length = value.parse().expect("content length should parse");
+                }
+                headers.insert(name.to_ascii_lowercase(), value);
+            }
+
+            let mut body = remaining[4..].to_vec();
+            while body.len() < content_length {
+                let mut chunk = vec![0_u8; content_length - body.len()];
+                let read = socket
+                    .read(&mut chunk)
+                    .await
+                    .expect("body read should succeed");
+                if read == 0 {
+                    break;
+                }
+                body.extend_from_slice(&chunk[..read]);
+            }
+
+            state.lock().await.push(CapturedRequest {
+                method,
+                path,
+                headers,
+                body: String::from_utf8(body).expect("body should be utf8"),
+            });
+
+            socket
+                .write_all(response.as_bytes())
+                .await
+                .expect("response write should succeed");
+        }
+    });
+
+    TestServer {
+        base_url: format!("http://{address}"),
+        join_handle,
+    }
+}
+
+fn find_header_end(bytes: &[u8]) -> Option<usize> {
+    bytes.windows(4).position(|window| window == b"\r\n\r\n")
+}
+
+fn http_response(status: &str, content_type: &str, body: &str) -> String {
+    http_response_with_headers(status, content_type, body, &[])
+}
+
+fn http_response_with_headers(
+    status: &str,
