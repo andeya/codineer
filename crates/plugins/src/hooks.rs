@@ -295,3 +295,53 @@ impl CommandWithStdin {
 }
 
 #[cfg(test)]
+mod tests {
+    use super::{HookRunResult, HookRunner};
+    use crate::{PluginManager, PluginManagerConfig};
+    use std::fs;
+    use std::path::{Path, PathBuf};
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn temp_dir(label: &str) -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time should be after epoch")
+            .as_nanos();
+        std::env::temp_dir().join(format!("plugins-hook-runner-{label}-{nanos}"))
+    }
+
+    fn write_hook_plugin(root: &Path, name: &str, pre_message: &str, post_message: &str) {
+        fs::create_dir_all(root.join(".codineer-plugin")).expect("manifest dir");
+        fs::create_dir_all(root.join("hooks")).expect("hooks dir");
+        fs::write(
+            root.join("hooks").join("pre.sh"),
+            format!("#!/bin/sh\nprintf '%s\\n' '{pre_message}'\n"),
+        )
+        .expect("write pre hook");
+        fs::write(
+            root.join("hooks").join("post.sh"),
+            format!("#!/bin/sh\nprintf '%s\\n' '{post_message}'\n"),
+        )
+        .expect("write post hook");
+        fs::write(
+            root.join(".codineer-plugin").join("plugin.json"),
+            format!(
+                "{{\n  \"name\": \"{name}\",\n  \"version\": \"1.0.0\",\n  \"description\": \"hook plugin\",\n  \"hooks\": {{\n    \"PreToolUse\": [\"./hooks/pre.sh\"],\n    \"PostToolUse\": [\"./hooks/post.sh\"]\n  }}\n}}"
+            ),
+        )
+        .expect("write plugin manifest");
+    }
+
+    #[test]
+    fn collects_and_runs_hooks_from_enabled_plugins() {
+        let config_home = temp_dir("config");
+        let first_source_root = temp_dir("source-a");
+        let second_source_root = temp_dir("source-b");
+        write_hook_plugin(
+            &first_source_root,
+            "first",
+            "plugin pre one",
+            "plugin post one",
+        );
+        write_hook_plugin(
+            &second_source_root,
