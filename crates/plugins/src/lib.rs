@@ -1017,3 +1017,116 @@ impl PluginManager {
             install_path,
         })
     }
+
+    pub fn enable(&mut self, plugin_id: &str) -> Result<(), PluginError> {
+        self.ensure_known_plugin(plugin_id)?;
+        self.write_enabled_state(plugin_id, Some(true))?;
+        self.config
+            .enabled_plugins
+            .insert(plugin_id.to_string(), true);
+        Ok(())
+    }
+
+    pub fn disable(&mut self, plugin_id: &str) -> Result<(), PluginError> {
+        self.ensure_known_plugin(plugin_id)?;
+        self.write_enabled_state(plugin_id, Some(false))?;
+        self.config
+            .enabled_plugins
+            .insert(plugin_id.to_string(), false);
+        Ok(())
+    }
+
+    pub fn uninstall(&mut self, plugin_id: &str) -> Result<(), PluginError> {
+        let mut registry = self.load_registry()?;
+        let record = registry.plugins.remove(plugin_id).ok_or_else(|| {
+            PluginError::NotFound(format!("plugin `{plugin_id}` is not installed"))
+        })?;
+        if record.kind == PluginKind::Bundled {
+            registry.plugins.insert(plugin_id.to_string(), record);
+            return Err(PluginError::CommandFailed(format!(
+                "plugin `{plugin_id}` is bundled and managed automatically; disable it instead"
+            )));
+        }
+        if record.install_path.exists() {
+            fs::remove_dir_all(&record.install_path)?;
+        }
+        self.store_registry(&registry)?;
+        self.write_enabled_state(plugin_id, None)?;
+        self.config.enabled_plugins.remove(plugin_id);
+        Ok(())
+    }
+
+    pub fn update(&mut self, plugin_id: &str) -> Result<UpdateOutcome, PluginError> {
+        let mut registry = self.load_registry()?;
+        let record = registry.plugins.get(plugin_id).cloned().ok_or_else(|| {
+            PluginError::NotFound(format!("plugin `{plugin_id}` is not installed"))
+        })?;
+
+        let temp_root = self.install_root().join(".tmp");
+        let staged_source = materialize_source(&record.source, &temp_root)?;
+        let cleanup_source = matches!(record.source, PluginInstallSource::GitUrl { .. });
+        let manifest = load_plugin_from_directory(&staged_source)?;
+
+        if record.install_path.exists() {
+            fs::remove_dir_all(&record.install_path)?;
+        }
+        copy_dir_all(&staged_source, &record.install_path)?;
+        if cleanup_source {
+            let _ = fs::remove_dir_all(&staged_source);
+        }
+
+        let updated_record = InstalledPluginRecord {
+            version: manifest.version.clone(),
+            description: manifest.description,
+            updated_at_unix_ms: unix_time_ms(),
+            ..record.clone()
+        };
+        registry
+            .plugins
+            .insert(plugin_id.to_string(), updated_record);
+        self.store_registry(&registry)?;
+
+        Ok(UpdateOutcome {
+            plugin_id: plugin_id.to_string(),
+            old_version: record.version,
+            new_version: manifest.version,
+            install_path: record.install_path,
+        })
+    }
+
+    fn discover_installed_plugins(&self) -> Result<Vec<PluginDefinition>, PluginError> {
+        let mut registry = self.load_registry()?;
+        let mut plugins = Vec::new();
+        let mut seen_ids = BTreeSet::<String>::new();
+        let mut seen_paths = BTreeSet::<PathBuf>::new();
+        let mut stale_registry_ids = Vec::new();
+
+        for install_path in discover_plugin_dirs(&self.install_root())? {
+            let matched_record = registry
+                .plugins
+                .values()
+                .find(|record| record.install_path == install_path);
+            let kind = matched_record.map_or(PluginKind::External, |record| record.kind);
+            let source = matched_record.map_or_else(
+                || install_path.display().to_string(),
+                |record| describe_install_source(&record.source),
+            );
+            let plugin = load_plugin_definition(&install_path, kind, source, kind.marketplace())?;
+            if seen_ids.insert(plugin.metadata().id.clone()) {
+                seen_paths.insert(install_path);
+                plugins.push(plugin);
+            }
+        }
+
+        for record in registry.plugins.values() {
+            if seen_paths.contains(&record.install_path) {
+                continue;
+            }
+            if !record.install_path.exists() || plugin_manifest_path(&record.install_path).is_err()
+            {
+                stale_registry_ids.push(record.id.clone());
+                continue;
+            }
+            let plugin = load_plugin_definition(
+                &record.install_path,
+                record.kind,
