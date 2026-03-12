@@ -434,3 +434,51 @@ fn http_response(status: &str, content_type: &str, body: &str) -> String {
 
 fn http_response_with_headers(
     status: &str,
+    content_type: &str,
+    body: &str,
+    headers: &[(&str, &str)],
+) -> String {
+    let mut extra_headers = String::new();
+    for (name, value) in headers {
+        use std::fmt::Write as _;
+        write!(&mut extra_headers, "{name}: {value}\r\n").expect("header write should succeed");
+    }
+    format!(
+        "HTTP/1.1 {status}\r\ncontent-type: {content_type}\r\n{extra_headers}content-length: {}\r\nconnection: close\r\n\r\n{body}",
+        body.len()
+    )
+}
+
+fn sample_request(stream: bool) -> MessageRequest {
+    MessageRequest {
+        model: "claude-sonnet-4-6".to_string(),
+        max_tokens: 64,
+        messages: vec![InputMessage {
+            role: "user".to_string(),
+            content: vec![
+                InputContentBlock::Text {
+                    text: "Say hello".to_string(),
+                },
+                InputContentBlock::ToolResult {
+                    tool_use_id: "toolu_prev".to_string(),
+                    content: vec![api::ToolResultContentBlock::Json {
+                        value: json!({"forecast": "sunny"}),
+                    }],
+                    is_error: false,
+                },
+            ],
+        }],
+        system: Some("Use tools when needed".to_string()),
+        tools: Some(vec![ToolDefinition {
+            name: "get_weather".to_string(),
+            description: Some("Fetches the weather".to_string()),
+            input_schema: json!({
+                "type": "object",
+                "properties": {"city": {"type": "string"}},
+                "required": ["city"]
+            }),
+        }]),
+        tool_choice: Some(ToolChoice::Auto),
+        stream,
+    }
+}
