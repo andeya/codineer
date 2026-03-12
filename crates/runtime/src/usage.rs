@@ -176,3 +176,47 @@ impl UsageTracker {
     #[must_use]
     pub fn from_session(session: &Session) -> Self {
         let mut tracker = Self::new();
+        for message in &session.messages {
+            if let Some(usage) = message.usage {
+                tracker.record(usage);
+            }
+        }
+        tracker
+    }
+
+    pub fn record(&mut self, usage: TokenUsage) {
+        self.latest_turn = usage;
+        self.cumulative.input_tokens += usage.input_tokens;
+        self.cumulative.output_tokens += usage.output_tokens;
+        self.cumulative.cache_creation_input_tokens += usage.cache_creation_input_tokens;
+        self.cumulative.cache_read_input_tokens += usage.cache_read_input_tokens;
+        self.turns += 1;
+    }
+
+    #[must_use]
+    pub fn current_turn_usage(&self) -> TokenUsage {
+        self.latest_turn
+    }
+
+    #[must_use]
+    pub fn cumulative_usage(&self) -> TokenUsage {
+        self.cumulative
+    }
+
+    #[must_use]
+    pub fn turns(&self) -> u32 {
+        self.turns
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{format_usd, pricing_for_model, TokenUsage, UsageTracker};
+    use crate::session::{ContentBlock, ConversationMessage, MessageRole, Session};
+
+    #[test]
+    fn tracks_true_cumulative_usage() {
+        let mut tracker = UsageTracker::new();
+        tracker.record(TokenUsage {
+            input_tokens: 10,
+            output_tokens: 4,
