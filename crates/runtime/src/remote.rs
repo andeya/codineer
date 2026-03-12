@@ -149,3 +149,53 @@ impl UpstreamProxyBootstrap {
 impl UpstreamProxyState {
     #[must_use]
     pub fn disabled() -> Self {
+        Self {
+            enabled: false,
+            proxy_url: None,
+            ca_bundle_path: None,
+            no_proxy: no_proxy_list(),
+        }
+    }
+
+    #[must_use]
+    pub fn subprocess_env(&self) -> BTreeMap<String, String> {
+        if !self.enabled {
+            return BTreeMap::new();
+        }
+        let Some(proxy_url) = &self.proxy_url else {
+            return BTreeMap::new();
+        };
+        let Some(ca_bundle_path) = &self.ca_bundle_path else {
+            return BTreeMap::new();
+        };
+        let ca_bundle_path = ca_bundle_path.to_string_lossy().into_owned();
+        BTreeMap::from([
+            ("HTTPS_PROXY".to_string(), proxy_url.clone()),
+            ("https_proxy".to_string(), proxy_url.clone()),
+            ("NO_PROXY".to_string(), self.no_proxy.clone()),
+            ("no_proxy".to_string(), self.no_proxy.clone()),
+            ("SSL_CERT_FILE".to_string(), ca_bundle_path.clone()),
+            ("NODE_EXTRA_CA_CERTS".to_string(), ca_bundle_path.clone()),
+            ("REQUESTS_CA_BUNDLE".to_string(), ca_bundle_path.clone()),
+            ("CURL_CA_BUNDLE".to_string(), ca_bundle_path),
+        ])
+    }
+}
+
+pub fn read_token(path: &Path) -> io::Result<Option<String>> {
+    match fs::read_to_string(path) {
+        Ok(contents) => {
+            let token = contents.trim();
+            if token.is_empty() {
+                Ok(None)
+            } else {
+                Ok(Some(token.to_string()))
+            }
+        }
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error),
+    }
+}
+
+#[must_use]
+pub fn upstream_proxy_ws_url(base_url: &str) -> String {
