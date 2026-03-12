@@ -220,3 +220,47 @@ mod tests {
         tracker.record(TokenUsage {
             input_tokens: 10,
             output_tokens: 4,
+            cache_creation_input_tokens: 2,
+            cache_read_input_tokens: 1,
+        });
+        tracker.record(TokenUsage {
+            input_tokens: 20,
+            output_tokens: 6,
+            cache_creation_input_tokens: 3,
+            cache_read_input_tokens: 2,
+        });
+
+        assert_eq!(tracker.turns(), 2);
+        assert_eq!(tracker.current_turn_usage().input_tokens, 20);
+        assert_eq!(tracker.current_turn_usage().output_tokens, 6);
+        assert_eq!(tracker.cumulative_usage().output_tokens, 10);
+        assert_eq!(tracker.cumulative_usage().input_tokens, 30);
+        assert_eq!(tracker.cumulative_usage().total_tokens(), 48);
+    }
+
+    #[test]
+    fn computes_cost_summary_lines() {
+        let usage = TokenUsage {
+            input_tokens: 1_000_000,
+            output_tokens: 500_000,
+            cache_creation_input_tokens: 100_000,
+            cache_read_input_tokens: 200_000,
+        };
+
+        let cost = usage.estimate_cost_usd();
+        assert_eq!(format_usd(cost.input_cost_usd), "$15.0000");
+        assert_eq!(format_usd(cost.output_cost_usd), "$37.5000");
+        let lines = usage.summary_lines_for_model("usage", Some("claude-sonnet-4-6"));
+        assert!(lines[0].contains("estimated_cost=$54.6750"));
+        assert!(lines[0].contains("model=claude-sonnet-4-6"));
+        assert!(lines[1].contains("cache_read=$0.3000"));
+    }
+
+    #[test]
+    fn supports_model_specific_pricing() {
+        let usage = TokenUsage {
+            input_tokens: 1_000_000,
+            output_tokens: 500_000,
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0,
+        };
