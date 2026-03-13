@@ -264,3 +264,47 @@ mod tests {
             cache_creation_input_tokens: 0,
             cache_read_input_tokens: 0,
         };
+
+        let haiku = pricing_for_model("claude-haiku-4-5-20251213").expect("haiku pricing");
+        let opus = pricing_for_model("claude-opus-4-6").expect("opus pricing");
+        let haiku_cost = usage.estimate_cost_usd_with_pricing(haiku);
+        let opus_cost = usage.estimate_cost_usd_with_pricing(opus);
+        assert_eq!(format_usd(haiku_cost.total_cost_usd()), "$3.5000");
+        assert_eq!(format_usd(opus_cost.total_cost_usd()), "$52.5000");
+    }
+
+    #[test]
+    fn marks_unknown_model_pricing_as_fallback() {
+        let usage = TokenUsage {
+            input_tokens: 100,
+            output_tokens: 100,
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0,
+        };
+        let lines = usage.summary_lines_for_model("usage", Some("custom-model"));
+        assert!(lines[0].contains("pricing=estimated-default"));
+    }
+
+    #[test]
+    fn reconstructs_usage_from_session_messages() {
+        let session = Session {
+            version: 1,
+            messages: vec![ConversationMessage {
+                role: MessageRole::Assistant,
+                blocks: vec![ContentBlock::Text {
+                    text: "done".to_string(),
+                }],
+                usage: Some(TokenUsage {
+                    input_tokens: 5,
+                    output_tokens: 2,
+                    cache_creation_input_tokens: 1,
+                    cache_read_input_tokens: 0,
+                }),
+            }],
+        };
+
+        let tracker = UsageTracker::from_session(&session);
+        assert_eq!(tracker.turns(), 1);
+        assert_eq!(tracker.cumulative_usage().total_tokens(), 8);
+    }
+}
