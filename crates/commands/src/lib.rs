@@ -498,3 +498,288 @@ pub fn render_slash_command_help() -> String {
         SlashCommandCategory::Git,
         SlashCommandCategory::Automation,
     ] {
+        lines.push(String::new());
+        lines.push(category.title().to_string());
+        lines.extend(
+            slash_command_specs()
+                .iter()
+                .filter(|spec| spec.category == category)
+                .map(render_slash_command_entry),
+        );
+    }
+
+    lines.join("\n")
+}
+
+fn render_slash_command_entry(spec: &SlashCommandSpec) -> String {
+    let alias_suffix = if spec.aliases.is_empty() {
+        String::new()
+    } else {
+        format!(
+            " (aliases: {})",
+            spec.aliases
+                .iter()
+                .map(|alias| format!("/{alias}"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
+    };
+    let resume = if spec.resume_supported {
+        " [resume]"
+    } else {
+        ""
+    };
+    format!(
+        "  {name:<46} {}{alias_suffix}{resume}",
+        spec.summary,
+        name = render_slash_command_name(spec),
+    )
+}
+
+fn render_slash_command_name(spec: &SlashCommandSpec) -> String {
+    match spec.argument_hint {
+        Some(argument_hint) => format!("/{} {}", spec.name, argument_hint),
+        None => format!("/{}", spec.name),
+    }
+}
+
+fn levenshtein_distance(left: &str, right: &str) -> usize {
+    if left == right {
+        return 0;
+    }
+    if left.is_empty() {
+        return right.chars().count();
+    }
+    if right.is_empty() {
+        return left.chars().count();
+    }
+
+    let right_chars = right.chars().collect::<Vec<_>>();
+    let mut previous = (0..=right_chars.len()).collect::<Vec<_>>();
+    let mut current = vec![0; right_chars.len() + 1];
+
+    for (left_index, left_char) in left.chars().enumerate() {
+        current[0] = left_index + 1;
+        for (right_index, right_char) in right_chars.iter().enumerate() {
+            let cost = usize::from(left_char != *right_char);
+            current[right_index + 1] = (previous[right_index + 1] + 1)
+                .min(current[right_index] + 1)
+                .min(previous[right_index] + cost);
+        }
+        std::mem::swap(&mut previous, &mut current);
+    }
+
+    previous[right_chars.len()]
+}
+
+#[must_use]
+pub fn suggest_slash_commands(input: &str, limit: usize) -> Vec<String> {
+    let normalized = input.trim().trim_start_matches('/').to_ascii_lowercase();
+    if normalized.is_empty() || limit == 0 {
+        return Vec::new();
+    }
+
+    let mut ranked = slash_command_specs()
+        .iter()
+        .filter_map(|spec| {
+            let score = std::iter::once(spec.name)
+                .chain(spec.aliases.iter().copied())
+                .map(str::to_ascii_lowercase)
+                .filter_map(|alias| {
+                    if alias == normalized {
+                        Some((0_usize, alias.len()))
+                    } else if alias.starts_with(&normalized) {
+                        Some((1, alias.len()))
+                    } else if alias.contains(&normalized) {
+                        Some((2, alias.len()))
+                    } else {
+                        let distance = levenshtein_distance(&alias, &normalized);
+                        (distance <= 2).then_some((3 + distance, alias.len()))
+                    }
+                })
+                .min();
+
+            score.map(|(bucket, len)| (bucket, len, render_slash_command_name(spec)))
+        })
+        .collect::<Vec<_>>();
+
+    ranked.sort();
+    ranked.dedup_by(|left, right| left.2 == right.2);
+    ranked
+        .into_iter()
+        .take(limit)
+        .map(|(_, _, display)| display)
+        .collect()
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SlashCommandResult {
+    pub message: String,
+    pub session: Session,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PluginsCommandResult {
+    pub message: String,
+    pub reload_runtime: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum DefinitionSource {
+    Project,
+    User,
+}
+
+impl DefinitionSource {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Project => "Project (.codineer)",
+            Self::User => "User (~/.codineer)",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct AgentSummary {
+    name: String,
+    description: Option<String>,
+    model: Option<String>,
+    reasoning_effort: Option<String>,
+    source: DefinitionSource,
+    shadowed_by: Option<DefinitionSource>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SkillSummary {
+    name: String,
+    description: Option<String>,
+    source: DefinitionSource,
+    shadowed_by: Option<DefinitionSource>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SkillRoot {
+    source: DefinitionSource,
+    path: PathBuf,
+}
+
+#[allow(clippy::too_many_lines)]
+pub fn handle_plugins_slash_command(
+    action: Option<&str>,
+    target: Option<&str>,
+    manager: &mut PluginManager,
+) -> Result<PluginsCommandResult, PluginError> {
+    match action {
+        None | Some("list") => Ok(PluginsCommandResult {
+            message: render_plugins_report(&manager.list_installed_plugins()?),
+            reload_runtime: false,
+        }),
+        Some("install") => {
+            let Some(target) = target else {
+                return Ok(PluginsCommandResult {
+                    message: "Usage: /plugins install <path>".to_string(),
+                    reload_runtime: false,
+                });
+            };
+            let install = manager.install(target)?;
+            let plugin = manager
+                .list_installed_plugins()?
+                .into_iter()
+                .find(|plugin| plugin.metadata.id == install.plugin_id);
+            Ok(PluginsCommandResult {
+                message: render_plugin_install_report(&install.plugin_id, plugin.as_ref()),
+                reload_runtime: true,
+            })
+        }
+        Some("enable") => {
+            let Some(target) = target else {
+                return Ok(PluginsCommandResult {
+                    message: "Usage: /plugins enable <name>".to_string(),
+                    reload_runtime: false,
+                });
+            };
+            let plugin = resolve_plugin_target(manager, target)?;
+            manager.enable(&plugin.metadata.id)?;
+            Ok(PluginsCommandResult {
+                message: format!(
+                    "Plugins\n  Result           enabled {}\n  Name             {}\n  Version          {}\n  Status           enabled",
+                    plugin.metadata.id, plugin.metadata.name, plugin.metadata.version
+                ),
+                reload_runtime: true,
+            })
+        }
+        Some("disable") => {
+            let Some(target) = target else {
+                return Ok(PluginsCommandResult {
+                    message: "Usage: /plugins disable <name>".to_string(),
+                    reload_runtime: false,
+                });
+            };
+            let plugin = resolve_plugin_target(manager, target)?;
+            manager.disable(&plugin.metadata.id)?;
+            Ok(PluginsCommandResult {
+                message: format!(
+                    "Plugins\n  Result           disabled {}\n  Name             {}\n  Version          {}\n  Status           disabled",
+                    plugin.metadata.id, plugin.metadata.name, plugin.metadata.version
+                ),
+                reload_runtime: true,
+            })
+        }
+        Some("uninstall") => {
+            let Some(target) = target else {
+                return Ok(PluginsCommandResult {
+                    message: "Usage: /plugins uninstall <plugin-id>".to_string(),
+                    reload_runtime: false,
+                });
+            };
+            manager.uninstall(target)?;
+            Ok(PluginsCommandResult {
+                message: format!("Plugins\n  Result           uninstalled {target}"),
+                reload_runtime: true,
+            })
+        }
+        Some("update") => {
+            let Some(target) = target else {
+                return Ok(PluginsCommandResult {
+                    message: "Usage: /plugins update <plugin-id>".to_string(),
+                    reload_runtime: false,
+                });
+            };
+            let update = manager.update(target)?;
+            let plugin = manager
+                .list_installed_plugins()?
+                .into_iter()
+                .find(|plugin| plugin.metadata.id == update.plugin_id);
+            Ok(PluginsCommandResult {
+                message: format!(
+                    "Plugins\n  Result           updated {}\n  Name             {}\n  Old version      {}\n  New version      {}\n  Status           {}",
+                    update.plugin_id,
+                    plugin
+                        .as_ref()
+                        .map_or_else(|| update.plugin_id.clone(), |plugin| plugin.metadata.name.clone()),
+                    update.old_version,
+                    update.new_version,
+                    plugin
+                        .as_ref()
+                        .map_or("unknown", |plugin| if plugin.enabled { "enabled" } else { "disabled" }),
+                ),
+                reload_runtime: true,
+            })
+        }
+        Some(other) => Ok(PluginsCommandResult {
+            message: format!(
+                "Unknown /plugins action '{other}'. Use list, install, enable, disable, uninstall, or update."
+            ),
+            reload_runtime: false,
+        }),
+    }
+}
+
+pub fn handle_agents_slash_command(args: Option<&str>, cwd: &Path) -> std::io::Result<String> {
+    match normalize_optional_args(args) {
+        None | Some("list") => {
+            let roots = discover_definition_roots(cwd, "agents");
+            let agents = load_agents_from_roots(&roots)?;
+            Ok(render_agents_report(&agents))
+        }
+        Some("-h" | "--help" | "help") => Ok(render_agents_usage(None)),
