@@ -641,3 +641,74 @@ fn run_tool_search(input: ToolSearchInput) -> Result<String, String> {
 
 fn run_notebook_edit(input: NotebookEditInput) -> Result<String, String> {
     to_pretty_json(execute_notebook_edit(input)?)
+}
+
+fn run_sleep(input: SleepInput) -> Result<String, String> {
+    to_pretty_json(execute_sleep(input))
+}
+
+fn run_brief(input: BriefInput) -> Result<String, String> {
+    to_pretty_json(execute_brief(input)?)
+}
+
+fn run_config(input: ConfigInput) -> Result<String, String> {
+    to_pretty_json(execute_config(input)?)
+}
+
+fn run_structured_output(input: StructuredOutputInput) -> Result<String, String> {
+    to_pretty_json(execute_structured_output(input))
+}
+
+fn run_repl(input: ReplInput) -> Result<String, String> {
+    to_pretty_json(execute_repl(input)?)
+}
+
+fn run_powershell(input: PowerShellInput) -> Result<String, String> {
+    to_pretty_json(execute_powershell(input).map_err(|error| error.to_string())?)
+}
+
+fn to_pretty_json<T: serde::Serialize>(value: T) -> Result<String, String> {
+    serde_json::to_string_pretty(&value).map_err(|error| error.to_string())
+}
+
+#[allow(clippy::needless_pass_by_value)]
+fn io_to_string(error: std::io::Error) -> String {
+    error.to_string()
+}
+
+#[derive(Debug, Deserialize)]
+struct ReadFileInput {
+    path: String,
+    offset: Option<usize>,
+    limit: Option<usize>,
+}
+
+#[derive(Debug, Deserialize)]
+struct WriteFileInput {
+    path: String,
+    content: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct EditFileInput {
+    path: String,
+    old_string: String,
+    new_string: String,
+    replace_all: Option<bool>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GlobSearchInputValue {
+    pattern: String,
+    path: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct WebFetchInput {
+    url: String,
+    prompt: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct WebSearchInput {
+    query: String,
