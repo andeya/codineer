@@ -178,3 +178,93 @@ impl SystemPromptBuilder {
         let date = self.project_context.as_ref().map_or_else(
             || "unknown".to_string(),
             |context| context.current_date.clone(),
+        );
+        let mut lines = vec!["# Environment context".to_string()];
+        lines.extend(prepend_bullets(vec![
+            format!("Model family: {FRONTIER_MODEL_NAME}"),
+            format!("Working directory: {cwd}"),
+            format!("Date: {date}"),
+            format!(
+                "Platform: {} {}",
+                self.os_name.as_deref().unwrap_or("unknown"),
+                self.os_version.as_deref().unwrap_or("unknown")
+            ),
+        ]));
+        lines.join("\n")
+    }
+}
+
+#[must_use]
+pub fn prepend_bullets(items: Vec<String>) -> Vec<String> {
+    items.into_iter().map(|item| format!(" - {item}")).collect()
+}
+
+fn discover_instruction_files(cwd: &Path) -> std::io::Result<Vec<ContextFile>> {
+    let mut directories = Vec::new();
+    let mut cursor = Some(cwd);
+    while let Some(dir) = cursor {
+        directories.push(dir.to_path_buf());
+        cursor = dir.parent();
+    }
+    directories.reverse();
+
+    let mut files = Vec::new();
+    for dir in directories {
+        for candidate in [
+            dir.join("CODINEER.md"),
+            dir.join("CODINEER.local.md"),
+            dir.join(".codineer").join("CODINEER.md"),
+            dir.join(".codineer").join("instructions.md"),
+        ] {
+            push_context_file(&mut files, candidate)?;
+        }
+    }
+    Ok(dedupe_instruction_files(files))
+}
+
+fn push_context_file(files: &mut Vec<ContextFile>, path: PathBuf) -> std::io::Result<()> {
+    match fs::read_to_string(&path) {
+        Ok(content) if !content.trim().is_empty() => {
+            files.push(ContextFile { path, content });
+            Ok(())
+        }
+        Ok(_) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error),
+    }
+}
+
+fn read_git_status(cwd: &Path) -> Option<String> {
+    let output = Command::new("git")
+        .args(["--no-optional-locks", "status", "--short", "--branch"])
+        .current_dir(cwd)
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let stdout = String::from_utf8(output.stdout).ok()?;
+    let trimmed = stdout.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
+}
+
+fn read_git_diff(cwd: &Path) -> Option<String> {
+    let mut sections = Vec::new();
+
+    let staged = read_git_output(cwd, &["diff", "--cached"])?;
+    if !staged.trim().is_empty() {
+        sections.push(format!("Staged changes:\n{}", staged.trim_end()));
+    }
+
+    let unstaged = read_git_output(cwd, &["diff"])?;
+    if !unstaged.trim().is_empty() {
+        sections.push(format!("Unstaged changes:\n{}", unstaged.trim_end()));
+    }
+
+    if sections.is_empty() {
+        None
+    } else {
