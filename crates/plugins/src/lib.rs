@@ -1357,3 +1357,116 @@ fn load_plugin_definition(
     root: &Path,
     kind: PluginKind,
     source: String,
+    marketplace: &str,
+) -> Result<PluginDefinition, PluginError> {
+    let manifest = load_plugin_from_directory(root)?;
+    let metadata = PluginMetadata {
+        id: plugin_id(&manifest.name, marketplace),
+        name: manifest.name,
+        version: manifest.version,
+        description: manifest.description,
+        kind,
+        source,
+        default_enabled: manifest.default_enabled,
+        root: Some(root.to_path_buf()),
+    };
+    let hooks = resolve_hooks(root, &manifest.hooks);
+    let lifecycle = resolve_lifecycle(root, &manifest.lifecycle);
+    let tools = resolve_tools(root, &metadata.id, &metadata.name, &manifest.tools);
+    Ok(match kind {
+        PluginKind::Builtin => PluginDefinition::Builtin(BuiltinPlugin {
+            metadata,
+            hooks,
+            lifecycle,
+            tools,
+        }),
+        PluginKind::Bundled => PluginDefinition::Bundled(BundledPlugin {
+            metadata,
+            hooks,
+            lifecycle,
+            tools,
+        }),
+        PluginKind::External => PluginDefinition::External(ExternalPlugin {
+            metadata,
+            hooks,
+            lifecycle,
+            tools,
+        }),
+    })
+}
+
+pub fn load_plugin_from_directory(root: &Path) -> Result<PluginManifest, PluginError> {
+    load_manifest_from_directory(root)
+}
+
+fn load_manifest_from_directory(root: &Path) -> Result<PluginManifest, PluginError> {
+    let manifest_path = plugin_manifest_path(root)?;
+    load_manifest_from_path(root, &manifest_path)
+}
+
+fn load_manifest_from_path(
+    root: &Path,
+    manifest_path: &Path,
+) -> Result<PluginManifest, PluginError> {
+    let contents = fs::read_to_string(manifest_path).map_err(|error| {
+        PluginError::NotFound(format!(
+            "plugin manifest not found at {}: {error}",
+            manifest_path.display()
+        ))
+    })?;
+    let raw_manifest: RawPluginManifest = serde_json::from_str(&contents)?;
+    build_plugin_manifest(root, raw_manifest)
+}
+
+fn plugin_manifest_path(root: &Path) -> Result<PathBuf, PluginError> {
+    let direct_path = root.join(MANIFEST_FILE_NAME);
+    if direct_path.exists() {
+        return Ok(direct_path);
+    }
+
+    let packaged_path = root.join(MANIFEST_RELATIVE_PATH);
+    if packaged_path.exists() {
+        return Ok(packaged_path);
+    }
+
+    Err(PluginError::NotFound(format!(
+        "plugin manifest not found at {} or {}",
+        direct_path.display(),
+        packaged_path.display()
+    )))
+}
+
+fn build_plugin_manifest(
+    root: &Path,
+    raw: RawPluginManifest,
+) -> Result<PluginManifest, PluginError> {
+    let mut errors = Vec::new();
+
+    validate_required_manifest_field("name", &raw.name, &mut errors);
+    validate_required_manifest_field("version", &raw.version, &mut errors);
+    validate_required_manifest_field("description", &raw.description, &mut errors);
+
+    let permissions = build_manifest_permissions(&raw.permissions, &mut errors);
+    validate_command_entries(root, raw.hooks.pre_tool_use.iter(), "hook", &mut errors);
+    validate_command_entries(root, raw.hooks.post_tool_use.iter(), "hook", &mut errors);
+    validate_command_entries(
+        root,
+        raw.lifecycle.init.iter(),
+        "lifecycle command",
+        &mut errors,
+    );
+    validate_command_entries(
+        root,
+        raw.lifecycle.shutdown.iter(),
+        "lifecycle command",
+        &mut errors,
+    );
+    let tools = build_manifest_tools(root, raw.tools, &mut errors);
+    let commands = build_manifest_commands(root, raw.commands, &mut errors);
+
+    if !errors.is_empty() {
+        return Err(PluginError::ManifestValidation(errors));
+    }
+
+    Ok(PluginManifest {
+        name: raw.name,
