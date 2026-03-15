@@ -131,3 +131,70 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         CliAction::Init => run_init()?,
         CliAction::Repl {
             model,
+            allowed_tools,
+            permission_mode,
+        } => run_repl(model, allowed_tools, permission_mode)?,
+        CliAction::Help => print_help(),
+    }
+    Ok(())
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum CliAction {
+    Agents {
+        args: Option<String>,
+    },
+    Skills {
+        args: Option<String>,
+    },
+    PrintSystemPrompt {
+        cwd: PathBuf,
+        date: String,
+    },
+    Version,
+    ResumeSession {
+        session_path: PathBuf,
+        commands: Vec<String>,
+    },
+    Prompt {
+        prompt: String,
+        model: String,
+        output_format: CliOutputFormat,
+        allowed_tools: Option<AllowedToolSet>,
+        permission_mode: PermissionMode,
+    },
+    Login,
+    Logout,
+    Init,
+    Repl {
+        model: String,
+        allowed_tools: Option<AllowedToolSet>,
+        permission_mode: PermissionMode,
+    },
+    // prompt-mode formatting is only supported for non-interactive runs
+    Help,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CliOutputFormat {
+    Text,
+    Json,
+}
+
+impl CliOutputFormat {
+    fn parse(value: &str) -> Result<Self, String> {
+        match value {
+            "text" => Ok(Self::Text),
+            "json" => Ok(Self::Json),
+            other => Err(format!(
+                "unsupported value for --output-format: {other} (expected text or json)"
+            )),
+        }
+    }
+}
+
+struct ParsedFlags {
+    model: String,
+    output_format: CliOutputFormat,
+    permission_mode: PermissionMode,
+    wants_version: bool,
