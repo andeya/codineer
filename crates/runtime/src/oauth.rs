@@ -407,3 +407,85 @@ fn write_credentials_root(path: &PathBuf, root: &Map<String, Value>) -> io::Resu
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
+    let rendered = serde_json::to_string_pretty(&Value::Object(root.clone()))
+        .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+    let temp_path = path.with_extension("json.tmp");
+    fs::write(&temp_path, format!("{rendered}\n"))?;
+    set_file_permissions_owner_only(&temp_path);
+    fs::rename(temp_path, path)
+}
+
+#[cfg(unix)]
+fn set_file_permissions_owner_only(path: &std::path::Path) {
+    use std::os::unix::fs::PermissionsExt;
+    let _ = fs::set_permissions(path, fs::Permissions::from_mode(0o600));
+}
+
+#[cfg(not(unix))]
+fn set_file_permissions_owner_only(_path: &std::path::Path) {}
+
+fn base64url_encode(bytes: &[u8]) -> String {
+    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+    let mut output = String::new();
+    let mut index = 0;
+    while index + 3 <= bytes.len() {
+        let block = (u32::from(bytes[index]) << 16)
+            | (u32::from(bytes[index + 1]) << 8)
+            | u32::from(bytes[index + 2]);
+        output.push(TABLE[((block >> 18) & 0x3F) as usize] as char);
+        output.push(TABLE[((block >> 12) & 0x3F) as usize] as char);
+        output.push(TABLE[((block >> 6) & 0x3F) as usize] as char);
+        output.push(TABLE[(block & 0x3F) as usize] as char);
+        index += 3;
+    }
+    match bytes.len().saturating_sub(index) {
+        1 => {
+            let block = u32::from(bytes[index]) << 16;
+            output.push(TABLE[((block >> 18) & 0x3F) as usize] as char);
+            output.push(TABLE[((block >> 12) & 0x3F) as usize] as char);
+        }
+        2 => {
+            let block = (u32::from(bytes[index]) << 16) | (u32::from(bytes[index + 1]) << 8);
+            output.push(TABLE[((block >> 18) & 0x3F) as usize] as char);
+            output.push(TABLE[((block >> 12) & 0x3F) as usize] as char);
+            output.push(TABLE[((block >> 6) & 0x3F) as usize] as char);
+        }
+        _ => {}
+    }
+    output
+}
+
+fn percent_encode(value: &str) -> String {
+    let mut encoded = String::new();
+    for byte in value.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                encoded.push(char::from(byte));
+            }
+            _ => {
+                use std::fmt::Write as _;
+                let _ = write!(&mut encoded, "%{byte:02X}");
+            }
+        }
+    }
+    encoded
+}
+
+fn percent_decode(value: &str) -> Result<String, String> {
+    let mut decoded = Vec::with_capacity(value.len());
+    let bytes = value.as_bytes();
+    let mut index = 0;
+    while index < bytes.len() {
+        match bytes[index] {
+            b'%' if index + 2 < bytes.len() => {
+                let hi = decode_hex(bytes[index + 1])?;
+                let lo = decode_hex(bytes[index + 2])?;
+                decoded.push((hi << 4) | lo);
+                index += 3;
+            }
+            b'+' => {
+                decoded.push(b' ');
+                index += 1;
+            }
+            byte => {
+                decoded.push(byte);
