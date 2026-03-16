@@ -447,3 +447,92 @@ mod tests {
                     let last_message = request
                         .messages
                         .last()
+                        .expect("tool result should be present");
+                    assert_eq!(last_message.role, MessageRole::Tool);
+                    Ok(vec![
+                        AssistantEvent::TextDelta("The answer is 4.".to_string()),
+                        AssistantEvent::Usage(TokenUsage {
+                            input_tokens: 24,
+                            output_tokens: 4,
+                            cache_creation_input_tokens: 1,
+                            cache_read_input_tokens: 3,
+                        }),
+                        AssistantEvent::MessageStop,
+                    ])
+                }
+                _ => Err(RuntimeError::new("unexpected extra API call")),
+            }
+        }
+    }
+
+    struct PromptAllowOnce;
+
+    impl PermissionPrompter for PromptAllowOnce {
+        fn decide(&mut self, request: &PermissionRequest) -> PermissionPromptDecision {
+            assert_eq!(request.tool_name, "add");
+            PermissionPromptDecision::Allow
+        }
+    }
+
+    #[test]
+    fn runs_user_to_tool_to_result_loop_end_to_end_and_tracks_usage() {
+        let api_client = ScriptedApiClient { call_count: 0 };
+        let tool_executor = StaticToolExecutor::new().register("add", |input| {
+            let total = input
+                .split(',')
+                .map(|part| part.parse::<i32>().expect("input must be valid integer"))
+                .sum::<i32>();
+            Ok(total.to_string())
+        });
+        let permission_policy = PermissionPolicy::new(PermissionMode::WorkspaceWrite);
+        let system_prompt = SystemPromptBuilder::new()
+            .with_project_context(ProjectContext {
+                cwd: PathBuf::from("/tmp/project"),
+                current_date: "2026-03-31".to_string(),
+                git_status: None,
+                git_diff: None,
+                instruction_files: Vec::new(),
+            })
+            .with_os("linux", "6.8")
+            .build();
+        let mut runtime = ConversationRuntime::new(
+            Session::new(),
+            api_client,
+            tool_executor,
+            permission_policy,
+            system_prompt,
+        );
+
+        let summary = runtime
+            .run_turn("what is 2 + 2?", Some(&mut PromptAllowOnce))
+            .expect("conversation loop should succeed");
+
+        assert_eq!(summary.iterations, 2);
+        assert_eq!(summary.assistant_messages.len(), 2);
+        assert_eq!(summary.tool_results.len(), 1);
+        assert_eq!(runtime.session().messages.len(), 4);
+        assert_eq!(summary.usage.output_tokens, 10);
+        assert!(matches!(
+            runtime.session().messages[1].blocks[1],
+            ContentBlock::ToolUse { .. }
+        ));
+        assert!(matches!(
+            runtime.session().messages[2].blocks[0],
+            ContentBlock::ToolResult {
+                is_error: false,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn records_denied_tool_results_when_prompt_rejects() {
+        struct RejectPrompter;
+        impl PermissionPrompter for RejectPrompter {
+            fn decide(&mut self, _request: &PermissionRequest) -> PermissionPromptDecision {
+                PermissionPromptDecision::Deny {
+                    reason: "not now".to_string(),
+                }
+            }
+        }
+
