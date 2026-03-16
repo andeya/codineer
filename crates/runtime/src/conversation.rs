@@ -357,3 +357,93 @@ fn merge_hook_feedback(messages: &[String], output: String, denied: bool) -> Str
         sections.push(output);
     }
     let label = if denied {
+        "Hook feedback (denied)"
+    } else {
+        "Hook feedback"
+    };
+    sections.push(format!("{label}:\n{}", messages.join("\n")));
+    sections.join("\n\n")
+}
+
+type ToolHandler = Box<dyn FnMut(&str) -> Result<String, ToolError>>;
+
+#[derive(Default)]
+pub struct StaticToolExecutor {
+    handlers: BTreeMap<String, ToolHandler>,
+}
+
+impl StaticToolExecutor {
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    #[must_use]
+    pub fn register(
+        mut self,
+        tool_name: impl Into<String>,
+        handler: impl FnMut(&str) -> Result<String, ToolError> + 'static,
+    ) -> Self {
+        self.handlers.insert(tool_name.into(), Box::new(handler));
+        self
+    }
+}
+
+impl ToolExecutor for StaticToolExecutor {
+    fn execute(&mut self, tool_name: &str, input: &str) -> Result<String, ToolError> {
+        self.handlers
+            .get_mut(tool_name)
+            .ok_or_else(|| ToolError::new(format!("unknown tool: {tool_name}")))?(input)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        ApiClient, ApiRequest, AssistantEvent, ConversationRuntime, RuntimeError,
+        StaticToolExecutor,
+    };
+    use crate::compact::CompactionConfig;
+    use crate::config::{RuntimeFeatureConfig, RuntimeHookConfig};
+    use crate::permissions::{
+        PermissionMode, PermissionPolicy, PermissionPromptDecision, PermissionPrompter,
+        PermissionRequest,
+    };
+    use crate::prompt::{ProjectContext, SystemPromptBuilder};
+    use crate::session::{ContentBlock, MessageRole, Session};
+    use crate::usage::TokenUsage;
+    use std::path::PathBuf;
+
+    struct ScriptedApiClient {
+        call_count: usize,
+    }
+
+    impl ApiClient for ScriptedApiClient {
+        fn stream(&mut self, request: ApiRequest) -> Result<Vec<AssistantEvent>, RuntimeError> {
+            self.call_count += 1;
+            match self.call_count {
+                1 => {
+                    assert!(request
+                        .messages
+                        .iter()
+                        .any(|message| message.role == MessageRole::User));
+                    Ok(vec![
+                        AssistantEvent::TextDelta("Let me calculate that.".to_string()),
+                        AssistantEvent::ToolUse {
+                            id: "tool-1".to_string(),
+                            name: "add".to_string(),
+                            input: "2,2".to_string(),
+                        },
+                        AssistantEvent::Usage(TokenUsage {
+                            input_tokens: 20,
+                            output_tokens: 6,
+                            cache_creation_input_tokens: 1,
+                            cache_read_input_tokens: 2,
+                        }),
+                        AssistantEvent::MessageStop,
+                    ])
+                }
+                2 => {
+                    let last_message = request
+                        .messages
+                        .last()
