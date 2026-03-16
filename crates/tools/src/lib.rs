@@ -926,3 +926,360 @@ struct NotebookEditOutput {
     error: Option<String>,
     notebook_path: String,
     original_file: String,
+    updated_file: String,
+}
+
+#[derive(Debug, Serialize)]
+struct SleepOutput {
+    duration_ms: u64,
+    message: String,
+}
+
+#[derive(Debug, Serialize)]
+struct BriefOutput {
+    message: String,
+    attachments: Option<Vec<ResolvedAttachment>>,
+    #[serde(rename = "sentAt")]
+    sent_at: String,
+}
+
+#[derive(Debug, Serialize)]
+struct ResolvedAttachment {
+    path: String,
+    size: u64,
+    #[serde(rename = "isImage")]
+    is_image: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct ConfigOutput {
+    success: bool,
+    operation: Option<String>,
+    setting: Option<String>,
+    value: Option<Value>,
+    #[serde(rename = "previousValue")]
+    previous_value: Option<Value>,
+    #[serde(rename = "newValue")]
+    new_value: Option<Value>,
+    error: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct StructuredOutputResult {
+    data: String,
+    structured_output: BTreeMap<String, Value>,
+}
+
+#[derive(Debug, Serialize)]
+struct ReplOutput {
+    language: String,
+    stdout: String,
+    stderr: String,
+    #[serde(rename = "exitCode")]
+    exit_code: i32,
+    #[serde(rename = "durationMs")]
+    duration_ms: u128,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(untagged)]
+enum WebSearchResultItem {
+    SearchResult {
+        tool_use_id: String,
+        content: Vec<SearchHit>,
+    },
+    Commentary(String),
+}
+
+#[derive(Debug, Serialize)]
+struct SearchHit {
+    title: String,
+    url: String,
+}
+
+fn execute_web_fetch(input: &WebFetchInput) -> Result<WebFetchOutput, String> {
+    const MAX_BODY_SIZE: usize = 10 * 1024 * 1024; // 10 MiB
+    let started = Instant::now();
+    let client = build_http_client()?;
+    let request_url = normalize_fetch_url(&input.url)?;
+    let response = client
+        .get(request_url.clone())
+        .send()
+        .map_err(|error| error.to_string())?;
+
+    let status = response.status();
+    let final_url = response.url().to_string();
+    let code = status.as_u16();
+    let code_text = status.canonical_reason().unwrap_or("Unknown").to_string();
+    let content_type = response
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or_default()
+        .to_string();
+    let body = response.text().map_err(|error| error.to_string())?;
+    let bytes = body.len();
+    let truncated = if body.len() > MAX_BODY_SIZE {
+        &body[..MAX_BODY_SIZE]
+    } else {
+        &body
+    };
+    let normalized = normalize_fetched_content(truncated, &content_type);
+    let result = summarize_web_fetch(
+        &final_url,
+        &input.prompt,
+        &normalized,
+        truncated,
+        &content_type,
+    );
+
+    Ok(WebFetchOutput {
+        bytes,
+        code,
+        code_text,
+        result,
+        duration_ms: started.elapsed().as_millis(),
+        url: final_url,
+    })
+}
+
+fn execute_web_search(input: &WebSearchInput) -> Result<WebSearchOutput, String> {
+    let started = Instant::now();
+    let client = build_http_client()?;
+    let search_url = build_search_url(&input.query)?;
+    let response = client
+        .get(search_url)
+        .send()
+        .map_err(|error| error.to_string())?;
+
+    let final_url = response.url().clone();
+    let html = response.text().map_err(|error| error.to_string())?;
+    let mut hits = extract_search_hits(&html);
+
+    if hits.is_empty() && final_url.host_str().is_some() {
+        hits = extract_search_hits_from_generic_links(&html);
+    }
+
+    if let Some(allowed) = input.allowed_domains.as_ref() {
+        hits.retain(|hit| host_matches_list(&hit.url, allowed));
+    }
+    if let Some(blocked) = input.blocked_domains.as_ref() {
+        hits.retain(|hit| !host_matches_list(&hit.url, blocked));
+    }
+
+    dedupe_hits(&mut hits);
+    hits.truncate(8);
+
+    let summary = if hits.is_empty() {
+        format!("No web search results matched the query {:?}.", input.query)
+    } else {
+        let rendered_hits = hits
+            .iter()
+            .map(|hit| format!("- [{}]({})", hit.title, hit.url))
+            .collect::<Vec<_>>()
+            .join("\n");
+        format!(
+            "Search results for {:?}. Include a Sources section in the final answer.\n{}",
+            input.query, rendered_hits
+        )
+    };
+
+    Ok(WebSearchOutput {
+        query: input.query.clone(),
+        results: vec![
+            WebSearchResultItem::Commentary(summary),
+            WebSearchResultItem::SearchResult {
+                tool_use_id: String::from("web_search_1"),
+                content: hits,
+            },
+        ],
+        duration_seconds: started.elapsed().as_secs_f64(),
+    })
+}
+
+fn build_http_client() -> Result<Client, String> {
+    Client::builder()
+        .timeout(Duration::from_secs(20))
+        .redirect(reqwest::redirect::Policy::limited(10))
+        .user_agent("codineer-rust-tools/0.1")
+        .build()
+        .map_err(|error| error.to_string())
+}
+
+fn normalize_fetch_url(url: &str) -> Result<String, String> {
+    let parsed = reqwest::Url::parse(url).map_err(|error| error.to_string())?;
+    if parsed.scheme() == "http" {
+        let host = parsed.host_str().unwrap_or_default();
+        if host != "localhost" && host != "127.0.0.1" && host != "::1" {
+            let mut upgraded = parsed;
+            upgraded
+                .set_scheme("https")
+                .map_err(|()| String::from("failed to upgrade URL to https"))?;
+            return Ok(upgraded.to_string());
+        }
+    }
+    Ok(parsed.to_string())
+}
+
+fn build_search_url(query: &str) -> Result<reqwest::Url, String> {
+    if let Ok(base) = std::env::var("CODINEER_WEB_SEARCH_BASE_URL") {
+        let mut url = reqwest::Url::parse(&base).map_err(|error| error.to_string())?;
+        url.query_pairs_mut().append_pair("q", query);
+        return Ok(url);
+    }
+
+    let mut url = reqwest::Url::parse("https://html.duckduckgo.com/html/")
+        .map_err(|error| error.to_string())?;
+    url.query_pairs_mut().append_pair("q", query);
+    Ok(url)
+}
+
+fn normalize_fetched_content(body: &str, content_type: &str) -> String {
+    if content_type.contains("html") {
+        html_to_text(body)
+    } else {
+        body.trim().to_string()
+    }
+}
+
+fn summarize_web_fetch(
+    url: &str,
+    prompt: &str,
+    content: &str,
+    raw_body: &str,
+    content_type: &str,
+) -> String {
+    let lower_prompt = prompt.to_lowercase();
+    let compact = collapse_whitespace(content);
+
+    let detail = if lower_prompt.contains("title") {
+        extract_title(content, raw_body, content_type).map_or_else(
+            || preview_text(&compact, 600),
+            |title| format!("Title: {title}"),
+        )
+    } else if lower_prompt.contains("summary") || lower_prompt.contains("summarize") {
+        preview_text(&compact, 900)
+    } else {
+        let preview = preview_text(&compact, 900);
+        format!("Prompt: {prompt}\nContent preview:\n{preview}")
+    };
+
+    format!("Fetched {url}\n{detail}")
+}
+
+fn extract_title(content: &str, raw_body: &str, content_type: &str) -> Option<String> {
+    if content_type.contains("html") {
+        let lowered = raw_body.to_lowercase();
+        if let Some(start) = lowered.find("<title>") {
+            let after = start + "<title>".len();
+            if let Some(end_rel) = lowered[after..].find("</title>") {
+                let title =
+                    collapse_whitespace(&decode_html_entities(&raw_body[after..after + end_rel]));
+                if !title.is_empty() {
+                    return Some(title);
+                }
+            }
+        }
+    }
+
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if !trimmed.is_empty() {
+            return Some(trimmed.to_string());
+        }
+    }
+    None
+}
+
+fn html_to_text(html: &str) -> String {
+    let mut text = String::with_capacity(html.len());
+    let mut in_tag = false;
+    let mut previous_was_space = false;
+
+    for ch in html.chars() {
+        match ch {
+            '<' => in_tag = true,
+            '>' => in_tag = false,
+            _ if in_tag => {}
+            '&' => {
+                text.push('&');
+                previous_was_space = false;
+            }
+            ch if ch.is_whitespace() => {
+                if !previous_was_space {
+                    text.push(' ');
+                    previous_was_space = true;
+                }
+            }
+            _ => {
+                text.push(ch);
+                previous_was_space = false;
+            }
+        }
+    }
+
+    collapse_whitespace(&decode_html_entities(&text))
+}
+
+fn decode_html_entities(input: &str) -> String {
+    input
+        .replace("&amp;", "&")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&#39;", "'")
+        .replace("&nbsp;", " ")
+}
+
+fn collapse_whitespace(input: &str) -> String {
+    input.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+fn preview_text(input: &str, max_chars: usize) -> String {
+    if input.chars().count() <= max_chars {
+        return input.to_string();
+    }
+    let shortened = input.chars().take(max_chars).collect::<String>();
+    format!("{}…", shortened.trim_end())
+}
+
+fn extract_search_hits(html: &str) -> Vec<SearchHit> {
+    let mut hits = Vec::new();
+    let mut remaining = html;
+
+    while let Some(anchor_start) = remaining.find("result__a") {
+        let after_class = &remaining[anchor_start..];
+        let Some(href_idx) = after_class.find("href=") else {
+            remaining = &after_class[1..];
+            continue;
+        };
+        let href_slice = &after_class[href_idx + 5..];
+        let Some((url, rest)) = extract_quoted_value(href_slice) else {
+            remaining = &after_class[1..];
+            continue;
+        };
+        let Some(close_tag_idx) = rest.find('>') else {
+            remaining = &after_class[1..];
+            continue;
+        };
+        let after_tag = &rest[close_tag_idx + 1..];
+        let Some(end_anchor_idx) = after_tag.find("</a>") else {
+            remaining = &after_tag[1..];
+            continue;
+        };
+        let title = html_to_text(&after_tag[..end_anchor_idx]);
+        if let Some(decoded_url) = decode_duckduckgo_redirect(&url) {
+            hits.push(SearchHit {
+                title: title.trim().to_string(),
+                url: decoded_url,
+            });
+        }
+        remaining = &after_tag[end_anchor_idx + 4..];
+    }
+
+    hits
+}
+
+fn extract_search_hits_from_generic_links(html: &str) -> Vec<SearchHit> {
+    let mut hits = Vec::new();
+    let mut remaining = html;
