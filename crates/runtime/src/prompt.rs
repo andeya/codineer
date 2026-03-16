@@ -268,3 +268,93 @@ fn read_git_diff(cwd: &Path) -> Option<String> {
     if sections.is_empty() {
         None
     } else {
+        Some(sections.join("\n\n"))
+    }
+}
+
+fn read_git_output(cwd: &Path, args: &[&str]) -> Option<String> {
+    let output = Command::new("git")
+        .args(args)
+        .current_dir(cwd)
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    String::from_utf8(output.stdout).ok()
+}
+
+fn render_project_context(project_context: &ProjectContext) -> String {
+    let mut lines = vec!["# Project context".to_string()];
+    let mut bullets = vec![
+        format!("Today's date is {}.", project_context.current_date),
+        format!("Working directory: {}", project_context.cwd.display()),
+    ];
+    if !project_context.instruction_files.is_empty() {
+        bullets.push(format!(
+            "Codineer instruction files discovered: {}.",
+            project_context.instruction_files.len()
+        ));
+    }
+    lines.extend(prepend_bullets(bullets));
+    if let Some(status) = &project_context.git_status {
+        lines.push(String::new());
+        lines.push("Git status snapshot:".to_string());
+        lines.push(status.clone());
+    }
+    if let Some(diff) = &project_context.git_diff {
+        lines.push(String::new());
+        lines.push("Git diff snapshot:".to_string());
+        lines.push(diff.clone());
+    }
+    lines.join("\n")
+}
+
+fn render_instruction_files(files: &[ContextFile]) -> String {
+    let mut sections = vec!["# Codineer instructions".to_string()];
+    let mut remaining_chars = MAX_TOTAL_INSTRUCTION_CHARS;
+    for file in files {
+        if remaining_chars == 0 {
+            sections.push(
+                "_Additional instruction content omitted after reaching the prompt budget._"
+                    .to_string(),
+            );
+            break;
+        }
+
+        let raw_content = truncate_instruction_content(&file.content, remaining_chars);
+        let rendered_content = render_instruction_content(&raw_content);
+        let consumed = rendered_content.chars().count().min(remaining_chars);
+        remaining_chars = remaining_chars.saturating_sub(consumed);
+
+        sections.push(format!("## {}", describe_instruction_file(file, files)));
+        sections.push(rendered_content);
+    }
+    sections.join("\n\n")
+}
+
+fn dedupe_instruction_files(files: Vec<ContextFile>) -> Vec<ContextFile> {
+    let mut deduped = Vec::new();
+    let mut seen_hashes = Vec::new();
+
+    for file in files {
+        let normalized = normalize_instruction_content(&file.content);
+        let hash = stable_content_hash(&normalized);
+        if seen_hashes.contains(&hash) {
+            continue;
+        }
+        seen_hashes.push(hash);
+        deduped.push(file);
+    }
+
+    deduped
+}
+
+fn normalize_instruction_content(content: &str) -> String {
+    collapse_blank_lines(content).trim().to_string()
+}
+
+fn stable_content_hash(content: &str) -> u64 {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    content.hash(&mut hasher);
+    hasher.finish()
