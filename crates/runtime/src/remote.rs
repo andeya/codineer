@@ -199,3 +199,53 @@ pub fn read_token(path: &Path) -> io::Result<Option<String>> {
 
 #[must_use]
 pub fn upstream_proxy_ws_url(base_url: &str) -> String {
+    let base = base_url.trim_end_matches('/');
+    let ws_base = if let Some(stripped) = base.strip_prefix("https://") {
+        format!("wss://{stripped}")
+    } else if let Some(stripped) = base.strip_prefix("http://") {
+        format!("ws://{stripped}")
+    } else {
+        format!("wss://{base}")
+    };
+    format!("{ws_base}/v1/code/upstreamproxy/ws")
+}
+
+#[must_use]
+pub fn no_proxy_list() -> String {
+    let mut hosts = NO_PROXY_HOSTS.to_vec();
+    hosts.extend(["pypi.org", "files.pythonhosted.org", "proxy.golang.org"]);
+    hosts.join(",")
+}
+
+#[must_use]
+pub fn inherited_upstream_proxy_env(
+    env_map: &BTreeMap<String, String>,
+) -> BTreeMap<String, String> {
+    if !(env_map.contains_key("HTTPS_PROXY") && env_map.contains_key("SSL_CERT_FILE")) {
+        return BTreeMap::new();
+    }
+    UPSTREAM_PROXY_ENV_KEYS
+        .iter()
+        .filter_map(|key| {
+            env_map
+                .get(*key)
+                .map(|value| ((*key).to_string(), value.clone()))
+        })
+        .collect()
+}
+
+fn default_ca_bundle_path() -> PathBuf {
+    env::var_os("HOME")
+        .map_or_else(|| PathBuf::from("."), PathBuf::from)
+        .join(".ccr")
+        .join("ca-bundle.crt")
+}
+
+fn env_truthy(value: Option<&String>) -> bool {
+    value.is_some_and(|raw| {
+        matches!(
+            raw.trim().to_ascii_lowercase().as_str(),
+            "1" | "true" | "yes" | "on"
+        )
+    })
+}
