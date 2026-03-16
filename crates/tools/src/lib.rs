@@ -855,3 +855,288 @@ struct WebSearchOutput {
 }
 
 #[derive(Debug, Serialize)]
+struct TodoWriteOutput {
+    #[serde(rename = "oldTodos")]
+    old_todos: Vec<TodoItem>,
+    #[serde(rename = "newTodos")]
+    new_todos: Vec<TodoItem>,
+    #[serde(rename = "verificationNudgeNeeded")]
+    verification_nudge_needed: Option<bool>,
+}
+
+#[derive(Debug, Serialize)]
+struct SkillOutput {
+    skill: String,
+    path: String,
+    args: Option<String>,
+    description: Option<String>,
+    prompt: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct AgentOutput {
+    #[serde(rename = "agentId")]
+    agent_id: String,
+    name: String,
+    description: String,
+    #[serde(rename = "subagentType")]
+    subagent_type: Option<String>,
+    model: Option<String>,
+    status: String,
+    #[serde(rename = "outputFile")]
+    output_file: String,
+    #[serde(rename = "manifestFile")]
+    manifest_file: String,
+    #[serde(rename = "createdAt")]
+    created_at: String,
+    #[serde(rename = "startedAt", skip_serializing_if = "Option::is_none")]
+    started_at: Option<String>,
+    #[serde(rename = "completedAt", skip_serializing_if = "Option::is_none")]
+    completed_at: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct AgentJob {
+    manifest: AgentOutput,
+    prompt: String,
+    system_prompt: Vec<String>,
+    allowed_tools: BTreeSet<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct ToolSearchOutput {
+    matches: Vec<String>,
+    query: String,
+    normalized_query: String,
+    #[serde(rename = "total_deferred_tools")]
+    total_deferred_tools: usize,
+    #[serde(rename = "pending_mcp_servers")]
+    pending_mcp_servers: Option<Vec<String>>,
+}
+
+#[derive(Debug, Serialize)]
+struct NotebookEditOutput {
+    new_source: String,
+    cell_id: Option<String>,
+    cell_type: Option<NotebookCellType>,
+    language: String,
+    edit_mode: String,
+    error: Option<String>,
+    notebook_path: String,
+    original_file: String,
+    updated_file: String,
+}
+
+#[derive(Debug, Serialize)]
+struct SleepOutput {
+    duration_ms: u64,
+    message: String,
+}
+
+#[derive(Debug, Serialize)]
+struct BriefOutput {
+    message: String,
+    attachments: Option<Vec<ResolvedAttachment>>,
+    #[serde(rename = "sentAt")]
+    sent_at: String,
+}
+
+#[derive(Debug, Serialize)]
+struct ResolvedAttachment {
+    path: String,
+    size: u64,
+    #[serde(rename = "isImage")]
+    is_image: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct ConfigOutput {
+    success: bool,
+    operation: Option<String>,
+    setting: Option<String>,
+    value: Option<Value>,
+    #[serde(rename = "previousValue")]
+    previous_value: Option<Value>,
+    #[serde(rename = "newValue")]
+    new_value: Option<Value>,
+    error: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct StructuredOutputResult {
+    data: String,
+    structured_output: BTreeMap<String, Value>,
+}
+
+#[derive(Debug, Serialize)]
+struct ReplOutput {
+    language: String,
+    stdout: String,
+    stderr: String,
+    #[serde(rename = "exitCode")]
+    exit_code: i32,
+    #[serde(rename = "durationMs")]
+    duration_ms: u128,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(untagged)]
+enum WebSearchResultItem {
+    SearchResult {
+        tool_use_id: String,
+        content: Vec<SearchHit>,
+    },
+    Commentary(String),
+}
+
+#[derive(Debug, Serialize)]
+struct SearchHit {
+    title: String,
+    url: String,
+}
+
+fn execute_web_fetch(input: &WebFetchInput) -> Result<WebFetchOutput, String> {
+    const MAX_BODY_SIZE: usize = 10 * 1024 * 1024; // 10 MiB
+    let started = Instant::now();
+    let client = build_http_client()?;
+    let request_url = normalize_fetch_url(&input.url)?;
+    let response = client
+        .get(request_url.clone())
+        .send()
+        .map_err(|error| error.to_string())?;
+
+    let status = response.status();
+    let final_url = response.url().to_string();
+    let code = status.as_u16();
+    let code_text = status.canonical_reason().unwrap_or("Unknown").to_string();
+    let content_type = response
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or_default()
+        .to_string();
+    let body = response.text().map_err(|error| error.to_string())?;
+    let bytes = body.len();
+    let truncated = if body.len() > MAX_BODY_SIZE {
+        &body[..MAX_BODY_SIZE]
+    } else {
+        &body
+    };
+    let normalized = normalize_fetched_content(truncated, &content_type);
+    let result = summarize_web_fetch(
+        &final_url,
+        &input.prompt,
+        &normalized,
+        truncated,
+        &content_type,
+    );
+
+    Ok(WebFetchOutput {
+        bytes,
+        code,
+        code_text,
+        result,
+        duration_ms: started.elapsed().as_millis(),
+        url: final_url,
+    })
+}
+
+fn execute_web_search(input: &WebSearchInput) -> Result<WebSearchOutput, String> {
+    let started = Instant::now();
+    let client = build_http_client()?;
+    let search_url = build_search_url(&input.query)?;
+    let response = client
+        .get(search_url)
+        .send()
+        .map_err(|error| error.to_string())?;
+
+    let final_url = response.url().clone();
+    let html = response.text().map_err(|error| error.to_string())?;
+    let mut hits = extract_search_hits(&html);
+
+    if hits.is_empty() && final_url.host_str().is_some() {
+        hits = extract_search_hits_from_generic_links(&html);
+    }
+
+    if let Some(allowed) = input.allowed_domains.as_ref() {
+        hits.retain(|hit| host_matches_list(&hit.url, allowed));
+    }
+    if let Some(blocked) = input.blocked_domains.as_ref() {
+        hits.retain(|hit| !host_matches_list(&hit.url, blocked));
+    }
+
+    dedupe_hits(&mut hits);
+    hits.truncate(8);
+
+    let summary = if hits.is_empty() {
+        format!("No web search results matched the query {:?}.", input.query)
+    } else {
+        let rendered_hits = hits
+            .iter()
+            .map(|hit| format!("- [{}]({})", hit.title, hit.url))
+            .collect::<Vec<_>>()
+            .join("\n");
+        format!(
+            "Search results for {:?}. Include a Sources section in the final answer.\n{}",
+            input.query, rendered_hits
+        )
+    };
+
+    Ok(WebSearchOutput {
+        query: input.query.clone(),
+        results: vec![
+            WebSearchResultItem::Commentary(summary),
+            WebSearchResultItem::SearchResult {
+                tool_use_id: String::from("web_search_1"),
+                content: hits,
+            },
+        ],
+        duration_seconds: started.elapsed().as_secs_f64(),
+    })
+}
+
+fn build_http_client() -> Result<Client, String> {
+    Client::builder()
+        .timeout(Duration::from_secs(20))
+        .redirect(reqwest::redirect::Policy::limited(10))
+        .user_agent("codineer-rust-tools/0.1")
+        .build()
+        .map_err(|error| error.to_string())
+}
+
+fn normalize_fetch_url(url: &str) -> Result<String, String> {
+    let parsed = reqwest::Url::parse(url).map_err(|error| error.to_string())?;
+    if parsed.scheme() == "http" {
+        let host = parsed.host_str().unwrap_or_default();
+        if host != "localhost" && host != "127.0.0.1" && host != "::1" {
+            let mut upgraded = parsed;
+            upgraded
+                .set_scheme("https")
+                .map_err(|()| String::from("failed to upgrade URL to https"))?;
+            return Ok(upgraded.to_string());
+        }
+    }
+    Ok(parsed.to_string())
+}
+
+fn build_search_url(query: &str) -> Result<reqwest::Url, String> {
+    if let Ok(base) = std::env::var("CODINEER_WEB_SEARCH_BASE_URL") {
+        let mut url = reqwest::Url::parse(&base).map_err(|error| error.to_string())?;
+        url.query_pairs_mut().append_pair("q", query);
+        return Ok(url);
+    }
+
+    let mut url = reqwest::Url::parse("https://html.duckduckgo.com/html/")
+        .map_err(|error| error.to_string())?;
+    url.query_pairs_mut().append_pair("q", query);
+    Ok(url)
+}
+
+fn normalize_fetched_content(body: &str, content_type: &str) -> String {
+    if content_type.contains("html") {
+        html_to_text(body)
+    } else {
+        body.trim().to_string()
+    }
