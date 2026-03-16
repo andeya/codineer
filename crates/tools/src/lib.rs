@@ -783,3 +783,146 @@ enum NotebookEditMode {
 }
 
 #[derive(Debug, Deserialize)]
+struct SleepInput {
+    duration_ms: u64,
+}
+
+#[derive(Debug, Deserialize)]
+struct BriefInput {
+    message: String,
+    attachments: Option<Vec<String>>,
+    status: BriefStatus,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum BriefStatus {
+    Normal,
+    Proactive,
+}
+
+#[derive(Debug, Deserialize)]
+struct ConfigInput {
+    setting: String,
+    value: Option<ConfigValue>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum ConfigValue {
+    String(String),
+    Bool(bool),
+    Number(f64),
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(transparent)]
+struct StructuredOutputInput(BTreeMap<String, Value>);
+
+#[derive(Debug, Deserialize)]
+struct ReplInput {
+    code: String,
+    language: String,
+    timeout_ms: Option<u64>,
+}
+
+#[derive(Debug, Deserialize)]
+struct PowerShellInput {
+    command: String,
+    timeout: Option<u64>,
+    description: Option<String>,
+    run_in_background: Option<bool>,
+}
+
+#[derive(Debug, Serialize)]
+struct WebFetchOutput {
+    bytes: usize,
+    code: u16,
+    #[serde(rename = "codeText")]
+    code_text: String,
+    result: String,
+    #[serde(rename = "durationMs")]
+    duration_ms: u128,
+    url: String,
+}
+
+#[derive(Debug, Serialize)]
+struct WebSearchOutput {
+    query: String,
+    results: Vec<WebSearchResultItem>,
+    #[serde(rename = "durationSeconds")]
+    duration_seconds: f64,
+}
+
+#[derive(Debug, Serialize)]
+struct TodoWriteOutput {
+    #[serde(rename = "oldTodos")]
+    old_todos: Vec<TodoItem>,
+    #[serde(rename = "newTodos")]
+    new_todos: Vec<TodoItem>,
+    #[serde(rename = "verificationNudgeNeeded")]
+    verification_nudge_needed: Option<bool>,
+}
+
+#[derive(Debug, Serialize)]
+struct SkillOutput {
+    skill: String,
+    path: String,
+    args: Option<String>,
+    description: Option<String>,
+    prompt: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct AgentOutput {
+    #[serde(rename = "agentId")]
+    agent_id: String,
+    name: String,
+    description: String,
+    #[serde(rename = "subagentType")]
+    subagent_type: Option<String>,
+    model: Option<String>,
+    status: String,
+    #[serde(rename = "outputFile")]
+    output_file: String,
+    #[serde(rename = "manifestFile")]
+    manifest_file: String,
+    #[serde(rename = "createdAt")]
+    created_at: String,
+    #[serde(rename = "startedAt", skip_serializing_if = "Option::is_none")]
+    started_at: Option<String>,
+    #[serde(rename = "completedAt", skip_serializing_if = "Option::is_none")]
+    completed_at: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct AgentJob {
+    manifest: AgentOutput,
+    prompt: String,
+    system_prompt: Vec<String>,
+    allowed_tools: BTreeSet<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct ToolSearchOutput {
+    matches: Vec<String>,
+    query: String,
+    normalized_query: String,
+    #[serde(rename = "total_deferred_tools")]
+    total_deferred_tools: usize,
+    #[serde(rename = "pending_mcp_servers")]
+    pending_mcp_servers: Option<Vec<String>>,
+}
+
+#[derive(Debug, Serialize)]
+struct NotebookEditOutput {
+    new_source: String,
+    cell_id: Option<String>,
+    cell_type: Option<NotebookCellType>,
+    language: String,
+    edit_mode: String,
+    error: Option<String>,
+    notebook_path: String,
+    original_file: String,
