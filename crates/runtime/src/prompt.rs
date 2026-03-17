@@ -358,3 +358,92 @@ fn stable_content_hash(content: &str) -> u64 {
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     content.hash(&mut hasher);
     hasher.finish()
+}
+
+fn describe_instruction_file(file: &ContextFile, files: &[ContextFile]) -> String {
+    let path = display_context_path(&file.path);
+    let scope = files
+        .iter()
+        .filter_map(|candidate| candidate.path.parent())
+        .find(|parent| file.path.starts_with(parent))
+        .map_or_else(
+            || "workspace".to_string(),
+            |parent| parent.display().to_string(),
+        );
+    format!("{path} (scope: {scope})")
+}
+
+fn truncate_instruction_content(content: &str, remaining_chars: usize) -> String {
+    let hard_limit = MAX_INSTRUCTION_FILE_CHARS.min(remaining_chars);
+    let trimmed = content.trim();
+    if trimmed.chars().count() <= hard_limit {
+        return trimmed.to_string();
+    }
+
+    let mut output = trimmed.chars().take(hard_limit).collect::<String>();
+    output.push_str("\n\n[truncated]");
+    output
+}
+
+fn render_instruction_content(content: &str) -> String {
+    truncate_instruction_content(content, MAX_INSTRUCTION_FILE_CHARS)
+}
+
+fn display_context_path(path: &Path) -> String {
+    path.file_name().map_or_else(
+        || path.display().to_string(),
+        |name| name.to_string_lossy().into_owned(),
+    )
+}
+
+fn collapse_blank_lines(content: &str) -> String {
+    let mut result = String::new();
+    let mut previous_blank = false;
+    for line in content.lines() {
+        let is_blank = line.trim().is_empty();
+        if is_blank && previous_blank {
+            continue;
+        }
+        result.push_str(line.trim_end());
+        result.push('\n');
+        previous_blank = is_blank;
+    }
+    result
+}
+
+pub fn load_system_prompt(
+    cwd: impl Into<PathBuf>,
+    current_date: impl Into<String>,
+    os_name: impl Into<String>,
+    os_version: impl Into<String>,
+) -> Result<Vec<String>, PromptBuildError> {
+    load_system_prompt_with_lsp(cwd, current_date, os_name, os_version, None)
+}
+
+pub fn load_system_prompt_with_lsp(
+    cwd: impl Into<PathBuf>,
+    current_date: impl Into<String>,
+    os_name: impl Into<String>,
+    os_version: impl Into<String>,
+    lsp_context: Option<&LspContextEnrichment>,
+) -> Result<Vec<String>, PromptBuildError> {
+    let cwd = cwd.into();
+    let project_context = ProjectContext::discover_with_git(&cwd, current_date.into())?;
+    let config = ConfigLoader::default_for(&cwd).load()?;
+    let mut builder = SystemPromptBuilder::new()
+        .with_os(os_name, os_version)
+        .with_project_context(project_context)
+        .with_runtime_config(config);
+    if let Some(enrichment) = lsp_context {
+        builder = builder.with_lsp_context(enrichment);
+    }
+    Ok(builder.build())
+}
+
+fn render_config_section(config: &RuntimeConfig) -> String {
+    let mut lines = vec!["# Runtime config".to_string()];
+    if config.loaded_entries().is_empty() {
+        lines.extend(prepend_bullets(vec![
+            "No Codineer settings files loaded.".to_string()
+        ]));
+        return lines.join("\n");
