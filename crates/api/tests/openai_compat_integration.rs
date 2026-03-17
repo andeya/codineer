@@ -367,3 +367,49 @@ fn sample_request(stream: bool) -> MessageRequest {
         messages: vec![InputMessage {
             role: "user".to_string(),
             content: vec![InputContentBlock::Text {
+                text: "Say hello".to_string(),
+            }],
+        }],
+        system: Some("Use tools when needed".to_string()),
+        tools: Some(vec![ToolDefinition {
+            name: "weather".to_string(),
+            description: Some("Fetches weather".to_string()),
+            input_schema: json!({
+                "type": "object",
+                "properties": {"city": {"type": "string"}},
+                "required": ["city"]
+            }),
+        }]),
+        tool_choice: Some(ToolChoice::Auto),
+        stream,
+    }
+}
+
+async fn env_lock() -> tokio::sync::MutexGuard<'static, ()> {
+    static LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| tokio::sync::Mutex::new(()))
+        .lock()
+        .await
+}
+
+struct ScopedEnvVar {
+    key: &'static str,
+    previous: Option<OsString>,
+}
+
+impl ScopedEnvVar {
+    fn set(key: &'static str, value: impl AsRef<std::ffi::OsStr>) -> Self {
+        let previous = std::env::var_os(key);
+        std::env::set_var(key, value);
+        Self { key, previous }
+    }
+}
+
+impl Drop for ScopedEnvVar {
+    fn drop(&mut self) {
+        match &self.previous {
+            Some(value) => std::env::set_var(self.key, value),
+            None => std::env::remove_var(self.key),
+        }
+    }
+}
