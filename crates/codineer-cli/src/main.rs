@@ -530,3 +530,70 @@ fn parse_resume_args(args: &[String]) -> Result<CliAction, String> {
         .iter()
         .any(|command| !command.trim_start().starts_with('/'))
     {
+        return Err("--resume trailing arguments must be slash commands".to_string());
+    }
+    Ok(CliAction::ResumeSession {
+        session_path,
+        commands,
+    })
+}
+
+fn default_oauth_config() -> OAuthConfig {
+    OAuthConfig {
+        client_id: String::from("9d1c250a-e61b-44d9-88ed-5944d1962f5e"),
+        authorize_url: String::from("https://platform.codineer.dev/oauth/authorize"),
+        token_url: String::from("https://platform.codineer.dev/v1/oauth/token"),
+        callback_port: None,
+        manual_redirect_url: None,
+        scopes: vec![
+            String::from("user:profile"),
+            String::from("user:inference"),
+            String::from("user:sessions:codineer"),
+        ],
+    }
+}
+
+fn run_login() -> Result<(), Box<dyn std::error::Error>> {
+    let cwd = env::current_dir()?;
+    let config = ConfigLoader::default_for(&cwd).load()?;
+    let default_oauth = default_oauth_config();
+    let oauth = config.oauth().unwrap_or(&default_oauth);
+    let callback_port = oauth.callback_port.unwrap_or(DEFAULT_OAUTH_CALLBACK_PORT);
+    let redirect_uri = runtime::loopback_redirect_uri(callback_port);
+    let pkce = generate_pkce_pair()?;
+    let state = generate_state()?;
+    let authorize_url =
+        OAuthAuthorizationRequest::from_config(oauth, redirect_uri.clone(), state.clone(), &pkce)
+            .build_url();
+
+    println!("Starting Codineer OAuth login...");
+    println!("Listening for callback on {redirect_uri}");
+    if let Err(error) = open_browser(&authorize_url) {
+        eprintln!("warning: failed to open browser automatically: {error}");
+        println!("Open this URL manually:\n{authorize_url}");
+    }
+
+    let callback = wait_for_oauth_callback(callback_port)?;
+    if let Some(error) = callback.error {
+        let description = callback
+            .error_description
+            .unwrap_or_else(|| "authorization failed".to_string());
+        return Err(io::Error::other(format!("{error}: {description}")).into());
+    }
+    let code = callback.code.ok_or_else(|| {
+        io::Error::new(io::ErrorKind::InvalidData, "callback did not include code")
+    })?;
+    let returned_state = callback.state.ok_or_else(|| {
+        io::Error::new(io::ErrorKind::InvalidData, "callback did not include state")
+    })?;
+    if returned_state != state {
+        return Err(io::Error::new(io::ErrorKind::InvalidData, "oauth state mismatch").into());
+    }
+
+    let client = CodineerApiClient::from_auth(AuthSource::None).with_base_url(api::read_base_url());
+    let exchange_request =
+        OAuthTokenExchangeRequest::from_config(oauth, code, state, pkce.verifier, redirect_uri);
+    let runtime = tokio::runtime::Runtime::new()?;
+    let token_set = runtime.block_on(client.exchange_oauth_code(oauth, &exchange_request))?;
+    save_oauth_credentials(&runtime::OAuthTokenSet {
+        access_token: token_set.access_token,
