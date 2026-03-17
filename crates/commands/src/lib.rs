@@ -997,3 +997,146 @@ pub fn handle_commit_push_pr_slash_command(
             parse_pr_url(&String::from_utf8_lossy(&create.stdout))
                 .unwrap_or_else(|| "<unknown>".to_string()),
         )
+    } else {
+        let view = Command::new("gh")
+            .args(["pr", "view", "--json", "url"])
+            .current_dir(cwd)
+            .output()?;
+        if !view.status.success() {
+            return Err(io::Error::other(command_failure(
+                "gh",
+                &["pr", "create"],
+                &create,
+            )));
+        }
+        (
+            "existing",
+            parse_pr_json_url(&String::from_utf8_lossy(&view.stdout))
+                .unwrap_or_else(|| "<unknown>".to_string()),
+        )
+    };
+
+    let mut lines = vec![
+        "Commit/Push/PR".to_string(),
+        format!("  Result           {result}"),
+        format!("  Branch           {branch}"),
+        format!("  Base             {default_branch}"),
+        format!("  Body file        {}", body_path.display()),
+        format!("  URL              {url}"),
+    ];
+    if created_branch {
+        lines.insert(2, "  Branch action    created and switched".to_string());
+    }
+    if let Some(report) = commit_report {
+        lines.push(String::new());
+        lines.push(report);
+    }
+    Ok(lines.join("\n"))
+}
+
+pub fn detect_default_branch(cwd: &Path) -> io::Result<String> {
+    if let Ok(reference) = git_stdout(cwd, &["symbolic-ref", "refs/remotes/origin/HEAD"]) {
+        if let Some(branch) = reference
+            .trim()
+            .rsplit('/')
+            .next()
+            .filter(|value| !value.is_empty())
+        {
+            return Ok(branch.to_string());
+        }
+    }
+
+    for branch in ["main", "master"] {
+        if branch_exists(cwd, branch) {
+            return Ok(branch.to_string());
+        }
+    }
+
+    current_branch(cwd)
+}
+
+fn git_stdout(cwd: &Path, args: &[&str]) -> io::Result<String> {
+    run_command_stdout("git", args, cwd)
+}
+
+fn git_status_ok(cwd: &Path, args: &[&str]) -> io::Result<()> {
+    run_command_success("git", args, cwd)
+}
+
+fn run_command_stdout(program: &str, args: &[&str], cwd: &Path) -> io::Result<String> {
+    let output = Command::new(program).args(args).current_dir(cwd).output()?;
+    if !output.status.success() {
+        return Err(io::Error::other(command_failure(program, args, &output)));
+    }
+    String::from_utf8(output.stdout)
+        .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))
+}
+
+fn run_command_success(program: &str, args: &[&str], cwd: &Path) -> io::Result<()> {
+    let output = Command::new(program).args(args).current_dir(cwd).output()?;
+    if !output.status.success() {
+        return Err(io::Error::other(command_failure(program, args, &output)));
+    }
+    Ok(())
+}
+
+fn command_failure(program: &str, args: &[&str], output: &std::process::Output) -> String {
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let detail = if stderr.is_empty() { stdout } else { stderr };
+    if detail.is_empty() {
+        format!("{program} {} failed", args.join(" "))
+    } else {
+        format!("{program} {} failed: {detail}", args.join(" "))
+    }
+}
+
+fn branch_exists(cwd: &Path, branch: &str) -> bool {
+    Command::new("git")
+        .args([
+            "show-ref",
+            "--verify",
+            "--quiet",
+            &format!("refs/heads/{branch}"),
+        ])
+        .current_dir(cwd)
+        .output()
+        .is_ok_and(|output| output.status.success())
+}
+
+fn current_branch(cwd: &Path) -> io::Result<String> {
+    let branch = git_stdout(cwd, &["branch", "--show-current"])?;
+    let branch = branch.trim();
+    if branch.is_empty() {
+        Err(io::Error::other("unable to determine current git branch"))
+    } else {
+        Ok(branch.to_string())
+    }
+}
+
+fn command_exists(name: &str) -> bool {
+    Command::new(name)
+        .arg("--version")
+        .output()
+        .is_ok_and(|output| output.status.success())
+}
+
+fn write_temp_text_file(prefix: &str, extension: &str, contents: &str) -> io::Result<PathBuf> {
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .unwrap_or_default();
+    let path = env::temp_dir().join(format!("{prefix}-{nanos}.{extension}"));
+    fs::write(&path, contents)?;
+    Ok(path)
+}
+
+fn build_branch_name(hint: &str) -> String {
+    let slug = slugify(hint);
+    let owner = env::var("SAFEUSER")
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .or_else(|| {
+            env::var("USER")
+                .ok()
+                .filter(|value| !value.trim().is_empty())
