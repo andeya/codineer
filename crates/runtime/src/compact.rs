@@ -500,3 +500,103 @@ fn extract_summary_timeline(summary: &str) -> Vec<String> {
 }
 
 #[cfg(test)]
+mod tests {
+    use super::{
+        collect_key_files, compact_session, estimate_session_tokens, format_compact_summary,
+        get_compact_continuation_message, infer_pending_work, should_compact, CompactionConfig,
+    };
+    use crate::session::{ContentBlock, ConversationMessage, MessageRole, Session};
+
+    #[test]
+    fn formats_compact_summary_like_upstream() {
+        let summary = "<analysis>scratch</analysis>\n<summary>Kept work</summary>";
+        assert_eq!(format_compact_summary(summary), "Summary:\nKept work");
+    }
+
+    #[test]
+    fn leaves_small_sessions_unchanged() {
+        let session = Session {
+            version: 1,
+            messages: vec![ConversationMessage::user_text("hello")],
+        };
+
+        let result = compact_session(&session, CompactionConfig::default());
+        assert_eq!(result.removed_message_count, 0);
+        assert_eq!(result.compacted_session, session);
+        assert!(result.summary.is_empty());
+        assert!(result.formatted_summary.is_empty());
+    }
+
+    #[test]
+    fn compacts_older_messages_into_a_system_summary() {
+        let session = Session {
+            version: 1,
+            messages: vec![
+                ConversationMessage::user_text("one ".repeat(200)),
+                ConversationMessage::assistant(vec![ContentBlock::Text {
+                    text: "two ".repeat(200),
+                }]),
+                ConversationMessage::tool_result("1", "bash", "ok ".repeat(200), false),
+                ConversationMessage {
+                    role: MessageRole::Assistant,
+                    blocks: vec![ContentBlock::Text {
+                        text: "recent".to_string(),
+                    }],
+                    usage: None,
+                },
+            ],
+        };
+
+        let result = compact_session(
+            &session,
+            CompactionConfig {
+                preserve_recent_messages: 2,
+                max_estimated_tokens: 1,
+            },
+        );
+
+        assert_eq!(result.removed_message_count, 2);
+        assert_eq!(
+            result.compacted_session.messages[0].role,
+            MessageRole::System
+        );
+        assert!(matches!(
+            &result.compacted_session.messages[0].blocks[0],
+            ContentBlock::Text { text } if text.contains("Summary:")
+        ));
+        assert!(result.formatted_summary.contains("Scope:"));
+        assert!(result.formatted_summary.contains("Key timeline:"));
+        assert!(should_compact(
+            &session,
+            CompactionConfig {
+                preserve_recent_messages: 2,
+                max_estimated_tokens: 1,
+            }
+        ));
+        assert!(
+            estimate_session_tokens(&result.compacted_session) < estimate_session_tokens(&session)
+        );
+    }
+
+    #[test]
+    fn keeps_previous_compacted_context_when_compacting_again() {
+        let initial_session = Session {
+            version: 1,
+            messages: vec![
+                ConversationMessage::user_text("Investigate rust/crates/runtime/src/compact.rs"),
+                ConversationMessage::assistant(vec![ContentBlock::Text {
+                    text: "I will inspect the compact flow.".to_string(),
+                }]),
+                ConversationMessage::user_text(
+                    "Also update rust/crates/runtime/src/conversation.rs",
+                ),
+                ConversationMessage::assistant(vec![ContentBlock::Text {
+                    text: "Next: preserve prior summary context during auto compact.".to_string(),
+                }]),
+            ],
+        };
+        let config = CompactionConfig {
+            preserve_recent_messages: 2,
+            max_estimated_tokens: 1,
+        };
+
