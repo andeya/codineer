@@ -1854,3 +1854,217 @@ impl ApiClient for ProviderRuntimeClient {
             max_tokens: max_tokens_for_model(&self.model),
             messages: convert_messages(&request.messages),
             system: (!request.system_prompt.is_empty()).then(|| request.system_prompt.join("\n\n")),
+            tools: (!tools.is_empty()).then_some(tools),
+            tool_choice: (!self.allowed_tools.is_empty()).then_some(ToolChoice::Auto),
+            stream: true,
+        };
+
+        self.runtime.block_on(async {
+            let mut stream = self
+                .client
+                .stream_message(&message_request)
+                .await
+                .map_err(|error| RuntimeError::new(error.to_string()))?;
+            let mut events = Vec::new();
+            let mut pending_tools: BTreeMap<u32, (String, String, String)> = BTreeMap::new();
+            let mut saw_stop = false;
+
+            while let Some(event) = stream
+                .next_event()
+                .await
+                .map_err(|error| RuntimeError::new(error.to_string()))?
+            {
+                match event {
+                    ApiStreamEvent::MessageStart(start) => {
+                        for block in start.message.content {
+                            push_output_block(block, 0, &mut events, &mut pending_tools, true);
+                        }
+                    }
+                    ApiStreamEvent::ContentBlockStart(start) => {
+                        push_output_block(
+                            start.content_block,
+                            start.index,
+                            &mut events,
+                            &mut pending_tools,
+                            true,
+                        );
+                    }
+                    ApiStreamEvent::ContentBlockDelta(delta) => match delta.delta {
+                        ContentBlockDelta::TextDelta { text } => {
+                            if !text.is_empty() {
+                                events.push(AssistantEvent::TextDelta(text));
+                            }
+                        }
+                        ContentBlockDelta::InputJsonDelta { partial_json } => {
+                            if let Some((_, _, input)) = pending_tools.get_mut(&delta.index) {
+                                input.push_str(&partial_json);
+                            }
+                        }
+                        ContentBlockDelta::ThinkingDelta { .. }
+                        | ContentBlockDelta::SignatureDelta { .. } => {}
+                    },
+                    ApiStreamEvent::ContentBlockStop(stop) => {
+                        if let Some((id, name, input)) = pending_tools.remove(&stop.index) {
+                            events.push(AssistantEvent::ToolUse { id, name, input });
+                        }
+                    }
+                    ApiStreamEvent::MessageDelta(delta) => {
+                        events.push(AssistantEvent::Usage(TokenUsage {
+                            input_tokens: delta.usage.input_tokens,
+                            output_tokens: delta.usage.output_tokens,
+                            cache_creation_input_tokens: 0,
+                            cache_read_input_tokens: 0,
+                        }));
+                    }
+                    ApiStreamEvent::MessageStop(_) => {
+                        saw_stop = true;
+                        events.push(AssistantEvent::MessageStop);
+                    }
+                }
+            }
+
+            if !saw_stop
+                && events.iter().any(|event| {
+                    matches!(event, AssistantEvent::TextDelta(text) if !text.is_empty())
+                        || matches!(event, AssistantEvent::ToolUse { .. })
+                })
+            {
+                events.push(AssistantEvent::MessageStop);
+            }
+
+            if events
+                .iter()
+                .any(|event| matches!(event, AssistantEvent::MessageStop))
+            {
+                return Ok(events);
+            }
+
+            let response = self
+                .client
+                .send_message(&MessageRequest {
+                    stream: false,
+                    ..message_request.clone()
+                })
+                .await
+                .map_err(|error| RuntimeError::new(error.to_string()))?;
+            Ok(response_to_events(response))
+        })
+    }
+}
+
+struct SubagentToolExecutor {
+    allowed_tools: BTreeSet<String>,
+}
+
+impl SubagentToolExecutor {
+    fn new(allowed_tools: BTreeSet<String>) -> Self {
+        Self { allowed_tools }
+    }
+}
+
+impl ToolExecutor for SubagentToolExecutor {
+    fn execute(&mut self, tool_name: &str, input: &str) -> Result<String, ToolError> {
+        if !self.allowed_tools.contains(tool_name) {
+            return Err(ToolError::new(format!(
+                "tool `{tool_name}` is not enabled for this sub-agent"
+            )));
+        }
+        let value = serde_json::from_str(input)
+            .map_err(|error| ToolError::new(format!("invalid tool input JSON: {error}")))?;
+        execute_tool(tool_name, &value).map_err(ToolError::new)
+    }
+}
+
+fn tool_specs_for_allowed_tools(allowed_tools: Option<&BTreeSet<String>>) -> Vec<ToolSpec> {
+    mvp_tool_specs()
+        .into_iter()
+        .filter(|spec| allowed_tools.is_none_or(|allowed| allowed.contains(spec.name)))
+        .collect()
+}
+
+fn convert_messages(messages: &[ConversationMessage]) -> Vec<InputMessage> {
+    messages
+        .iter()
+        .filter_map(|message| {
+            let role = match message.role {
+                MessageRole::System | MessageRole::User | MessageRole::Tool => "user",
+                MessageRole::Assistant => "assistant",
+            };
+            let content = message
+                .blocks
+                .iter()
+                .map(|block| match block {
+                    ContentBlock::Text { text } => InputContentBlock::Text { text: text.clone() },
+                    ContentBlock::ToolUse { id, name, input } => InputContentBlock::ToolUse {
+                        id: id.clone(),
+                        name: name.clone(),
+                        input: serde_json::from_str(input)
+                            .unwrap_or_else(|_| serde_json::json!({ "raw": input })),
+                    },
+                    ContentBlock::ToolResult {
+                        tool_use_id,
+                        output,
+                        is_error,
+                        ..
+                    } => InputContentBlock::ToolResult {
+                        tool_use_id: tool_use_id.clone(),
+                        content: vec![ToolResultContentBlock::Text {
+                            text: output.clone(),
+                        }],
+                        is_error: *is_error,
+                    },
+                })
+                .collect::<Vec<_>>();
+            (!content.is_empty()).then(|| InputMessage {
+                role: role.to_string(),
+                content,
+            })
+        })
+        .collect()
+}
+
+fn push_output_block(
+    block: OutputContentBlock,
+    block_index: u32,
+    events: &mut Vec<AssistantEvent>,
+    pending_tools: &mut BTreeMap<u32, (String, String, String)>,
+    streaming_tool_input: bool,
+) {
+    match block {
+        OutputContentBlock::Text { text } => {
+            if !text.is_empty() {
+                events.push(AssistantEvent::TextDelta(text));
+            }
+        }
+        OutputContentBlock::ToolUse { id, name, input } => {
+            let initial_input = if streaming_tool_input
+                && input.is_object()
+                && input.as_object().is_some_and(serde_json::Map::is_empty)
+            {
+                String::new()
+            } else {
+                input.to_string()
+            };
+            pending_tools.insert(block_index, (id, name, initial_input));
+        }
+        OutputContentBlock::Thinking { .. } | OutputContentBlock::RedactedThinking { .. } => {}
+    }
+}
+
+fn response_to_events(response: MessageResponse) -> Vec<AssistantEvent> {
+    let mut events = Vec::new();
+    let mut pending_tools = BTreeMap::new();
+
+    for (index, block) in response.content.into_iter().enumerate() {
+        let index = u32::try_from(index).expect("response block index overflow");
+        push_output_block(block, index, &mut events, &mut pending_tools, false);
+        if let Some((id, name, input)) = pending_tools.remove(&index) {
+            events.push(AssistantEvent::ToolUse { id, name, input });
+        }
+    }
+
+    events.push(AssistantEvent::Usage(TokenUsage {
+        input_tokens: response.usage.input_tokens,
+        output_tokens: response.usage.output_tokens,
+        cache_creation_input_tokens: response.usage.cache_creation_input_tokens,
+        cache_read_input_tokens: response.usage.cache_read_input_tokens,
