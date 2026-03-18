@@ -1069,3 +1069,217 @@ fn run_command_stdout(program: &str, args: &[&str], cwd: &Path) -> io::Result<St
         return Err(io::Error::other(command_failure(program, args, &output)));
     }
     String::from_utf8(output.stdout)
+        .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))
+}
+
+fn run_command_success(program: &str, args: &[&str], cwd: &Path) -> io::Result<()> {
+    let output = Command::new(program).args(args).current_dir(cwd).output()?;
+    if !output.status.success() {
+        return Err(io::Error::other(command_failure(program, args, &output)));
+    }
+    Ok(())
+}
+
+fn command_failure(program: &str, args: &[&str], output: &std::process::Output) -> String {
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let detail = if stderr.is_empty() { stdout } else { stderr };
+    if detail.is_empty() {
+        format!("{program} {} failed", args.join(" "))
+    } else {
+        format!("{program} {} failed: {detail}", args.join(" "))
+    }
+}
+
+fn branch_exists(cwd: &Path, branch: &str) -> bool {
+    Command::new("git")
+        .args([
+            "show-ref",
+            "--verify",
+            "--quiet",
+            &format!("refs/heads/{branch}"),
+        ])
+        .current_dir(cwd)
+        .output()
+        .is_ok_and(|output| output.status.success())
+}
+
+fn current_branch(cwd: &Path) -> io::Result<String> {
+    let branch = git_stdout(cwd, &["branch", "--show-current"])?;
+    let branch = branch.trim();
+    if branch.is_empty() {
+        Err(io::Error::other("unable to determine current git branch"))
+    } else {
+        Ok(branch.to_string())
+    }
+}
+
+fn command_exists(name: &str) -> bool {
+    Command::new(name)
+        .arg("--version")
+        .output()
+        .is_ok_and(|output| output.status.success())
+}
+
+fn write_temp_text_file(prefix: &str, extension: &str, contents: &str) -> io::Result<PathBuf> {
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .unwrap_or_default();
+    let path = env::temp_dir().join(format!("{prefix}-{nanos}.{extension}"));
+    fs::write(&path, contents)?;
+    Ok(path)
+}
+
+fn build_branch_name(hint: &str) -> String {
+    let slug = slugify(hint);
+    let owner = env::var("SAFEUSER")
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .or_else(|| {
+            env::var("USER")
+                .ok()
+                .filter(|value| !value.trim().is_empty())
+        });
+    match owner {
+        Some(owner) => format!("{owner}/{slug}"),
+        None => slug,
+    }
+}
+
+fn slugify(value: &str) -> String {
+    let mut slug = String::new();
+    let mut last_was_dash = false;
+    for ch in value.chars() {
+        if ch.is_ascii_alphanumeric() {
+            slug.push(ch.to_ascii_lowercase());
+            last_was_dash = false;
+        } else if !last_was_dash {
+            slug.push('-');
+            last_was_dash = true;
+        }
+    }
+    let slug = slug.trim_matches('-').to_string();
+    if slug.is_empty() {
+        "change".to_string()
+    } else {
+        slug
+    }
+}
+
+fn parse_pr_url(stdout: &str) -> Option<String> {
+    stdout
+        .lines()
+        .map(str::trim)
+        .find(|line| line.starts_with("http://") || line.starts_with("https://"))
+        .map(ToOwned::to_owned)
+}
+
+fn parse_pr_json_url(stdout: &str) -> Option<String> {
+    serde_json::from_str::<serde_json::Value>(stdout)
+        .ok()?
+        .get("url")?
+        .as_str()
+        .map(ToOwned::to_owned)
+}
+
+#[must_use]
+pub fn render_plugins_report(plugins: &[PluginSummary]) -> String {
+    let mut lines = vec!["Plugins".to_string()];
+    if plugins.is_empty() {
+        lines.push("  No plugins installed.".to_string());
+        return lines.join("\n");
+    }
+    for plugin in plugins {
+        let enabled = if plugin.enabled {
+            "enabled"
+        } else {
+            "disabled"
+        };
+        lines.push(format!(
+            "  {name:<20} v{version:<10} {enabled}",
+            name = plugin.metadata.name,
+            version = plugin.metadata.version,
+        ));
+    }
+    lines.join("\n")
+}
+
+fn render_plugin_install_report(plugin_id: &str, plugin: Option<&PluginSummary>) -> String {
+    let name = plugin.map_or(plugin_id, |plugin| plugin.metadata.name.as_str());
+    let version = plugin.map_or("unknown", |plugin| plugin.metadata.version.as_str());
+    let enabled = plugin.is_some_and(|plugin| plugin.enabled);
+    format!(
+        "Plugins\n  Result           installed {plugin_id}\n  Name             {name}\n  Version          {version}\n  Status           {}",
+        if enabled { "enabled" } else { "disabled" }
+    )
+}
+
+fn resolve_plugin_target(
+    manager: &PluginManager,
+    target: &str,
+) -> Result<PluginSummary, PluginError> {
+    let mut matches = manager
+        .list_installed_plugins()?
+        .into_iter()
+        .filter(|plugin| plugin.metadata.id == target || plugin.metadata.name == target)
+        .collect::<Vec<_>>();
+    match matches.len() {
+        1 => Ok(matches.remove(0)),
+        0 => Err(PluginError::NotFound(format!(
+            "plugin `{target}` is not installed or discoverable"
+        ))),
+        _ => Err(PluginError::InvalidManifest(format!(
+            "plugin name `{target}` is ambiguous; use the full plugin id"
+        ))),
+    }
+}
+
+fn discover_definition_roots(cwd: &Path, leaf: &str) -> Vec<(DefinitionSource, PathBuf)> {
+    let mut roots = Vec::new();
+
+    for ancestor in cwd.ancestors() {
+        push_unique_root(
+            &mut roots,
+            DefinitionSource::Project,
+            ancestor.join(".codineer").join(leaf),
+        );
+    }
+
+    if let Some(home) = env::var_os("HOME") {
+        let home = PathBuf::from(home);
+        push_unique_root(
+            &mut roots,
+            DefinitionSource::User,
+            home.join(".codineer").join(leaf),
+        );
+    }
+
+    roots
+}
+
+fn discover_skill_roots(cwd: &Path) -> Vec<SkillRoot> {
+    let mut roots = Vec::new();
+
+    for ancestor in cwd.ancestors() {
+        push_unique_skill_root(
+            &mut roots,
+            DefinitionSource::Project,
+            ancestor.join(".codineer").join("skills"),
+        );
+    }
+
+    if let Some(home) = env::var_os("HOME") {
+        let home = PathBuf::from(home);
+        push_unique_skill_root(
+            &mut roots,
+            DefinitionSource::User,
+            home.join(".codineer").join("skills"),
+        );
+    }
+
+    roots
+}
+
+fn push_unique_root(
+    roots: &mut Vec<(DefinitionSource, PathBuf)>,
