@@ -730,3 +730,268 @@ struct ResumeCommandOutcome {
 #[derive(Debug, Clone, Default)]
 struct StatusContext {
     cwd: PathBuf,
+    session_path: Option<PathBuf>,
+    loaded_config_files: usize,
+    discovered_config_files: usize,
+    memory_file_count: usize,
+    project_root: Option<PathBuf>,
+    git_branch: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct StatusUsage {
+    message_count: usize,
+    turns: u32,
+    latest: TokenUsage,
+    cumulative: TokenUsage,
+    estimated_tokens: usize,
+}
+
+fn format_model_report(model: &str, message_count: usize, turns: u32) -> String {
+    format!(
+        "Model
+  Current          {model}
+  Session          {message_count} messages · {turns} turns
+
+Aliases
+  opus             claude-opus-4-6      (Anthropic)
+  sonnet           claude-sonnet-4-6    (Anthropic)
+  haiku            claude-haiku-4-5     (Anthropic)
+  grok             grok-3               (xAI)
+  grok-mini        grok-3-mini          (xAI)
+  gpt-4o           gpt-4o               (OpenAI)
+  o3               o3                   (OpenAI)
+
+Next
+  /model           Show the current model
+  /model <name>    Switch models for this REPL session"
+    )
+}
+
+fn format_model_switch_report(previous: &str, next: &str, message_count: usize) -> String {
+    format!(
+        "Model updated
+  Previous         {previous}
+  Current          {next}
+  Preserved        {message_count} messages
+  Tip              Existing conversation context stayed attached"
+    )
+}
+
+fn format_permissions_report(mode: &str) -> String {
+    let modes = [
+        ("read-only", "Read/search tools only", mode == "read-only"),
+        (
+            "workspace-write",
+            "Edit files inside the workspace",
+            mode == "workspace-write",
+        ),
+        (
+            "danger-full-access",
+            "Unrestricted tool access",
+            mode == "danger-full-access",
+        ),
+    ]
+    .into_iter()
+    .map(|(name, description, is_current)| {
+        let marker = if is_current {
+            "● current"
+        } else {
+            "○ available"
+        };
+        format!("  {name:<18} {marker:<11} {description}")
+    })
+    .collect::<Vec<_>>()
+    .join(
+        "
+",
+    );
+
+    let effect = match mode {
+        "read-only" => "Only read/search tools can run automatically",
+        "workspace-write" => "Editing tools can modify files in the workspace",
+        "danger-full-access" => "All tools can run without additional sandbox limits",
+        _ => "Unknown permission mode",
+    };
+
+    format!(
+        "Permissions
+  Active mode      {mode}
+  Effect           {effect}
+
+Modes
+{modes}
+
+Next
+  /permissions              Show the current mode
+  /permissions <mode>       Switch modes for subsequent tool calls"
+    )
+}
+
+fn format_permissions_switch_report(previous: &str, next: &str) -> String {
+    format!(
+        "Permissions updated
+  Previous mode    {previous}
+  Active mode      {next}
+  Applies to       Subsequent tool calls in this REPL
+  Tip              Run /permissions to review all available modes"
+    )
+}
+
+fn format_cost_report(usage: TokenUsage) -> String {
+    format!(
+        "Cost
+  Input tokens     {}
+  Output tokens    {}
+  Cache create     {}
+  Cache read       {}
+  Total tokens     {}
+
+Next
+  /status          See session + workspace context
+  /compact         Trim local history if the session is getting large",
+        usage.input_tokens,
+        usage.output_tokens,
+        usage.cache_creation_input_tokens,
+        usage.cache_read_input_tokens,
+        usage.total_tokens(),
+    )
+}
+
+fn format_resume_report(session_path: &str, message_count: usize, turns: u32) -> String {
+    format!(
+        "Session resumed
+  Session file     {session_path}
+  History          {message_count} messages · {turns} turns
+  Next             /status · /diff · /export"
+    )
+}
+
+fn format_compact_report(removed: usize, resulting_messages: usize, skipped: bool) -> String {
+    if skipped {
+        format!(
+            "Compact
+  Result           skipped
+  Reason           Session is already below the compaction threshold
+  Messages kept    {resulting_messages}"
+        )
+    } else {
+        format!(
+            "Compact
+  Result           compacted
+  Messages removed {removed}
+  Messages kept    {resulting_messages}
+  Tip              Use /status to review the trimmed session"
+        )
+    }
+}
+
+fn parse_git_status_metadata(status: Option<&str>) -> (Option<PathBuf>, Option<String>) {
+    let Some(status) = status else {
+        return (None, None);
+    };
+    let branch = status.lines().next().and_then(|line| {
+        line.strip_prefix("## ")
+            .map(|line| {
+                line.split(['.', ' '])
+                    .next()
+                    .unwrap_or_default()
+                    .to_string()
+            })
+            .filter(|value| !value.is_empty())
+    });
+    let project_root = find_git_root().ok();
+    (project_root, branch)
+}
+
+fn find_git_root() -> Result<PathBuf, Box<dyn std::error::Error>> {
+    let output = std::process::Command::new("git")
+        .args(["rev-parse", "--show-toplevel"])
+        .current_dir(env::current_dir()?)
+        .output()?;
+    if !output.status.success() {
+        return Err("not a git repository".into());
+    }
+    let path = String::from_utf8(output.stdout)?.trim().to_string();
+    if path.is_empty() {
+        return Err("empty git root".into());
+    }
+    Ok(PathBuf::from(path))
+}
+
+impl ResumeCommandOutcome {
+    fn keep(session: &Session, message: String) -> Self {
+        Self {
+            session: session.clone(),
+            message: Some(message),
+        }
+    }
+}
+
+fn run_resume_command(
+    session_path: &Path,
+    session: &Session,
+    command: &SlashCommand,
+) -> Result<ResumeCommandOutcome, Box<dyn std::error::Error>> {
+    match command {
+        SlashCommand::Help => Ok(ResumeCommandOutcome::keep(session, render_repl_help())),
+        SlashCommand::Compact => run_resume_compact(session_path, session),
+        SlashCommand::Clear { confirm } => run_resume_clear(session_path, session, *confirm),
+        SlashCommand::Status => run_resume_status(session_path, session),
+        SlashCommand::Cost => {
+            let usage = UsageTracker::from_session(session).cumulative_usage();
+            Ok(ResumeCommandOutcome::keep(session, format_cost_report(usage)))
+        }
+        SlashCommand::Config { section } => {
+            Ok(ResumeCommandOutcome::keep(session, render_config_report(section.as_deref())?))
+        }
+        SlashCommand::Memory => Ok(ResumeCommandOutcome::keep(session, render_memory_report()?)),
+        SlashCommand::Init => Ok(ResumeCommandOutcome::keep(session, init_codineer_md()?)),
+        SlashCommand::Diff => Ok(ResumeCommandOutcome::keep(session, render_diff_report()?)),
+        SlashCommand::Version => Ok(ResumeCommandOutcome::keep(session, render_version_report())),
+        SlashCommand::Export { path } => run_resume_export(session, path.as_deref()),
+        SlashCommand::Agents { args } => {
+            let cwd = env::current_dir()?;
+            Ok(ResumeCommandOutcome::keep(session, handle_agents_slash_command(args.as_deref(), &cwd)?))
+        }
+        SlashCommand::Skills { args } => {
+            let cwd = env::current_dir()?;
+            Ok(ResumeCommandOutcome::keep(session, handle_skills_slash_command(args.as_deref(), &cwd)?))
+        }
+        _ => Err("unsupported resumed slash command".into()),
+    }
+}
+
+fn run_resume_compact(
+    session_path: &Path,
+    session: &Session,
+) -> Result<ResumeCommandOutcome, Box<dyn std::error::Error>> {
+    let result = runtime::compact_session(
+        session,
+        CompactionConfig {
+            max_estimated_tokens: 0,
+            ..CompactionConfig::default()
+        },
+    );
+    let removed = result.removed_message_count;
+    let kept = result.compacted_session.messages.len();
+    let skipped = removed == 0;
+    result.compacted_session.save_to_path(session_path)?;
+    Ok(ResumeCommandOutcome {
+        session: result.compacted_session,
+        message: Some(format_compact_report(removed, kept, skipped)),
+    })
+}
+
+fn run_resume_clear(
+    session_path: &Path,
+    session: &Session,
+    confirm: bool,
+) -> Result<ResumeCommandOutcome, Box<dyn std::error::Error>> {
+    if !confirm {
+        return Ok(ResumeCommandOutcome::keep(
+            session,
+            "clear: confirmation required; rerun with /clear --confirm".to_string(),
+        ));
+    }
+    let cleared = Session::new();
