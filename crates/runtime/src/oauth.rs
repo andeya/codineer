@@ -571,3 +571,84 @@ mod tests {
             &pair,
         )
         .with_extra_param("login_hint", "user@example.com")
+        .build_url();
+        assert!(url.starts_with("https://console.test/oauth/authorize?"));
+        assert!(url.contains("response_type=code"));
+        assert!(url.contains("client_id=runtime-client"));
+        assert!(url.contains("scope=org%3Aread%20user%3Awrite"));
+        assert!(url.contains("login_hint=user%40example.com"));
+
+        let exchange = OAuthTokenExchangeRequest::from_config(
+            &config,
+            "auth-code",
+            "state-123",
+            pair.verifier,
+            loopback_redirect_uri(4545),
+        );
+        assert_eq!(
+            exchange.form_params().get("grant_type").map(String::as_str),
+            Some("authorization_code")
+        );
+
+        let refresh = OAuthRefreshRequest::from_config(&config, "refresh-token", None);
+        assert_eq!(
+            refresh.form_params().get("scope").map(String::as_str),
+            Some("org:read user:write")
+        );
+    }
+
+    #[test]
+    fn oauth_credentials_round_trip_and_clear() {
+        let _guard = env_lock();
+        let config_home = temp_config_home();
+        std::env::set_var("CODINEER_CONFIG_HOME", &config_home);
+        let path = credentials_path().expect("credentials path");
+        std::fs::create_dir_all(path.parent().expect("parent")).expect("create parent");
+        std::fs::write(&path, "{\"other\":\"value\"}\n").expect("seed credentials");
+
+        let token_set = OAuthTokenSet {
+            access_token: "access-token".to_string(),
+            refresh_token: Some("refresh-token".to_string()),
+            expires_at: Some(123),
+            scopes: vec!["scope:a".to_string()],
+        };
+        save_oauth_credentials(&token_set).expect("save credentials");
+        assert_eq!(
+            load_oauth_credentials().expect("load credentials"),
+            Some(token_set)
+        );
+
+        let keyring_available = load_from_keyring().is_some();
+        let saved = std::fs::read_to_string(&path).expect("read saved file");
+        assert!(saved.contains("\"other\""));
+        if !keyring_available {
+            assert!(saved.contains("\"oauth\""));
+        }
+
+        clear_oauth_credentials().expect("clear credentials");
+        assert_eq!(load_oauth_credentials().expect("load cleared"), None);
+        let cleared = std::fs::read_to_string(&path).expect("read cleared file");
+        assert!(cleared.contains("\"other\""));
+        assert!(!cleared.contains("\"oauth\""));
+
+        clear_from_keyring();
+        std::env::remove_var("CODINEER_CONFIG_HOME");
+        std::fs::remove_dir_all(config_home).expect("cleanup temp dir");
+    }
+
+    #[test]
+    fn parses_callback_query_and_target() {
+        let params =
+            parse_oauth_callback_query("code=abc123&state=state-1&error_description=needs%20login")
+                .expect("parse query");
+        assert_eq!(params.code.as_deref(), Some("abc123"));
+        assert_eq!(params.state.as_deref(), Some("state-1"));
+        assert_eq!(params.error_description.as_deref(), Some("needs login"));
+
+        let params = parse_oauth_callback_request_target("/callback?code=abc&state=xyz")
+            .expect("parse callback target");
+        assert_eq!(params.code.as_deref(), Some("abc"));
+        assert_eq!(params.state.as_deref(), Some("xyz"));
+        assert!(parse_oauth_callback_request_target("/wrong?code=abc").is_err());
+    }
+}
