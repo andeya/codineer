@@ -269,3 +269,58 @@ impl RenderState {
         if let Some(link) = self.link_stack.last_mut() {
             link.text.push_str(text);
         } else if let Some(table) = self.table.as_mut() {
+            table.current_cell.push_str(text);
+        } else {
+            output.push_str(text);
+        }
+    }
+
+    fn append_styled(&mut self, output: &mut String, text: &str, theme: &ColorTheme) {
+        let styled = self.style_text(text, theme);
+        self.append_raw(output, &styled);
+    }
+}
+
+#[derive(Debug)]
+pub struct TerminalRenderer {
+    syntax_set: SyntaxSet,
+    syntax_theme: Theme,
+    color_theme: ColorTheme,
+}
+
+impl Default for TerminalRenderer {
+    fn default() -> Self {
+        let syntax_set = SyntaxSet::load_defaults_newlines();
+        let syntax_theme = ThemeSet::load_defaults()
+            .themes
+            .remove("base16-ocean.dark")
+            .unwrap_or_default();
+        Self {
+            syntax_set,
+            syntax_theme,
+            color_theme: ColorTheme::default(),
+        }
+    }
+}
+
+impl TerminalRenderer {
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    #[must_use]
+    pub fn color_theme(&self) -> &ColorTheme {
+        &self.color_theme
+    }
+
+    #[must_use]
+    pub fn render_markdown(&self, markdown: &str) -> String {
+        let mut output = String::new();
+        let mut state = RenderState::default();
+        let mut code_language = String::new();
+        let mut code_buffer = String::new();
+        let mut in_code_block = false;
+
+        for event in Parser::new_ext(markdown, Options::all()) {
+            self.render_event(
