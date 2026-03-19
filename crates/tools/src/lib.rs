@@ -2068,3 +2068,217 @@ fn response_to_events(response: MessageResponse) -> Vec<AssistantEvent> {
         output_tokens: response.usage.output_tokens,
         cache_creation_input_tokens: response.usage.cache_creation_input_tokens,
         cache_read_input_tokens: response.usage.cache_read_input_tokens,
+    }));
+    events.push(AssistantEvent::MessageStop);
+    events
+}
+
+fn final_assistant_text(summary: &runtime::TurnSummary) -> String {
+    summary
+        .assistant_messages
+        .last()
+        .map(|message| {
+            message
+                .blocks
+                .iter()
+                .filter_map(|block| match block {
+                    ContentBlock::Text { text } => Some(text.as_str()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+                .join("")
+        })
+        .unwrap_or_default()
+}
+
+#[allow(clippy::needless_pass_by_value)]
+fn execute_tool_search(input: ToolSearchInput) -> ToolSearchOutput {
+    let deferred = deferred_tool_specs();
+    let max_results = input.max_results.unwrap_or(5).max(1);
+    let query = input.query.trim().to_string();
+    let normalized_query = normalize_tool_search_query(&query);
+    let matches = search_tool_specs(&query, max_results, &deferred);
+
+    ToolSearchOutput {
+        matches,
+        query,
+        normalized_query,
+        total_deferred_tools: deferred.len(),
+        pending_mcp_servers: None,
+    }
+}
+
+fn deferred_tool_specs() -> Vec<ToolSpec> {
+    mvp_tool_specs()
+        .into_iter()
+        .filter(|spec| {
+            !matches!(
+                spec.name,
+                "bash" | "read_file" | "write_file" | "edit_file" | "glob_search" | "grep_search"
+            )
+        })
+        .collect()
+}
+
+fn search_tool_specs(query: &str, max_results: usize, specs: &[ToolSpec]) -> Vec<String> {
+    let lowered = query.to_lowercase();
+    if let Some(selection) = lowered.strip_prefix("select:") {
+        return selection
+            .split(',')
+            .map(str::trim)
+            .filter(|part| !part.is_empty())
+            .filter_map(|wanted| {
+                let wanted = canonical_tool_token(wanted);
+                specs
+                    .iter()
+                    .find(|spec| canonical_tool_token(spec.name) == wanted)
+                    .map(|spec| spec.name.to_string())
+            })
+            .take(max_results)
+            .collect();
+    }
+
+    let mut required = Vec::new();
+    let mut optional = Vec::new();
+    for term in lowered.split_whitespace() {
+        if let Some(rest) = term.strip_prefix('+') {
+            if !rest.is_empty() {
+                required.push(rest);
+            }
+        } else {
+            optional.push(term);
+        }
+    }
+    let terms = if required.is_empty() {
+        optional.clone()
+    } else {
+        required.iter().chain(optional.iter()).copied().collect()
+    };
+
+    let mut scored = specs
+        .iter()
+        .filter_map(|spec| {
+            let name = spec.name.to_lowercase();
+            let canonical_name = canonical_tool_token(spec.name);
+            let normalized_description = normalize_tool_search_query(spec.description);
+            let haystack = format!(
+                "{name} {} {canonical_name}",
+                spec.description.to_lowercase()
+            );
+            let normalized_haystack = format!("{canonical_name} {normalized_description}");
+            if required.iter().any(|term| !haystack.contains(term)) {
+                return None;
+            }
+
+            let mut score = 0_i32;
+            for term in &terms {
+                let canonical_term = canonical_tool_token(term);
+                if haystack.contains(term) {
+                    score += 2;
+                }
+                if name == *term {
+                    score += 8;
+                }
+                if name.contains(term) {
+                    score += 4;
+                }
+                if canonical_name == canonical_term {
+                    score += 12;
+                }
+                if normalized_haystack.contains(&canonical_term) {
+                    score += 3;
+                }
+            }
+
+            if score == 0 && !lowered.is_empty() {
+                return None;
+            }
+            Some((score, spec.name.to_string()))
+        })
+        .collect::<Vec<_>>();
+
+    scored.sort_by(|left, right| right.0.cmp(&left.0).then_with(|| left.1.cmp(&right.1)));
+    scored
+        .into_iter()
+        .map(|(_, name)| name)
+        .take(max_results)
+        .collect()
+}
+
+fn normalize_tool_search_query(query: &str) -> String {
+    query
+        .trim()
+        .split(|ch: char| ch.is_whitespace() || ch == ',')
+        .filter(|term| !term.is_empty())
+        .map(canonical_tool_token)
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn canonical_tool_token(value: &str) -> String {
+    let mut canonical = value
+        .chars()
+        .filter(char::is_ascii_alphanumeric)
+        .flat_map(char::to_lowercase)
+        .collect::<String>();
+    if let Some(stripped) = canonical.strip_suffix("tool") {
+        canonical = stripped.to_string();
+    }
+    canonical
+}
+
+fn agent_store_dir() -> Result<std::path::PathBuf, String> {
+    if let Ok(path) = std::env::var("CODINEER_AGENT_STORE") {
+        return Ok(std::path::PathBuf::from(path));
+    }
+    let cwd = std::env::current_dir().map_err(|error| error.to_string())?;
+    if let Some(workspace_root) = cwd.ancestors().nth(2) {
+        return Ok(workspace_root.join(".codineer-agents"));
+    }
+    Ok(cwd.join(".codineer-agents"))
+}
+
+fn make_agent_id() -> String {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    format!("agent-{nanos}")
+}
+
+fn slugify_agent_name(description: &str) -> String {
+    let mut out = description
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() {
+                ch.to_ascii_lowercase()
+            } else {
+                '-'
+            }
+        })
+        .collect::<String>();
+    while out.contains("--") {
+        out = out.replace("--", "-");
+    }
+    out.trim_matches('-').chars().take(32).collect()
+}
+
+fn normalize_subagent_type(subagent_type: Option<&str>) -> String {
+    let trimmed = subagent_type.map(str::trim).unwrap_or_default();
+    if trimmed.is_empty() {
+        return String::from("general-purpose");
+    }
+
+    match canonical_tool_token(trimmed).as_str() {
+        "general" | "generalpurpose" | "generalpurposeagent" => String::from("general-purpose"),
+        "explore" | "explorer" | "exploreagent" => String::from("Explore"),
+        "plan" | "planagent" => String::from("Plan"),
+        "verification" | "verificationagent" | "verify" | "verifier" => {
+            String::from("Verification")
+        }
+        "codineerguide" | "codineerguideagent" | "guide" => String::from("codineer-guide"),
+        "statusline" | "statuslinesetup" => String::from("statusline-setup"),
+        _ => trimmed.to_string(),
+    }
+}
+
