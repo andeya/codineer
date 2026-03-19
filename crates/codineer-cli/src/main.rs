@@ -1261,3 +1261,136 @@ impl LiveCli {
     }
 
     fn run_prompt_json(&mut self, input: &str) -> Result<(), Box<dyn std::error::Error>> {
+        let session = self.runtime.session().clone();
+        let mut runtime = build_runtime(RuntimeParams {
+            session,
+            model: self.model.clone(),
+            system_prompt: self.system_prompt.clone(),
+            enable_tools: true,
+            emit_output: false,
+            allowed_tools: self.allowed_tools.clone(),
+            permission_mode: self.permission_mode,
+            progress_reporter: None,
+            mcp_manager: Arc::clone(&self.mcp_manager),
+        })?;
+        let mut permission_prompter = CliPermissionPrompter::new(self.permission_mode);
+        let summary = runtime.run_turn(input, Some(&mut permission_prompter))?;
+        self.runtime = runtime;
+        self.persist_session()?;
+        println!(
+            "{}",
+            json!({
+                "message": final_assistant_text(&summary),
+                "model": self.model,
+                "iterations": summary.iterations,
+                "tool_uses": collect_tool_uses(&summary),
+                "tool_results": collect_tool_results(&summary),
+                "usage": {
+                    "input_tokens": summary.usage.input_tokens,
+                    "output_tokens": summary.usage.output_tokens,
+                    "cache_creation_input_tokens": summary.usage.cache_creation_input_tokens,
+                    "cache_read_input_tokens": summary.usage.cache_read_input_tokens,
+                }
+            })
+        );
+        Ok(())
+    }
+
+    fn handle_repl_command(
+        &mut self,
+        command: SlashCommand,
+    ) -> Result<bool, Box<dyn std::error::Error>> {
+        Ok(match command {
+            SlashCommand::Help => { println!("{}", render_repl_help()); false }
+            SlashCommand::Status => { self.print_status(); false }
+            SlashCommand::Cost => { self.print_cost(); false }
+            SlashCommand::Compact => { self.compact()?; false }
+            SlashCommand::Init => { run_init()?; false }
+            SlashCommand::Diff => { Self::print_diff()?; false }
+            SlashCommand::Version => { Self::print_version(); false }
+            SlashCommand::Memory => { Self::print_memory()?; false }
+            SlashCommand::DebugToolCall => { self.run_debug_tool_call()?; false }
+            SlashCommand::Commit => { self.run_commit()?; true }
+            SlashCommand::Bughunter { scope } => { self.run_bughunter(scope.as_deref())?; false }
+            SlashCommand::Pr { context } => { self.run_pr(context.as_deref())?; false }
+            SlashCommand::Issue { context } => { self.run_issue(context.as_deref())?; false }
+            SlashCommand::Ultraplan { task } => { self.run_ultraplan(task.as_deref())?; false }
+            SlashCommand::Teleport { target } => { Self::run_teleport(target.as_deref())?; false }
+            SlashCommand::Export { path } => { self.export_session(path.as_deref())?; false }
+            SlashCommand::Config { section } => { Self::print_config(section.as_deref())?; false }
+            SlashCommand::Agents { args } => { Self::print_agents(args.as_deref())?; false }
+            SlashCommand::Skills { args } => { Self::print_skills(args.as_deref())?; false }
+            SlashCommand::Model { model } => self.set_model(model)?,
+            SlashCommand::Permissions { mode } => self.set_permissions(mode)?,
+            SlashCommand::Clear { confirm } => self.clear_session(confirm)?,
+            SlashCommand::Resume { session_path } => self.resume_session(session_path)?,
+            SlashCommand::Session { action, target } => {
+                self.handle_session_command(action.as_deref(), target.as_deref())?
+            }
+            SlashCommand::Plugins { action, target } => {
+                self.handle_plugins_command(action.as_deref(), target.as_deref())?
+            }
+            SlashCommand::Branch { .. }
+            | SlashCommand::Worktree { .. }
+            | SlashCommand::CommitPushPr { .. } => {
+                let (name, desc) = match &command {
+                    SlashCommand::Branch { .. } => ("branch", "git branch commands"),
+                    SlashCommand::Worktree { .. } => ("worktree", "git worktree commands"),
+                    _ => ("commit-push-pr", "commit + push + PR automation"),
+                };
+                eprintln!("{}", render_mode_unavailable(name, desc));
+                false
+            }
+            SlashCommand::Unknown(name) => {
+                eprintln!("{}", render_unknown_repl_command(&name));
+                false
+            }
+        })
+    }
+
+    fn persist_session(&self) -> Result<(), Box<dyn std::error::Error>> {
+        self.runtime.session().save_to_path(&self.session.path)?;
+        Ok(())
+    }
+
+    fn collect_lsp_diagnostics(&self) -> Option<LspContextEnrichment> {
+        let manager = self.lsp_manager.as_ref()?;
+        let rt = tokio::runtime::Runtime::new().ok()?;
+        let diagnostics = rt.block_on(manager.collect_workspace_diagnostics()).ok()?;
+        let enrichment = LspContextEnrichment {
+            file_path: env::current_dir().unwrap_or_default(),
+            diagnostics,
+            definitions: Vec::new(),
+            references: Vec::new(),
+        };
+        if enrichment.is_empty() {
+            None
+        } else {
+            Some(enrichment)
+        }
+    }
+
+    fn shutdown_mcp(&self) {
+        if let Ok(rt) = tokio::runtime::Runtime::new() {
+            if let Ok(mut guard) = self.mcp_manager.lock() {
+                let _ = rt.block_on(guard.shutdown());
+            }
+        }
+    }
+
+    fn shutdown_lsp(&self) {
+        if let Some(manager) = &self.lsp_manager {
+            if let Ok(rt) = tokio::runtime::Runtime::new() {
+                let _ = rt.block_on(manager.shutdown());
+            }
+        }
+    }
+
+    fn print_status(&self) {
+        let cumulative = self.runtime.usage().cumulative_usage();
+        let latest = self.runtime.usage().current_turn_usage();
+        println!(
+            "{}",
+            format_status_report(
+                &self.model,
+                StatusUsage {
