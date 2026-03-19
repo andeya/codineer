@@ -1923,3 +1923,229 @@ fn discover_plugin_dirs(root: &Path) -> Result<Vec<PathBuf>, PluginError> {
         }
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Vec::new()),
         Err(error) => Err(PluginError::Io(error)),
+    }
+}
+
+fn plugin_id(name: &str, marketplace: &str) -> String {
+    format!("{name}@{marketplace}")
+}
+
+fn sanitize_plugin_id(plugin_id: &str) -> String {
+    plugin_id
+        .chars()
+        .map(|ch| match ch {
+            '/' | '\\' | '@' | ':' => '-',
+            other => other,
+        })
+        .collect()
+}
+
+fn describe_install_source(source: &PluginInstallSource) -> String {
+    match source {
+        PluginInstallSource::LocalPath { path } => path.display().to_string(),
+        PluginInstallSource::GitUrl { url } => url.clone(),
+    }
+}
+
+fn unix_time_ms() -> u128 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("time should be after epoch")
+        .as_millis()
+}
+
+fn copy_dir_all(source: &Path, destination: &Path) -> Result<(), PluginError> {
+    fs::create_dir_all(destination)?;
+    for entry in fs::read_dir(source)? {
+        let entry = entry?;
+        let target = destination.join(entry.file_name());
+        if entry.file_type()?.is_dir() {
+            copy_dir_all(&entry.path(), &target)?;
+        } else {
+            fs::copy(entry.path(), target)?;
+        }
+    }
+    Ok(())
+}
+
+fn update_settings_json(
+    path: &Path,
+    mut update: impl FnMut(&mut Map<String, Value>),
+) -> Result<(), PluginError> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let mut root = match fs::read_to_string(path) {
+        Ok(contents) if !contents.trim().is_empty() => serde_json::from_str::<Value>(&contents)?,
+        Ok(_) => Value::Object(Map::new()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Value::Object(Map::new()),
+        Err(error) => return Err(PluginError::Io(error)),
+    };
+
+    let object = root.as_object_mut().ok_or_else(|| {
+        PluginError::InvalidManifest(format!(
+            "settings file {} must contain a JSON object",
+            path.display()
+        ))
+    })?;
+    update(object);
+    fs::write(path, serde_json::to_string_pretty(&root)?)?;
+    Ok(())
+}
+
+fn ensure_object<'a>(root: &'a mut Map<String, Value>, key: &str) -> &'a mut Map<String, Value> {
+    if !root.get(key).is_some_and(Value::is_object) {
+        root.insert(key.to_string(), Value::Object(Map::new()));
+    }
+    root.get_mut(key)
+        .and_then(Value::as_object_mut)
+        .expect("object should exist")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn temp_dir(label: &str) -> PathBuf {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("time should be after epoch")
+            .as_nanos();
+        std::env::temp_dir().join(format!("plugins-{label}-{nanos}"))
+    }
+
+    fn write_file(path: &Path, contents: &str) {
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).expect("parent dir");
+        }
+        fs::write(path, contents).expect("write file");
+    }
+
+    fn write_loader_plugin(root: &Path) {
+        write_file(
+            root.join("hooks").join("pre.sh").as_path(),
+            "#!/bin/sh\nprintf 'pre'\n",
+        );
+        write_file(
+            root.join("tools").join("echo-tool.sh").as_path(),
+            "#!/bin/sh\ncat\n",
+        );
+        write_file(
+            root.join("commands").join("sync.sh").as_path(),
+            "#!/bin/sh\nprintf 'sync'\n",
+        );
+        write_file(
+            root.join(MANIFEST_FILE_NAME).as_path(),
+            r#"{
+  "name": "loader-demo",
+  "version": "1.2.3",
+  "description": "Manifest loader test plugin",
+  "permissions": ["read", "write"],
+  "hooks": {
+    "PreToolUse": ["./hooks/pre.sh"]
+  },
+  "tools": [
+    {
+      "name": "echo_tool",
+      "description": "Echoes JSON input",
+      "inputSchema": {
+        "type": "object"
+      },
+      "command": "./tools/echo-tool.sh",
+      "requiredPermission": "workspace-write"
+    }
+  ],
+  "commands": [
+    {
+      "name": "sync",
+      "description": "Sync command",
+      "command": "./commands/sync.sh"
+    }
+  ]
+}"#,
+        );
+    }
+
+    fn write_external_plugin(root: &Path, name: &str, version: &str) {
+        write_file(
+            root.join("hooks").join("pre.sh").as_path(),
+            "#!/bin/sh\nprintf 'pre'\n",
+        );
+        write_file(
+            root.join("hooks").join("post.sh").as_path(),
+            "#!/bin/sh\nprintf 'post'\n",
+        );
+        write_file(
+            root.join(MANIFEST_RELATIVE_PATH).as_path(),
+            format!(
+                "{{\n  \"name\": \"{name}\",\n  \"version\": \"{version}\",\n  \"description\": \"test plugin\",\n  \"hooks\": {{\n    \"PreToolUse\": [\"./hooks/pre.sh\"],\n    \"PostToolUse\": [\"./hooks/post.sh\"]\n  }}\n}}"
+            )
+            .as_str(),
+        );
+    }
+
+    fn write_broken_plugin(root: &Path, name: &str) {
+        write_file(
+            root.join(MANIFEST_RELATIVE_PATH).as_path(),
+            format!(
+                "{{\n  \"name\": \"{name}\",\n  \"version\": \"1.0.0\",\n  \"description\": \"broken plugin\",\n  \"hooks\": {{\n    \"PreToolUse\": [\"./hooks/missing.sh\"]\n  }}\n}}"
+            )
+            .as_str(),
+        );
+    }
+
+    fn write_lifecycle_plugin(root: &Path, name: &str, version: &str) -> PathBuf {
+        let log_path = root.join("lifecycle.log");
+        write_file(
+            root.join("lifecycle").join("init.sh").as_path(),
+            "#!/bin/sh\nprintf 'init\\n' >> lifecycle.log\n",
+        );
+        write_file(
+            root.join("lifecycle").join("shutdown.sh").as_path(),
+            "#!/bin/sh\nprintf 'shutdown\\n' >> lifecycle.log\n",
+        );
+        write_file(
+            root.join(MANIFEST_RELATIVE_PATH).as_path(),
+            format!(
+                "{{\n  \"name\": \"{name}\",\n  \"version\": \"{version}\",\n  \"description\": \"lifecycle plugin\",\n  \"lifecycle\": {{\n    \"Init\": [\"./lifecycle/init.sh\"],\n    \"Shutdown\": [\"./lifecycle/shutdown.sh\"]\n  }}\n}}"
+            )
+            .as_str(),
+        );
+        log_path
+    }
+
+    fn write_tool_plugin(root: &Path, name: &str, version: &str) {
+        write_tool_plugin_with_name(root, name, version, "plugin_echo");
+    }
+
+    fn write_tool_plugin_with_name(root: &Path, name: &str, version: &str, tool_name: &str) {
+        let script_path = root.join("tools").join("echo-json.sh");
+        write_file(
+            &script_path,
+            "#!/bin/sh\nINPUT=$(cat)\nprintf '{\"plugin\":\"%s\",\"tool\":\"%s\",\"input\":%s}\\n' \"$CODINEER_PLUGIN_ID\" \"$CODINEER_TOOL_NAME\" \"$INPUT\"\n",
+        );
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+
+            let mut permissions = fs::metadata(&script_path).expect("metadata").permissions();
+            permissions.set_mode(0o755);
+            fs::set_permissions(&script_path, permissions).expect("chmod");
+        }
+        write_file(
+            root.join(MANIFEST_RELATIVE_PATH).as_path(),
+            format!(
+                "{{\n  \"name\": \"{name}\",\n  \"version\": \"{version}\",\n  \"description\": \"tool plugin\",\n  \"tools\": [\n    {{\n      \"name\": \"{tool_name}\",\n      \"description\": \"Echo JSON input\",\n      \"inputSchema\": {{\"type\": \"object\", \"properties\": {{\"message\": {{\"type\": \"string\"}}}}, \"required\": [\"message\"], \"additionalProperties\": false}},\n      \"command\": \"./tools/echo-json.sh\",\n      \"requiredPermission\": \"workspace-write\"\n    }}\n  ]\n}}"
+            )
+            .as_str(),
+        );
+    }
+
+    fn write_bundled_plugin(root: &Path, name: &str, version: &str, default_enabled: bool) {
+        write_file(
+            root.join(MANIFEST_RELATIVE_PATH).as_path(),
+            format!(
+                "{{\n  \"name\": \"{name}\",\n  \"version\": \"{version}\",\n  \"description\": \"bundled plugin\",\n  \"defaultEnabled\": {}\n}}",
+                if default_enabled { "true" } else { "false" }
+            )
+            .as_str(),
