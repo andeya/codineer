@@ -1195,3 +1195,136 @@ impl LiveCli {
                     "/help · /status · ask for a task"
                 } else {
                     "/init · /help · /status"
+                }
+            ),
+            "  Editor           Tab completes slash commands · /vim toggles modal editing"
+                .to_string(),
+            "  Multiline        Shift+Enter or Ctrl+J inserts a newline".to_string(),
+        ]);
+        if !has_codineer_md {
+            lines.push(
+                "  First run        /init scaffolds CODINEER.md, .codineer.json, and local session files"
+                    .to_string(),
+            );
+        }
+        lines.join("\n")
+    }
+
+    fn run_turn(&mut self, input: &str) -> Result<(), Box<dyn std::error::Error>> {
+        if let Some(enrichment) = self.collect_lsp_diagnostics() {
+            if let Ok(refreshed) = build_system_prompt_with_lsp(Some(&enrichment)) {
+                self.system_prompt = refreshed;
+                self.runtime.update_system_prompt(self.system_prompt.clone());
+            }
+        }
+
+        let mut spinner = Spinner::new();
+        let mut stdout = io::stdout();
+        spinner.tick(
+            "🦀 Thinking...",
+            TerminalRenderer::new().color_theme(),
+            &mut stdout,
+        )?;
+        let mut permission_prompter = CliPermissionPrompter::new(self.permission_mode);
+        let result = self.runtime.run_turn(input, Some(&mut permission_prompter));
+        match result {
+            Ok(_) => {
+                spinner.finish(
+                    "✨ Done",
+                    TerminalRenderer::new().color_theme(),
+                    &mut stdout,
+                )?;
+                println!();
+                self.persist_session()?;
+                Ok(())
+            }
+            Err(error) => {
+                spinner.fail(
+                    "❌ Request failed",
+                    TerminalRenderer::new().color_theme(),
+                    &mut stdout,
+                )?;
+                Err(Box::new(error))
+            }
+        }
+    }
+
+    fn run_turn_with_output(
+        &mut self,
+        input: &str,
+        output_format: CliOutputFormat,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        match output_format {
+            CliOutputFormat::Text => self.run_turn(input),
+            CliOutputFormat::Json => self.run_prompt_json(input),
+        }
+    }
+
+    fn run_prompt_json(&mut self, input: &str) -> Result<(), Box<dyn std::error::Error>> {
+        let session = self.runtime.session().clone();
+        let mut runtime = build_runtime(RuntimeParams {
+            session,
+            model: self.model.clone(),
+            system_prompt: self.system_prompt.clone(),
+            enable_tools: true,
+            emit_output: false,
+            allowed_tools: self.allowed_tools.clone(),
+            permission_mode: self.permission_mode,
+            progress_reporter: None,
+            mcp_manager: Arc::clone(&self.mcp_manager),
+        })?;
+        let mut permission_prompter = CliPermissionPrompter::new(self.permission_mode);
+        let summary = runtime.run_turn(input, Some(&mut permission_prompter))?;
+        self.runtime = runtime;
+        self.persist_session()?;
+        println!(
+            "{}",
+            json!({
+                "message": final_assistant_text(&summary),
+                "model": self.model,
+                "iterations": summary.iterations,
+                "tool_uses": collect_tool_uses(&summary),
+                "tool_results": collect_tool_results(&summary),
+                "usage": {
+                    "input_tokens": summary.usage.input_tokens,
+                    "output_tokens": summary.usage.output_tokens,
+                    "cache_creation_input_tokens": summary.usage.cache_creation_input_tokens,
+                    "cache_read_input_tokens": summary.usage.cache_read_input_tokens,
+                }
+            })
+        );
+        Ok(())
+    }
+
+    fn handle_repl_command(
+        &mut self,
+        command: SlashCommand,
+    ) -> Result<bool, Box<dyn std::error::Error>> {
+        Ok(match command {
+            SlashCommand::Help => { println!("{}", render_repl_help()); false }
+            SlashCommand::Status => { self.print_status(); false }
+            SlashCommand::Cost => { self.print_cost(); false }
+            SlashCommand::Compact => { self.compact()?; false }
+            SlashCommand::Init => { run_init()?; false }
+            SlashCommand::Diff => { Self::print_diff()?; false }
+            SlashCommand::Version => { Self::print_version(); false }
+            SlashCommand::Memory => { Self::print_memory()?; false }
+            SlashCommand::DebugToolCall => { self.run_debug_tool_call()?; false }
+            SlashCommand::Commit => { self.run_commit()?; true }
+            SlashCommand::Bughunter { scope } => { self.run_bughunter(scope.as_deref())?; false }
+            SlashCommand::Pr { context } => { self.run_pr(context.as_deref())?; false }
+            SlashCommand::Issue { context } => { self.run_issue(context.as_deref())?; false }
+            SlashCommand::Ultraplan { task } => { self.run_ultraplan(task.as_deref())?; false }
+            SlashCommand::Teleport { target } => { Self::run_teleport(target.as_deref())?; false }
+            SlashCommand::Export { path } => { self.export_session(path.as_deref())?; false }
+            SlashCommand::Config { section } => { Self::print_config(section.as_deref())?; false }
+            SlashCommand::Agents { args } => { Self::print_agents(args.as_deref())?; false }
+            SlashCommand::Skills { args } => { Self::print_skills(args.as_deref())?; false }
+            SlashCommand::Model { model } => self.set_model(model)?,
+            SlashCommand::Permissions { mode } => self.set_permissions(mode)?,
+            SlashCommand::Clear { confirm } => self.clear_session(confirm)?,
+            SlashCommand::Resume { session_path } => self.resume_session(session_path)?,
+            SlashCommand::Session { action, target } => {
+                self.handle_session_command(action.as_deref(), target.as_deref())?
+            }
+            SlashCommand::Plugins { action, target } => {
