@@ -2282,3 +2282,74 @@ fn normalize_subagent_type(subagent_type: Option<&str>) -> String {
     }
 }
 
+fn iso8601_now() -> String {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
+        .to_string()
+}
+
+#[allow(clippy::too_many_lines)]
+fn execute_notebook_edit(input: NotebookEditInput) -> Result<NotebookEditOutput, String> {
+    let path = std::path::PathBuf::from(&input.notebook_path);
+    if path.extension().and_then(|ext| ext.to_str()) != Some("ipynb") {
+        return Err(String::from(
+            "File must be a Jupyter notebook (.ipynb file).",
+        ));
+    }
+
+    let original_file = std::fs::read_to_string(&path).map_err(|error| error.to_string())?;
+    let mut notebook: serde_json::Value =
+        serde_json::from_str(&original_file).map_err(|error| error.to_string())?;
+    let language = notebook
+        .get("metadata")
+        .and_then(|metadata| metadata.get("kernelspec"))
+        .and_then(|kernelspec| kernelspec.get("language"))
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("python")
+        .to_string();
+    let cells = notebook
+        .get_mut("cells")
+        .and_then(serde_json::Value::as_array_mut)
+        .ok_or_else(|| String::from("Notebook cells array not found"))?;
+
+    let edit_mode = input.edit_mode.unwrap_or(NotebookEditMode::Replace);
+    let target_index = match input.cell_id.as_deref() {
+        Some(cell_id) => Some(resolve_cell_index(cells, Some(cell_id), edit_mode)?),
+        None if matches!(
+            edit_mode,
+            NotebookEditMode::Replace | NotebookEditMode::Delete
+        ) =>
+        {
+            Some(resolve_cell_index(cells, None, edit_mode)?)
+        }
+        None => None,
+    };
+    let resolved_cell_type = match edit_mode {
+        NotebookEditMode::Delete => None,
+        NotebookEditMode::Insert => Some(input.cell_type.unwrap_or(NotebookCellType::Code)),
+        NotebookEditMode::Replace => Some(input.cell_type.unwrap_or_else(|| {
+            target_index
+                .and_then(|index| cells.get(index))
+                .and_then(cell_kind)
+                .unwrap_or(NotebookCellType::Code)
+        })),
+    };
+    let new_source = require_notebook_source(input.new_source, edit_mode)?;
+
+    let cell_id = match edit_mode {
+        NotebookEditMode::Insert => {
+            let resolved_cell_type = resolved_cell_type.expect("insert cell type");
+            let new_id = make_cell_id(cells.len());
+            let new_cell = build_notebook_cell(&new_id, resolved_cell_type, &new_source);
+            let insert_at = target_index.map_or(cells.len(), |index| index + 1);
+            cells.insert(insert_at, new_cell);
+            cells
+                .get(insert_at)
+                .and_then(|cell| cell.get("id"))
+                .and_then(serde_json::Value::as_str)
+                .map(ToString::to_string)
+        }
+        NotebookEditMode::Delete => {
+            let removed = cells.remove(target_index.expect("delete target index"));
