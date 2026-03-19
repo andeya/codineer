@@ -1211,3 +1211,146 @@ fn render_plugin_install_report(plugin_id: &str, plugin: Option<&PluginSummary>)
     let enabled = plugin.is_some_and(|plugin| plugin.enabled);
     format!(
         "Plugins\n  Result           installed {plugin_id}\n  Name             {name}\n  Version          {version}\n  Status           {}",
+        if enabled { "enabled" } else { "disabled" }
+    )
+}
+
+fn resolve_plugin_target(
+    manager: &PluginManager,
+    target: &str,
+) -> Result<PluginSummary, PluginError> {
+    let mut matches = manager
+        .list_installed_plugins()?
+        .into_iter()
+        .filter(|plugin| plugin.metadata.id == target || plugin.metadata.name == target)
+        .collect::<Vec<_>>();
+    match matches.len() {
+        1 => Ok(matches.remove(0)),
+        0 => Err(PluginError::NotFound(format!(
+            "plugin `{target}` is not installed or discoverable"
+        ))),
+        _ => Err(PluginError::InvalidManifest(format!(
+            "plugin name `{target}` is ambiguous; use the full plugin id"
+        ))),
+    }
+}
+
+fn discover_definition_roots(cwd: &Path, leaf: &str) -> Vec<(DefinitionSource, PathBuf)> {
+    let mut roots = Vec::new();
+
+    for ancestor in cwd.ancestors() {
+        push_unique_root(
+            &mut roots,
+            DefinitionSource::Project,
+            ancestor.join(".codineer").join(leaf),
+        );
+    }
+
+    if let Some(home) = env::var_os("HOME") {
+        let home = PathBuf::from(home);
+        push_unique_root(
+            &mut roots,
+            DefinitionSource::User,
+            home.join(".codineer").join(leaf),
+        );
+    }
+
+    roots
+}
+
+fn discover_skill_roots(cwd: &Path) -> Vec<SkillRoot> {
+    let mut roots = Vec::new();
+
+    for ancestor in cwd.ancestors() {
+        push_unique_skill_root(
+            &mut roots,
+            DefinitionSource::Project,
+            ancestor.join(".codineer").join("skills"),
+        );
+    }
+
+    if let Some(home) = env::var_os("HOME") {
+        let home = PathBuf::from(home);
+        push_unique_skill_root(
+            &mut roots,
+            DefinitionSource::User,
+            home.join(".codineer").join("skills"),
+        );
+    }
+
+    roots
+}
+
+fn push_unique_root(
+    roots: &mut Vec<(DefinitionSource, PathBuf)>,
+    source: DefinitionSource,
+    path: PathBuf,
+) {
+    if path.is_dir() && !roots.iter().any(|(_, existing)| existing == &path) {
+        roots.push((source, path));
+    }
+}
+
+fn push_unique_skill_root(
+    roots: &mut Vec<SkillRoot>,
+    source: DefinitionSource,
+    path: PathBuf,
+) {
+    if path.is_dir() && !roots.iter().any(|existing| existing.path == path) {
+        roots.push(SkillRoot { source, path });
+    }
+}
+
+fn load_agents_from_roots(
+    roots: &[(DefinitionSource, PathBuf)],
+) -> std::io::Result<Vec<AgentSummary>> {
+    let mut agents = Vec::new();
+    let mut active_sources = BTreeMap::<String, DefinitionSource>::new();
+
+    for (source, root) in roots {
+        let mut root_agents = Vec::new();
+        for entry in fs::read_dir(root)? {
+            let entry = entry?;
+            if entry.path().extension().is_none_or(|ext| ext != "toml") {
+                continue;
+            }
+            let contents = fs::read_to_string(entry.path())?;
+            let fallback_name = entry.path().file_stem().map_or_else(
+                || entry.file_name().to_string_lossy().to_string(),
+                |stem| stem.to_string_lossy().to_string(),
+            );
+            root_agents.push(AgentSummary {
+                name: parse_toml_string(&contents, "name").unwrap_or(fallback_name),
+                description: parse_toml_string(&contents, "description"),
+                model: parse_toml_string(&contents, "model"),
+                reasoning_effort: parse_toml_string(&contents, "model_reasoning_effort"),
+                source: *source,
+                shadowed_by: None,
+            });
+        }
+        root_agents.sort_by(|left, right| left.name.cmp(&right.name));
+
+        for mut agent in root_agents {
+            let key = agent.name.to_ascii_lowercase();
+            if let Some(existing) = active_sources.get(&key) {
+                agent.shadowed_by = Some(*existing);
+            } else {
+                active_sources.insert(key, agent.source);
+            }
+            agents.push(agent);
+        }
+    }
+
+    Ok(agents)
+}
+
+fn load_skills_from_roots(roots: &[SkillRoot]) -> std::io::Result<Vec<SkillSummary>> {
+    let mut skills = Vec::new();
+    let mut active_sources = BTreeMap::<String, DefinitionSource>::new();
+
+    for root in roots {
+        let mut root_skills = Vec::new();
+        for entry in fs::read_dir(&root.path)? {
+            let entry = entry?;
+            if !entry.path().is_dir() {
+                continue;
