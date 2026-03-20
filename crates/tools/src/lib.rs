@@ -2139,3 +2139,431 @@ fn search_tool_specs(query: &str, max_results: usize, specs: &[ToolSpec]) -> Vec
     }
 
     let mut required = Vec::new();
+    let mut optional = Vec::new();
+    for term in lowered.split_whitespace() {
+        if let Some(rest) = term.strip_prefix('+') {
+            if !rest.is_empty() {
+                required.push(rest);
+            }
+        } else {
+            optional.push(term);
+        }
+    }
+    let terms = if required.is_empty() {
+        optional.clone()
+    } else {
+        required.iter().chain(optional.iter()).copied().collect()
+    };
+
+    let mut scored = specs
+        .iter()
+        .filter_map(|spec| {
+            let name = spec.name.to_lowercase();
+            let canonical_name = canonical_tool_token(spec.name);
+            let normalized_description = normalize_tool_search_query(spec.description);
+            let haystack = format!(
+                "{name} {} {canonical_name}",
+                spec.description.to_lowercase()
+            );
+            let normalized_haystack = format!("{canonical_name} {normalized_description}");
+            if required.iter().any(|term| !haystack.contains(term)) {
+                return None;
+            }
+
+            let mut score = 0_i32;
+            for term in &terms {
+                let canonical_term = canonical_tool_token(term);
+                if haystack.contains(term) {
+                    score += 2;
+                }
+                if name == *term {
+                    score += 8;
+                }
+                if name.contains(term) {
+                    score += 4;
+                }
+                if canonical_name == canonical_term {
+                    score += 12;
+                }
+                if normalized_haystack.contains(&canonical_term) {
+                    score += 3;
+                }
+            }
+
+            if score == 0 && !lowered.is_empty() {
+                return None;
+            }
+            Some((score, spec.name.to_string()))
+        })
+        .collect::<Vec<_>>();
+
+    scored.sort_by(|left, right| right.0.cmp(&left.0).then_with(|| left.1.cmp(&right.1)));
+    scored
+        .into_iter()
+        .map(|(_, name)| name)
+        .take(max_results)
+        .collect()
+}
+
+fn normalize_tool_search_query(query: &str) -> String {
+    query
+        .trim()
+        .split(|ch: char| ch.is_whitespace() || ch == ',')
+        .filter(|term| !term.is_empty())
+        .map(canonical_tool_token)
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn canonical_tool_token(value: &str) -> String {
+    let mut canonical = value
+        .chars()
+        .filter(char::is_ascii_alphanumeric)
+        .flat_map(char::to_lowercase)
+        .collect::<String>();
+    if let Some(stripped) = canonical.strip_suffix("tool") {
+        canonical = stripped.to_string();
+    }
+    canonical
+}
+
+fn agent_store_dir() -> Result<std::path::PathBuf, String> {
+    if let Ok(path) = std::env::var("CODINEER_AGENT_STORE") {
+        return Ok(std::path::PathBuf::from(path));
+    }
+    let cwd = std::env::current_dir().map_err(|error| error.to_string())?;
+    if let Some(workspace_root) = cwd.ancestors().nth(2) {
+        return Ok(workspace_root.join(".codineer-agents"));
+    }
+    Ok(cwd.join(".codineer-agents"))
+}
+
+fn make_agent_id() -> String {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    format!("agent-{nanos}")
+}
+
+fn slugify_agent_name(description: &str) -> String {
+    let mut out = description
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() {
+                ch.to_ascii_lowercase()
+            } else {
+                '-'
+            }
+        })
+        .collect::<String>();
+    while out.contains("--") {
+        out = out.replace("--", "-");
+    }
+    out.trim_matches('-').chars().take(32).collect()
+}
+
+fn normalize_subagent_type(subagent_type: Option<&str>) -> String {
+    let trimmed = subagent_type.map(str::trim).unwrap_or_default();
+    if trimmed.is_empty() {
+        return String::from("general-purpose");
+    }
+
+    match canonical_tool_token(trimmed).as_str() {
+        "general" | "generalpurpose" | "generalpurposeagent" => String::from("general-purpose"),
+        "explore" | "explorer" | "exploreagent" => String::from("Explore"),
+        "plan" | "planagent" => String::from("Plan"),
+        "verification" | "verificationagent" | "verify" | "verifier" => {
+            String::from("Verification")
+        }
+        "codineerguide" | "codineerguideagent" | "guide" => String::from("codineer-guide"),
+        "statusline" | "statuslinesetup" => String::from("statusline-setup"),
+        _ => trimmed.to_string(),
+    }
+}
+
+fn iso8601_now() -> String {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
+        .to_string()
+}
+
+#[allow(clippy::too_many_lines)]
+fn execute_notebook_edit(input: NotebookEditInput) -> Result<NotebookEditOutput, String> {
+    let path = std::path::PathBuf::from(&input.notebook_path);
+    if path.extension().and_then(|ext| ext.to_str()) != Some("ipynb") {
+        return Err(String::from(
+            "File must be a Jupyter notebook (.ipynb file).",
+        ));
+    }
+
+    let original_file = std::fs::read_to_string(&path).map_err(|error| error.to_string())?;
+    let mut notebook: serde_json::Value =
+        serde_json::from_str(&original_file).map_err(|error| error.to_string())?;
+    let language = notebook
+        .get("metadata")
+        .and_then(|metadata| metadata.get("kernelspec"))
+        .and_then(|kernelspec| kernelspec.get("language"))
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("python")
+        .to_string();
+    let cells = notebook
+        .get_mut("cells")
+        .and_then(serde_json::Value::as_array_mut)
+        .ok_or_else(|| String::from("Notebook cells array not found"))?;
+
+    let edit_mode = input.edit_mode.unwrap_or(NotebookEditMode::Replace);
+    let target_index = match input.cell_id.as_deref() {
+        Some(cell_id) => Some(resolve_cell_index(cells, Some(cell_id), edit_mode)?),
+        None if matches!(
+            edit_mode,
+            NotebookEditMode::Replace | NotebookEditMode::Delete
+        ) =>
+        {
+            Some(resolve_cell_index(cells, None, edit_mode)?)
+        }
+        None => None,
+    };
+    let resolved_cell_type = match edit_mode {
+        NotebookEditMode::Delete => None,
+        NotebookEditMode::Insert => Some(input.cell_type.unwrap_or(NotebookCellType::Code)),
+        NotebookEditMode::Replace => Some(input.cell_type.unwrap_or_else(|| {
+            target_index
+                .and_then(|index| cells.get(index))
+                .and_then(cell_kind)
+                .unwrap_or(NotebookCellType::Code)
+        })),
+    };
+    let new_source = require_notebook_source(input.new_source, edit_mode)?;
+
+    let cell_id = match edit_mode {
+        NotebookEditMode::Insert => {
+            let resolved_cell_type = resolved_cell_type.expect("insert cell type");
+            let new_id = make_cell_id(cells.len());
+            let new_cell = build_notebook_cell(&new_id, resolved_cell_type, &new_source);
+            let insert_at = target_index.map_or(cells.len(), |index| index + 1);
+            cells.insert(insert_at, new_cell);
+            cells
+                .get(insert_at)
+                .and_then(|cell| cell.get("id"))
+                .and_then(serde_json::Value::as_str)
+                .map(ToString::to_string)
+        }
+        NotebookEditMode::Delete => {
+            let removed = cells.remove(target_index.expect("delete target index"));
+            removed
+                .get("id")
+                .and_then(serde_json::Value::as_str)
+                .map(ToString::to_string)
+        }
+        NotebookEditMode::Replace => {
+            let resolved_cell_type = resolved_cell_type.expect("replace cell type");
+            let cell = cells
+                .get_mut(target_index.expect("replace target index"))
+                .ok_or_else(|| String::from("Cell index out of range"))?;
+            cell["source"] = serde_json::Value::Array(source_lines(&new_source));
+            cell["cell_type"] = serde_json::Value::String(match resolved_cell_type {
+                NotebookCellType::Code => String::from("code"),
+                NotebookCellType::Markdown => String::from("markdown"),
+            });
+            match resolved_cell_type {
+                NotebookCellType::Code => {
+                    if !cell.get("outputs").is_some_and(serde_json::Value::is_array) {
+                        cell["outputs"] = json!([]);
+                    }
+                    if cell.get("execution_count").is_none() {
+                        cell["execution_count"] = serde_json::Value::Null;
+                    }
+                }
+                NotebookCellType::Markdown => {
+                    if let Some(object) = cell.as_object_mut() {
+                        object.remove("outputs");
+                        object.remove("execution_count");
+                    }
+                }
+            }
+            cell.get("id")
+                .and_then(serde_json::Value::as_str)
+                .map(ToString::to_string)
+        }
+    };
+
+    let updated_file =
+        serde_json::to_string_pretty(&notebook).map_err(|error| error.to_string())?;
+    std::fs::write(&path, &updated_file).map_err(|error| error.to_string())?;
+
+    Ok(NotebookEditOutput {
+        new_source,
+        cell_id,
+        cell_type: resolved_cell_type,
+        language,
+        edit_mode: format_notebook_edit_mode(edit_mode),
+        error: None,
+        notebook_path: path.display().to_string(),
+        original_file,
+        updated_file,
+    })
+}
+
+fn require_notebook_source(
+    source: Option<String>,
+    edit_mode: NotebookEditMode,
+) -> Result<String, String> {
+    match edit_mode {
+        NotebookEditMode::Delete => Ok(source.unwrap_or_default()),
+        NotebookEditMode::Insert | NotebookEditMode::Replace => source
+            .ok_or_else(|| String::from("new_source is required for insert and replace edits")),
+    }
+}
+
+fn build_notebook_cell(cell_id: &str, cell_type: NotebookCellType, source: &str) -> Value {
+    let mut cell = json!({
+        "cell_type": match cell_type {
+            NotebookCellType::Code => "code",
+            NotebookCellType::Markdown => "markdown",
+        },
+        "id": cell_id,
+        "metadata": {},
+        "source": source_lines(source),
+    });
+    if let Some(object) = cell.as_object_mut() {
+        match cell_type {
+            NotebookCellType::Code => {
+                object.insert(String::from("outputs"), json!([]));
+                object.insert(String::from("execution_count"), Value::Null);
+            }
+            NotebookCellType::Markdown => {}
+        }
+    }
+    cell
+}
+
+fn cell_kind(cell: &serde_json::Value) -> Option<NotebookCellType> {
+    cell.get("cell_type")
+        .and_then(serde_json::Value::as_str)
+        .map(|kind| {
+            if kind == "markdown" {
+                NotebookCellType::Markdown
+            } else {
+                NotebookCellType::Code
+            }
+        })
+}
+
+#[allow(clippy::needless_pass_by_value)]
+fn execute_sleep(input: SleepInput) -> SleepOutput {
+    std::thread::sleep(Duration::from_millis(input.duration_ms));
+    SleepOutput {
+        duration_ms: input.duration_ms,
+        message: format!("Slept for {}ms", input.duration_ms),
+    }
+}
+
+fn execute_brief(input: BriefInput) -> Result<BriefOutput, String> {
+    if input.message.trim().is_empty() {
+        return Err(String::from("message must not be empty"));
+    }
+
+    let attachments = input
+        .attachments
+        .as_ref()
+        .map(|paths| {
+            paths
+                .iter()
+                .map(|path| resolve_attachment(path))
+                .collect::<Result<Vec<_>, String>>()
+        })
+        .transpose()?;
+
+    let message = match input.status {
+        BriefStatus::Normal | BriefStatus::Proactive => input.message,
+    };
+
+    Ok(BriefOutput {
+        message,
+        attachments,
+        sent_at: iso8601_timestamp(),
+    })
+}
+
+fn resolve_attachment(path: &str) -> Result<ResolvedAttachment, String> {
+    let resolved = std::fs::canonicalize(path).map_err(|error| error.to_string())?;
+    let metadata = std::fs::metadata(&resolved).map_err(|error| error.to_string())?;
+    Ok(ResolvedAttachment {
+        path: resolved.display().to_string(),
+        size: metadata.len(),
+        is_image: is_image_path(&resolved),
+    })
+}
+
+fn is_image_path(path: &Path) -> bool {
+    matches!(
+        path.extension()
+            .and_then(|ext| ext.to_str())
+            .map(str::to_ascii_lowercase)
+            .as_deref(),
+        Some("png" | "jpg" | "jpeg" | "gif" | "webp" | "bmp" | "svg")
+    )
+}
+
+fn execute_config(input: ConfigInput) -> Result<ConfigOutput, String> {
+    let setting = input.setting.trim();
+    if setting.is_empty() {
+        return Err(String::from("setting must not be empty"));
+    }
+    let Some(spec) = supported_config_setting(setting) else {
+        return Ok(ConfigOutput {
+            success: false,
+            operation: None,
+            setting: None,
+            value: None,
+            previous_value: None,
+            new_value: None,
+            error: Some(format!("Unknown setting: \"{setting}\"")),
+        });
+    };
+
+    let path = config_file_for_scope(spec.scope)?;
+    let mut document = read_json_object(&path)?;
+
+    if let Some(value) = input.value {
+        let normalized = normalize_config_value(spec, value)?;
+        let previous_value = get_nested_value(&document, spec.path).cloned();
+        set_nested_value(&mut document, spec.path, normalized.clone());
+        write_json_object(&path, &document)?;
+        Ok(ConfigOutput {
+            success: true,
+            operation: Some(String::from("set")),
+            setting: Some(setting.to_string()),
+            value: Some(normalized.clone()),
+            previous_value,
+            new_value: Some(normalized),
+            error: None,
+        })
+    } else {
+        Ok(ConfigOutput {
+            success: true,
+            operation: Some(String::from("get")),
+            setting: Some(setting.to_string()),
+            value: get_nested_value(&document, spec.path).cloned(),
+            previous_value: None,
+            new_value: None,
+            error: None,
+        })
+    }
+}
+
+fn execute_structured_output(input: StructuredOutputInput) -> StructuredOutputResult {
+    StructuredOutputResult {
+        data: String::from("Structured output provided successfully"),
+        structured_output: input.0,
+    }
+}
+
+fn execute_repl(input: ReplInput) -> Result<ReplOutput, String> {
+    if input.code.trim().is_empty() {
+        return Err(String::from("code must not be empty"));
+    }
+    let _ = input.timeout_ms;
