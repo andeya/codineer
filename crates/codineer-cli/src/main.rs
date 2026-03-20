@@ -1461,3 +1461,69 @@ impl LiveCli {
     ) -> Result<bool, Box<dyn std::error::Error>> {
         let Some(mode) = mode else {
             println!(
+                "{}",
+                format_permissions_report(self.permission_mode.as_str())
+            );
+            return Ok(false);
+        };
+
+        let normalized = normalize_permission_mode(&mode).ok_or_else(|| {
+            format!(
+                "unsupported permission mode '{mode}'. Use read-only, workspace-write, or danger-full-access."
+            )
+        })?;
+
+        if normalized == self.permission_mode.as_str() {
+            println!("{}", format_permissions_report(normalized));
+            return Ok(false);
+        }
+
+        let previous = self.permission_mode.as_str().to_string();
+        let session = self.runtime.session().clone();
+        self.permission_mode = permission_mode_from_label(normalized)?;
+        self.runtime = build_runtime(RuntimeParams {
+            session,
+            model: self.model.clone(),
+            system_prompt: self.system_prompt.clone(),
+            enable_tools: true,
+            emit_output: true,
+            allowed_tools: self.allowed_tools.clone(),
+            permission_mode: self.permission_mode,
+            progress_reporter: None,
+            mcp_manager: Arc::clone(&self.mcp_manager),
+        })?;
+        println!(
+            "{}",
+            format_permissions_switch_report(&previous, normalized)
+        );
+        Ok(true)
+    }
+
+    fn clear_session(&mut self, confirm: bool) -> Result<bool, Box<dyn std::error::Error>> {
+        if !confirm {
+            println!(
+                "clear: confirmation required; run /clear --confirm to start a fresh session."
+            );
+            return Ok(false);
+        }
+
+        self.session = create_managed_session_handle()?;
+        self.runtime = build_runtime(RuntimeParams {
+            session: Session::new(),
+            model: self.model.clone(),
+            system_prompt: self.system_prompt.clone(),
+            enable_tools: true,
+            emit_output: true,
+            allowed_tools: self.allowed_tools.clone(),
+            permission_mode: self.permission_mode,
+            progress_reporter: None,
+            mcp_manager: Arc::clone(&self.mcp_manager),
+        })?;
+        println!(
+            "Session cleared\n  Mode             fresh session\n  Preserved model  {}\n  Permission mode  {}\n  Session          {}",
+            self.model,
+            self.permission_mode.as_str(),
+            self.session.id,
+        );
+        Ok(true)
+    }
