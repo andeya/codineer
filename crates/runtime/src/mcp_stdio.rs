@@ -1468,3 +1468,90 @@ mod tests {
                     },
                 )
                 .await
+                .expect("call tool with error response");
+
+            assert_eq!(response.id, JsonRpcId::Number(9));
+            assert!(response.result.is_none());
+            assert_eq!(response.error.as_ref().map(|e| e.code), Some(-32001));
+            assert_eq!(
+                response.error.as_ref().map(|e| e.message.as_str()),
+                Some("tool failed")
+            );
+
+            process.terminate().await.expect("terminate child");
+            let _ = process.wait().await.expect("wait after kill");
+            cleanup_script(&script_path);
+        });
+    }
+
+    #[test]
+    fn manager_discovers_tools_from_stdio_config() {
+        let runtime = Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("runtime");
+        runtime.block_on(async {
+            let script_path = write_manager_mcp_server_script();
+            let root = script_path.parent().expect("script parent");
+            let log_path = root.join("alpha.log");
+            let servers = BTreeMap::from([(
+                "alpha".to_string(),
+                manager_server_config(&script_path, "alpha", &log_path),
+            )]);
+            let mut manager = McpServerManager::from_servers(&servers);
+
+            let tools = manager.discover_tools().await.expect("discover tools");
+
+            assert_eq!(tools.len(), 1);
+            assert_eq!(tools[0].server_name, "alpha");
+            assert_eq!(tools[0].raw_name, "echo");
+            assert_eq!(tools[0].qualified_name, mcp_tool_name("alpha", "echo"));
+            assert_eq!(tools[0].tool.name, "echo");
+            assert!(manager.unsupported_servers().is_empty());
+
+            manager.shutdown().await.expect("shutdown");
+            cleanup_script(&script_path);
+        });
+    }
+
+    #[test]
+    fn manager_routes_tool_calls_to_correct_server() {
+        let runtime = Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("runtime");
+        runtime.block_on(async {
+            let script_path = write_manager_mcp_server_script();
+            let root = script_path.parent().expect("script parent");
+            let alpha_log = root.join("alpha.log");
+            let beta_log = root.join("beta.log");
+            let servers = BTreeMap::from([
+                (
+                    "alpha".to_string(),
+                    manager_server_config(&script_path, "alpha", &alpha_log),
+                ),
+                (
+                    "beta".to_string(),
+                    manager_server_config(&script_path, "beta", &beta_log),
+                ),
+            ]);
+            let mut manager = McpServerManager::from_servers(&servers);
+
+            let tools = manager.discover_tools().await.expect("discover tools");
+            assert_eq!(tools.len(), 2);
+
+            let alpha = manager
+                .call_tool(
+                    &mcp_tool_name("alpha", "echo"),
+                    Some(json!({"text": "hello"})),
+                )
+                .await
+                .expect("call alpha tool");
+            let beta = manager
+                .call_tool(
+                    &mcp_tool_name("beta", "echo"),
+                    Some(json!({"text": "world"})),
+                )
+                .await
+                .expect("call beta tool");
+
