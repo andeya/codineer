@@ -1527,3 +1527,70 @@ impl LiveCli {
         );
         Ok(true)
     }
+
+    fn print_cost(&self) {
+        let cumulative = self.runtime.usage().cumulative_usage();
+        println!("{}", format_cost_report(cumulative));
+    }
+
+    fn resume_session(
+        &mut self,
+        session_path: Option<String>,
+    ) -> Result<bool, Box<dyn std::error::Error>> {
+        let Some(session_ref) = session_path else {
+            println!("Usage: /resume <session-path>");
+            return Ok(false);
+        };
+
+        let handle = resolve_session_reference(&session_ref)?;
+        let session = Session::load_from_path(&handle.path)?;
+        let message_count = session.messages.len();
+        self.runtime = build_runtime(RuntimeParams {
+            session,
+            model: self.model.clone(),
+            system_prompt: self.system_prompt.clone(),
+            enable_tools: true,
+            emit_output: true,
+            allowed_tools: self.allowed_tools.clone(),
+            permission_mode: self.permission_mode,
+            progress_reporter: None,
+            mcp_manager: Arc::clone(&self.mcp_manager),
+        })?;
+        self.session = handle;
+        println!(
+            "{}",
+            format_resume_report(
+                &self.session.path.display().to_string(),
+                message_count,
+                self.runtime.usage().turns(),
+            )
+        );
+        Ok(true)
+    }
+
+    fn print_config(section: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
+        println!("{}", render_config_report(section)?);
+        Ok(())
+    }
+
+    fn print_memory() -> Result<(), Box<dyn std::error::Error>> {
+        println!("{}", render_memory_report()?);
+        Ok(())
+    }
+
+    fn print_agents(args: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
+        let cwd = env::current_dir()?;
+        println!("{}", handle_agents_slash_command(args, &cwd)?);
+        Ok(())
+    }
+
+    fn print_skills(args: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
+        let cwd = env::current_dir()?;
+        println!("{}", handle_skills_slash_command(args, &cwd)?);
+        Ok(())
+    }
+
+    fn print_diff() -> Result<(), Box<dyn std::error::Error>> {
+        println!("{}", render_diff_report()?);
+        Ok(())
+    }
