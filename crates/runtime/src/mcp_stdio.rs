@@ -1382,3 +1382,262 @@ mod tests {
                 })
             );
 
+            let call = process
+                .call_tool(
+                    JsonRpcId::String("call-1".to_string()),
+                    McpToolCallParams {
+                        name: "echo".to_string(),
+                        arguments: Some(json!({"text": "hello"})),
+                        meta: None,
+                    },
+                )
+                .await
+                .expect("call tool");
+            assert_eq!(call.error, None);
+            let call_result = call.result.expect("tool result");
+            assert_eq!(call_result.is_error, Some(false));
+            assert_eq!(
+                call_result.structured_content,
+                Some(json!({"echoed": "hello"}))
+            );
+            assert_eq!(call_result.content.len(), 1);
+            assert_eq!(call_result.content[0].kind, "text");
+            assert_eq!(
+                call_result.content[0].data.get("text"),
+                Some(&json!("echo:hello"))
+            );
+
+            let resources = process
+                .list_resources(JsonRpcId::Number(3), None)
+                .await
+                .expect("list resources");
+            let resources_result = resources.result.expect("resources result");
+            assert_eq!(resources_result.resources.len(), 1);
+            assert_eq!(resources_result.resources[0].uri, "file://guide.txt");
+            assert_eq!(
+                resources_result.resources[0].mime_type.as_deref(),
+                Some("text/plain")
+            );
+
+            let read = process
+                .read_resource(
+                    JsonRpcId::Number(4),
+                    McpReadResourceParams {
+                        uri: "file://guide.txt".to_string(),
+                    },
+                )
+                .await
+                .expect("read resource");
+            assert_eq!(
+                read.result,
+                Some(McpReadResourceResult {
+                    contents: vec![super::McpResourceContents {
+                        uri: "file://guide.txt".to_string(),
+                        mime_type: Some("text/plain".to_string()),
+                        text: Some("contents for file://guide.txt".to_string()),
+                        blob: None,
+                        meta: None,
+                    }],
+                })
+            );
+
+            process.terminate().await.expect("terminate child");
+            let _ = process.wait().await.expect("wait after kill");
+            cleanup_script(&script_path);
+        });
+    }
+
+    #[test]
+    fn surfaces_jsonrpc_errors_from_tool_calls() {
+        let runtime = Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("runtime");
+        runtime.block_on(async {
+            let script_path = write_mcp_server_script();
+            let transport = script_transport(&script_path);
+            let mut process = McpStdioProcess::spawn(&transport).expect("spawn fake mcp server");
+
+            let response = process
+                .call_tool(
+                    JsonRpcId::Number(9),
+                    McpToolCallParams {
+                        name: "fail".to_string(),
+                        arguments: None,
+                        meta: None,
+                    },
+                )
+                .await
+                .expect("call tool with error response");
+
+            assert_eq!(response.id, JsonRpcId::Number(9));
+            assert!(response.result.is_none());
+            assert_eq!(response.error.as_ref().map(|e| e.code), Some(-32001));
+            assert_eq!(
+                response.error.as_ref().map(|e| e.message.as_str()),
+                Some("tool failed")
+            );
+
+            process.terminate().await.expect("terminate child");
+            let _ = process.wait().await.expect("wait after kill");
+            cleanup_script(&script_path);
+        });
+    }
+
+    #[test]
+    fn manager_discovers_tools_from_stdio_config() {
+        let runtime = Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("runtime");
+        runtime.block_on(async {
+            let script_path = write_manager_mcp_server_script();
+            let root = script_path.parent().expect("script parent");
+            let log_path = root.join("alpha.log");
+            let servers = BTreeMap::from([(
+                "alpha".to_string(),
+                manager_server_config(&script_path, "alpha", &log_path),
+            )]);
+            let mut manager = McpServerManager::from_servers(&servers);
+
+            let tools = manager.discover_tools().await.expect("discover tools");
+
+            assert_eq!(tools.len(), 1);
+            assert_eq!(tools[0].server_name, "alpha");
+            assert_eq!(tools[0].raw_name, "echo");
+            assert_eq!(tools[0].qualified_name, mcp_tool_name("alpha", "echo"));
+            assert_eq!(tools[0].tool.name, "echo");
+            assert!(manager.unsupported_servers().is_empty());
+
+            manager.shutdown().await.expect("shutdown");
+            cleanup_script(&script_path);
+        });
+    }
+
+    #[test]
+    fn manager_routes_tool_calls_to_correct_server() {
+        let runtime = Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("runtime");
+        runtime.block_on(async {
+            let script_path = write_manager_mcp_server_script();
+            let root = script_path.parent().expect("script parent");
+            let alpha_log = root.join("alpha.log");
+            let beta_log = root.join("beta.log");
+            let servers = BTreeMap::from([
+                (
+                    "alpha".to_string(),
+                    manager_server_config(&script_path, "alpha", &alpha_log),
+                ),
+                (
+                    "beta".to_string(),
+                    manager_server_config(&script_path, "beta", &beta_log),
+                ),
+            ]);
+            let mut manager = McpServerManager::from_servers(&servers);
+
+            let tools = manager.discover_tools().await.expect("discover tools");
+            assert_eq!(tools.len(), 2);
+
+            let alpha = manager
+                .call_tool(
+                    &mcp_tool_name("alpha", "echo"),
+                    Some(json!({"text": "hello"})),
+                )
+                .await
+                .expect("call alpha tool");
+            let beta = manager
+                .call_tool(
+                    &mcp_tool_name("beta", "echo"),
+                    Some(json!({"text": "world"})),
+                )
+                .await
+                .expect("call beta tool");
+
+            assert_eq!(
+                alpha
+                    .result
+                    .as_ref()
+                    .and_then(|result| result.structured_content.as_ref())
+                    .and_then(|value| value.get("server")),
+                Some(&json!("alpha"))
+            );
+            assert_eq!(
+                beta.result
+                    .as_ref()
+                    .and_then(|result| result.structured_content.as_ref())
+                    .and_then(|value| value.get("server")),
+                Some(&json!("beta"))
+            );
+
+            manager.shutdown().await.expect("shutdown");
+            cleanup_script(&script_path);
+        });
+    }
+
+    #[test]
+    fn manager_records_unsupported_non_stdio_servers_without_panicking() {
+        let servers = BTreeMap::from([
+            (
+                "http".to_string(),
+                ScopedMcpServerConfig {
+                    scope: ConfigSource::Local,
+                    config: McpServerConfig::Http(McpRemoteServerConfig {
+                        url: "https://example.test/mcp".to_string(),
+                        headers: BTreeMap::new(),
+                        headers_helper: None,
+                        oauth: None,
+                    }),
+                },
+            ),
+            (
+                "sdk".to_string(),
+                ScopedMcpServerConfig {
+                    scope: ConfigSource::Local,
+                    config: McpServerConfig::Sdk(McpSdkServerConfig {
+                        name: "sdk-server".to_string(),
+                    }),
+                },
+            ),
+            (
+                "ws".to_string(),
+                ScopedMcpServerConfig {
+                    scope: ConfigSource::Local,
+                    config: McpServerConfig::Ws(McpWebSocketServerConfig {
+                        url: "wss://example.test/mcp".to_string(),
+                        headers: BTreeMap::new(),
+                        headers_helper: None,
+                    }),
+                },
+            ),
+        ]);
+
+        let manager = McpServerManager::from_servers(&servers);
+        let unsupported = manager.unsupported_servers();
+
+        assert_eq!(unsupported.len(), 3);
+        assert_eq!(unsupported[0].server_name, "http");
+        assert_eq!(unsupported[1].server_name, "sdk");
+        assert_eq!(unsupported[2].server_name, "ws");
+    }
+
+    #[test]
+    fn manager_shutdown_terminates_spawned_children_and_is_idempotent() {
+        let runtime = Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("runtime");
+        runtime.block_on(async {
+            let script_path = write_manager_mcp_server_script();
+            let root = script_path.parent().expect("script parent");
+            let log_path = root.join("alpha.log");
+            let servers = BTreeMap::from([(
+                "alpha".to_string(),
+                manager_server_config(&script_path, "alpha", &log_path),
+            )]);
+            let mut manager = McpServerManager::from_servers(&servers);
+
+            manager.discover_tools().await.expect("discover tools");
+            manager.shutdown().await.expect("first shutdown");
+            manager.shutdown().await.expect("second shutdown");
