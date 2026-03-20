@@ -626,3 +626,93 @@ mod tests {
 
         assert_eq!(summary.tool_results.len(), 1);
         let ContentBlock::ToolResult {
+            is_error, output, ..
+        } = &summary.tool_results[0].blocks[0]
+        else {
+            panic!("expected tool result block");
+        };
+        assert!(
+            *is_error,
+            "hook denial should produce an error result: {output}"
+        );
+        assert!(
+            output.contains("denied tool") || output.contains("blocked by hook"),
+            "unexpected hook denial output: {output:?}"
+        );
+    }
+
+    #[test]
+    fn appends_post_tool_hook_feedback_to_tool_result() {
+        struct TwoCallApiClient {
+            calls: usize,
+        }
+
+        impl ApiClient for TwoCallApiClient {
+            fn stream(&mut self, request: ApiRequest) -> Result<Vec<AssistantEvent>, RuntimeError> {
+                self.calls += 1;
+                match self.calls {
+                    1 => Ok(vec![
+                        AssistantEvent::ToolUse {
+                            id: "tool-1".to_string(),
+                            name: "add".to_string(),
+                            input: r#"{"lhs":2,"rhs":2}"#.to_string(),
+                        },
+                        AssistantEvent::MessageStop,
+                    ]),
+                    2 => {
+                        assert!(request
+                            .messages
+                            .iter()
+                            .any(|message| message.role == MessageRole::Tool));
+                        Ok(vec![
+                            AssistantEvent::TextDelta("done".to_string()),
+                            AssistantEvent::MessageStop,
+                        ])
+                    }
+                    _ => Err(RuntimeError::new("unexpected extra API call")),
+                }
+            }
+        }
+
+        let hook_config = RuntimeFeatureConfig::default().with_hooks(RuntimeHookConfig::new(
+            vec![shell_snippet("printf 'pre hook ran'")],
+            vec![shell_snippet("printf 'post hook ran'")],
+        ));
+        let mut runtime = ConversationRuntime::new_with_features(
+            Session::new(),
+            TwoCallApiClient { calls: 0 },
+            StaticToolExecutor::new().register("add", |_input| Ok("4".to_string())),
+            PermissionPolicy::new(PermissionMode::DangerFullAccess),
+            vec!["system".to_string()],
+            &hook_config,
+        );
+
+        let summary = runtime
+            .run_turn("use add", None)
+            .expect("tool loop succeeds");
+
+        assert_eq!(summary.tool_results.len(), 1);
+        let ContentBlock::ToolResult {
+            is_error, output, ..
+        } = &summary.tool_results[0].blocks[0]
+        else {
+            panic!("expected tool result block");
+        };
+        assert!(
+            !*is_error,
+            "post hook should preserve non-error result: {output:?}"
+        );
+        assert!(
+            output.contains('4'),
+            "tool output missing value: {output:?}"
+        );
+        assert!(
+            output.contains("pre hook ran"),
+            "tool output missing pre hook feedback: {output:?}"
+        );
+        assert!(
+            output.contains("post hook ran"),
+            "tool output missing post hook feedback: {output:?}"
+        );
+    }
+
