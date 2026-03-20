@@ -490,3 +490,84 @@ mod tests {
                 None,
             ),
             Path::new("/workspace"),
+        );
+
+        if let Some(launcher) = build_sandbox_command("printf hi", Path::new("/workspace"), &status)
+        {
+            if cfg!(target_os = "linux") {
+                assert_eq!(launcher.program, "unshare");
+                assert!(launcher.args.iter().any(|arg| arg == "--mount"));
+                assert!(launcher.args.iter().any(|arg| arg == "--net") == status.network.active);
+            } else if cfg!(target_os = "macos") {
+                assert_eq!(launcher.program, "sandbox-exec");
+                assert!(launcher.args.iter().any(|arg| arg == "-p"));
+            }
+        }
+    }
+
+    #[test]
+    fn seatbelt_profile_denies_by_default() {
+        let config = SandboxConfig::default();
+        let status = super::resolve_sandbox_status_for_request(
+            &config.resolve_request(
+                Some(true),
+                Some(true),
+                Some(false),
+                Some(FilesystemIsolationMode::WorkspaceOnly),
+                None,
+            ),
+            Path::new("/workspace"),
+        );
+        let profile = generate_seatbelt_profile(Path::new("/workspace"), &status);
+        assert!(profile.contains("(deny default)"));
+        assert!(profile.contains("(allow file-write* (subpath \"/workspace\"))"));
+        assert!(profile.contains("(allow network*)"));
+    }
+
+    #[test]
+    fn seatbelt_profile_denies_network_when_isolated() {
+        let config = SandboxConfig::default();
+        let mut status = super::resolve_sandbox_status_for_request(
+            &config.resolve_request(
+                Some(true),
+                Some(true),
+                Some(true),
+                Some(FilesystemIsolationMode::WorkspaceOnly),
+                None,
+            ),
+            Path::new("/workspace"),
+        );
+        status.network.active = true;
+        let profile = generate_seatbelt_profile(Path::new("/workspace"), &status);
+        assert!(profile.contains("(deny network*)"));
+        assert!(!profile.contains("(allow network*)"));
+    }
+
+    #[test]
+    fn seatbelt_profile_allow_list_restricts_writes() {
+        let config = SandboxConfig::default();
+        let status = super::resolve_sandbox_status_for_request(
+            &config.resolve_request(
+                Some(true),
+                Some(true),
+                Some(false),
+                Some(FilesystemIsolationMode::AllowList),
+                Some(vec!["/extra/mount".to_string()]),
+            ),
+            Path::new("/workspace"),
+        );
+        let profile = generate_seatbelt_profile(Path::new("/workspace"), &status);
+        assert!(profile.contains("(allow file-write* (subpath \"/extra/mount\"))"));
+        assert!(!profile.contains("(allow file-write* (subpath \"/workspace\"))"));
+    }
+
+    #[test]
+    fn disabled_sandbox_returns_none() {
+        let config = SandboxConfig::default();
+        let status = super::resolve_sandbox_status_for_request(
+            &config.resolve_request(Some(false), None, None, None, None),
+            Path::new("/workspace"),
+        );
+        assert!(build_sandbox_command("echo hi", Path::new("/workspace"), &status).is_none());
+    }
+}
