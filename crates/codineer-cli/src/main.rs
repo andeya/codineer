@@ -1594,3 +1594,69 @@ impl LiveCli {
         println!("{}", render_diff_report()?);
         Ok(())
     }
+
+    fn print_version() {
+        println!("{}", render_version_report());
+    }
+
+    fn export_session(
+        &self,
+        requested_path: Option<&str>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let export_path = resolve_export_path(requested_path, self.runtime.session())?;
+        fs::write(&export_path, render_export_text(self.runtime.session()))?;
+        println!(
+            "Export\n  Result           wrote transcript\n  File             {}\n  Messages         {}",
+            export_path.display(),
+            self.runtime.session().messages.len(),
+        );
+        Ok(())
+    }
+
+    fn handle_session_command(
+        &mut self,
+        action: Option<&str>,
+        target: Option<&str>,
+    ) -> Result<bool, Box<dyn std::error::Error>> {
+        match action {
+            None | Some("list") => {
+                println!("{}", render_session_list(&self.session.id)?);
+                Ok(false)
+            }
+            Some("switch") => {
+                let Some(target) = target else {
+                    println!("Usage: /session switch <session-id>");
+                    return Ok(false);
+                };
+                let handle = resolve_session_reference(target)?;
+                let session = Session::load_from_path(&handle.path)?;
+                let message_count = session.messages.len();
+                self.runtime = build_runtime(RuntimeParams {
+                    session,
+                    model: self.model.clone(),
+                    system_prompt: self.system_prompt.clone(),
+                    enable_tools: true,
+                    emit_output: true,
+                    allowed_tools: self.allowed_tools.clone(),
+                    permission_mode: self.permission_mode,
+                    progress_reporter: None,
+                    mcp_manager: Arc::clone(&self.mcp_manager),
+                })?;
+                self.session = handle;
+                println!(
+                    "Session switched\n  Active session   {}\n  File             {}\n  Messages         {}",
+                    self.session.id,
+                    self.session.path.display(),
+                    message_count,
+                );
+                Ok(true)
+            }
+            Some(other) => {
+                println!("Unknown /session action '{other}'. Use /session list or /session switch <session-id>.");
+                Ok(false)
+            }
+        }
+    }
+
+    fn handle_plugins_command(
+        &mut self,
