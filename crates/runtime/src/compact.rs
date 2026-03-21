@@ -600,3 +600,103 @@ mod tests {
             max_estimated_tokens: 1,
         };
 
+        let first = compact_session(&initial_session, config);
+        let mut follow_up_messages = first.compacted_session.messages.clone();
+        follow_up_messages.extend([
+            ConversationMessage::user_text("Please add regression tests for compaction."),
+            ConversationMessage::assistant(vec![ContentBlock::Text {
+                text: "Working on regression coverage now.".to_string(),
+            }]),
+        ]);
+
+        let second = compact_session(
+            &Session {
+                version: 1,
+                messages: follow_up_messages,
+            },
+            config,
+        );
+
+        assert!(second
+            .formatted_summary
+            .contains("Previously compacted context:"));
+        assert!(second
+            .formatted_summary
+            .contains("Scope: 2 earlier messages compacted"));
+        assert!(second
+            .formatted_summary
+            .contains("Newly compacted context:"));
+        assert!(second
+            .formatted_summary
+            .contains("Also update rust/crates/runtime/src/conversation.rs"));
+        assert!(matches!(
+            &second.compacted_session.messages[0].blocks[0],
+            ContentBlock::Text { text }
+                if text.contains("Previously compacted context:")
+                    && text.contains("Newly compacted context:")
+        ));
+        assert!(matches!(
+            &second.compacted_session.messages[1].blocks[0],
+            ContentBlock::Text { text } if text.contains("Please add regression tests for compaction.")
+        ));
+    }
+
+    #[test]
+    fn ignores_existing_compacted_summary_when_deciding_to_recompact() {
+        let summary = "<summary>Conversation summary:\n- Scope: earlier work preserved.\n- Key timeline:\n  - user: large preserved context\n</summary>";
+        let session = Session {
+            version: 1,
+            messages: vec![
+                ConversationMessage {
+                    role: MessageRole::System,
+                    blocks: vec![ContentBlock::Text {
+                        text: get_compact_continuation_message(summary, true, true),
+                    }],
+                    usage: None,
+                },
+                ConversationMessage::user_text("tiny"),
+                ConversationMessage::assistant(vec![ContentBlock::Text {
+                    text: "recent".to_string(),
+                }]),
+            ],
+        };
+
+        assert!(!should_compact(
+            &session,
+            CompactionConfig {
+                preserve_recent_messages: 2,
+                max_estimated_tokens: 1,
+            }
+        ));
+    }
+
+    #[test]
+    fn truncates_long_blocks_in_summary() {
+        let summary = super::summarize_block(&ContentBlock::Text {
+            text: "x".repeat(400),
+        });
+        assert!(summary.ends_with('…'));
+        assert!(summary.chars().count() <= 161);
+    }
+
+    #[test]
+    fn extracts_key_files_from_message_content() {
+        let files = collect_key_files(&[ConversationMessage::user_text(
+            "Update rust/crates/runtime/src/compact.rs and rust/crates/tools/src/lib.rs next.",
+        )]);
+        assert!(files.contains(&"rust/crates/runtime/src/compact.rs".to_string()));
+        assert!(files.contains(&"rust/crates/tools/src/lib.rs".to_string()));
+    }
+
+    #[test]
+    fn infers_pending_work_from_recent_messages() {
+        let pending = infer_pending_work(&[
+            ConversationMessage::user_text("done"),
+            ConversationMessage::assistant(vec![ContentBlock::Text {
+                text: "Next: update tests and follow up on remaining CLI polish.".to_string(),
+            }]),
+        ]);
+        assert_eq!(pending.len(), 1);
+        assert!(pending[0].contains("Next: update tests"));
+    }
+}
