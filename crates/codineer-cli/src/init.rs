@@ -263,3 +263,56 @@ fn detect_repo(cwd: &Path) -> RepoDetection {
         RepoFeature::React,
     );
     add_if(
+        package_json_contents.contains("\"vite\""),
+        RepoFeature::Vite,
+    );
+    add_if(
+        package_json_contents.contains("@nestjs"),
+        RepoFeature::NestJs,
+    );
+    add_if(cwd.join("src").is_dir(), RepoFeature::SrcDir);
+    add_if(cwd.join("tests").is_dir(), RepoFeature::TestsDir);
+    add_if(cwd.join("rust").is_dir(), RepoFeature::RustDir);
+
+    RepoDetection { features }
+}
+
+fn detected_languages(detection: &RepoDetection) -> Vec<&'static str> {
+    let mut languages = Vec::new();
+    if detection.has(RepoFeature::RustWorkspace) || detection.has(RepoFeature::RustRoot) {
+        languages.push("Rust");
+    }
+    if detection.has(RepoFeature::Python) {
+        languages.push("Python");
+    }
+    if detection.has(RepoFeature::TypeScript) {
+        languages.push("TypeScript");
+    } else if detection.has(RepoFeature::PackageJson) {
+        languages.push("JavaScript/Node.js");
+    }
+    languages
+}
+
+fn detected_frameworks(detection: &RepoDetection) -> Vec<&'static str> {
+    let mut frameworks = Vec::new();
+    if detection.has(RepoFeature::NextJs) {
+        frameworks.push("Next.js");
+    }
+    if detection.has(RepoFeature::React) {
+        frameworks.push("React");
+    }
+    if detection.has(RepoFeature::Vite) {
+        frameworks.push("Vite");
+    }
+    if detection.has(RepoFeature::NestJs) {
+        frameworks.push("NestJS");
+    }
+    frameworks
+}
+
+fn verification_lines(cwd: &Path, detection: &RepoDetection) -> Vec<String> {
+    let mut lines = Vec::new();
+    if detection.has(RepoFeature::RustWorkspace) {
+        lines.push("- Run Rust verification from `rust/`: `cargo fmt`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`".to_string());
+    } else if detection.has(RepoFeature::RustRoot) {
+        lines.push("- Run Rust verification from the repo root: `cargo fmt`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`".to_string());
