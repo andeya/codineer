@@ -1859,3 +1859,136 @@ impl LiveCli {
     fn run_issue(&self, context: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
         let prompt = format!(
             "Generate a GitHub issue title and body from this conversation. Output plain text in this format exactly:\nTITLE: <title>\nBODY:\n<body markdown>\n\nContext hint: {}\n\nConversation context:\n{}",
+            context.unwrap_or("none"),
+            truncate_for_prompt(&recent_user_context(self.runtime.session(), 10), 10_000)
+        );
+        let draft = sanitize_generated_message(&self.run_internal_prompt_text(&prompt, false)?);
+        let (title, body) = parse_titled_body(&draft)
+            .ok_or_else(|| "failed to parse generated issue title/body".to_string())?;
+
+        if command_exists("gh") {
+            let body_path = write_temp_text_file("codineer-issue-body.md", &body)?;
+            let output = Command::new("gh")
+                .args(["issue", "create", "--title", &title, "--body-file"])
+                .arg(&body_path)
+                .current_dir(env::current_dir()?)
+                .output()?;
+            if output.status.success() {
+                let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                println!(
+                    "Issue\n  Result           created\n  Title            {title}\n  URL              {}",
+                    if stdout.is_empty() { "<unknown>" } else { &stdout }
+                );
+                return Ok(());
+            }
+        }
+
+        println!("Issue draft\n  Title            {title}\n\n{body}");
+        Ok(())
+    }
+}
+
+fn sessions_dir() -> Result<PathBuf, Box<dyn std::error::Error>> {
+    let cwd = env::current_dir()?;
+    let path = cwd.join(".codineer").join("sessions");
+    fs::create_dir_all(&path)?;
+    Ok(path)
+}
+
+fn create_managed_session_handle() -> Result<SessionHandle, Box<dyn std::error::Error>> {
+    let id = generate_session_id();
+    let path = sessions_dir()?.join(format!("{id}.json"));
+    Ok(SessionHandle { id, path })
+}
+
+fn generate_session_id() -> String {
+    let millis = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis())
+        .unwrap_or_default();
+    format!("session-{millis}")
+}
+
+fn resolve_session_reference(reference: &str) -> Result<SessionHandle, Box<dyn std::error::Error>> {
+    let direct = PathBuf::from(reference);
+    let path = if direct.exists() {
+        direct
+    } else {
+        sessions_dir()?.join(format!("{reference}.json"))
+    };
+    if !path.exists() {
+        return Err(format!("session not found: {reference}").into());
+    }
+    let id = path
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .unwrap_or(reference)
+        .to_string();
+    Ok(SessionHandle { id, path })
+}
+
+fn list_managed_sessions() -> Result<Vec<ManagedSessionSummary>, Box<dyn std::error::Error>> {
+    let mut sessions = Vec::new();
+    for entry in fs::read_dir(sessions_dir()?)? {
+        let entry = entry?;
+        let path = entry.path();
+        if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
+            continue;
+        }
+        let metadata = entry.metadata()?;
+        let modified_epoch_secs = metadata
+            .modified()
+            .ok()
+            .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
+            .map(|duration| duration.as_secs())
+            .unwrap_or_default();
+        let message_count = match Session::load_from_path(&path) {
+            Ok(session) => session.messages.len(),
+            Err(error) => {
+                eprintln!(
+                    "warning: corrupt session file {}: {error}",
+                    path.display()
+                );
+                0
+            }
+        };
+        let id = path
+            .file_stem()
+            .and_then(|value| value.to_str())
+            .unwrap_or("unknown")
+            .to_string();
+        sessions.push(ManagedSessionSummary {
+            id,
+            path,
+            modified_epoch_secs,
+            message_count,
+        });
+    }
+    sessions.sort_by_key(|s| std::cmp::Reverse(s.modified_epoch_secs));
+    Ok(sessions)
+}
+
+fn format_relative_timestamp(epoch_secs: u64) -> String {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(epoch_secs, |duration| duration.as_secs());
+    let elapsed = now.saturating_sub(epoch_secs);
+    match elapsed {
+        0..=59 => format!("{elapsed}s ago"),
+        60..=3_599 => format!("{}m ago", elapsed / 60),
+        3_600..=86_399 => format!("{}h ago", elapsed / 3_600),
+        _ => format!("{}d ago", elapsed / 86_400),
+    }
+}
+
+fn render_session_list(active_session_id: &str) -> Result<String, Box<dyn std::error::Error>> {
+    let sessions = list_managed_sessions()?;
+    let mut lines = vec![
+        "Sessions".to_string(),
+        format!("  Directory         {}", sessions_dir()?.display()),
+    ];
+    if sessions.is_empty() {
+        lines.push("  No managed sessions saved yet.".to_string());
+        return Ok(lines.join("\n"));
+    }
+    for session in sessions {
