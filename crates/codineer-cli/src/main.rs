@@ -1793,3 +1793,69 @@ impl LiveCli {
             return Ok(());
         }
 
+        git_status_ok(&["add", "-A"])?;
+        let staged_stat = git_output(&["diff", "--cached", "--stat"])?;
+        let prompt = format!(
+            "Generate a git commit message in plain text Lore format only. Base it on this staged diff summary:\n\n{}\n\nRecent conversation context:\n{}",
+            truncate_for_prompt(&staged_stat, 8_000),
+            recent_user_context(self.runtime.session(), 6)
+        );
+        let message = sanitize_generated_message(&self.run_internal_prompt_text(&prompt, false)?);
+        if message.trim().is_empty() {
+            return Err("generated commit message was empty".into());
+        }
+
+        let path = write_temp_text_file("codineer-commit-message.txt", &message)?;
+        let output = Command::new("git")
+            .args(["commit", "--file"])
+            .arg(&path)
+            .current_dir(env::current_dir()?)
+            .output()?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            return Err(format!("git commit failed: {stderr}").into());
+        }
+
+        println!(
+            "Commit\n  Result           created\n  Message file     {}\n\n{}",
+            path.display(),
+            message.trim()
+        );
+        Ok(())
+    }
+
+    fn run_pr(&self, context: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
+        let staged = git_output(&["diff", "--stat"])?;
+        let prompt = format!(
+            "Generate a pull request title and body from this conversation and diff summary. Output plain text in this format exactly:\nTITLE: <title>\nBODY:\n<body markdown>\n\nContext hint: {}\n\nDiff summary:\n{}",
+            context.unwrap_or("none"),
+            truncate_for_prompt(&staged, 10_000)
+        );
+        let draft = sanitize_generated_message(&self.run_internal_prompt_text(&prompt, false)?);
+        let (title, body) = parse_titled_body(&draft)
+            .ok_or_else(|| "failed to parse generated PR title/body".to_string())?;
+
+        if command_exists("gh") {
+            let body_path = write_temp_text_file("codineer-pr-body.md", &body)?;
+            let output = Command::new("gh")
+                .args(["pr", "create", "--title", &title, "--body-file"])
+                .arg(&body_path)
+                .current_dir(env::current_dir()?)
+                .output()?;
+            if output.status.success() {
+                let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                println!(
+                    "PR\n  Result           created\n  Title            {title}\n  URL              {}",
+                    if stdout.is_empty() { "<unknown>" } else { &stdout }
+                );
+                return Ok(());
+            }
+        }
+
+        println!("PR draft\n  Title            {title}\n\n{body}");
+        Ok(())
+    }
+
+    fn run_issue(&self, context: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
+        let prompt = format!(
+            "Generate a GitHub issue title and body from this conversation. Output plain text in this format exactly:\nTITLE: <title>\nBODY:\n<body markdown>\n\nContext hint: {}\n\nConversation context:\n{}",
