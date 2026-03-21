@@ -2710,3 +2710,74 @@ fn supported_config_setting(setting: &str) -> Option<ConfigSettingSpec> {
             kind: ConfigKind::String,
             path: &["model"],
             options: None,
+        },
+        "alwaysThinkingEnabled" => ConfigSettingSpec {
+            scope: ConfigScope::Settings,
+            kind: ConfigKind::Boolean,
+            path: &["alwaysThinkingEnabled"],
+            options: None,
+        },
+        "permissions.defaultMode" => ConfigSettingSpec {
+            scope: ConfigScope::Settings,
+            kind: ConfigKind::String,
+            path: &["permissions", "defaultMode"],
+            options: Some(&["default", "plan", "acceptEdits", "dontAsk", "auto"]),
+        },
+        "language" => ConfigSettingSpec {
+            scope: ConfigScope::Settings,
+            kind: ConfigKind::String,
+            path: &["language"],
+            options: None,
+        },
+        "teammateMode" => ConfigSettingSpec {
+            scope: ConfigScope::Global,
+            kind: ConfigKind::String,
+            path: &["teammateMode"],
+            options: Some(&["tmux", "in-process", "auto"]),
+        },
+        _ => return None,
+    })
+}
+
+fn normalize_config_value(spec: ConfigSettingSpec, value: ConfigValue) -> Result<Value, String> {
+    let normalized = match (spec.kind, value) {
+        (ConfigKind::Boolean, ConfigValue::Bool(value)) => Value::Bool(value),
+        (ConfigKind::Boolean, ConfigValue::String(value)) => {
+            match value.trim().to_ascii_lowercase().as_str() {
+                "true" => Value::Bool(true),
+                "false" => Value::Bool(false),
+                _ => return Err(String::from("setting requires true or false")),
+            }
+        }
+        (ConfigKind::Boolean, ConfigValue::Number(_)) => {
+            return Err(String::from("setting requires true or false"))
+        }
+        (ConfigKind::String, ConfigValue::String(value)) => Value::String(value),
+        (ConfigKind::String, ConfigValue::Bool(value)) => Value::String(value.to_string()),
+        (ConfigKind::String, ConfigValue::Number(value)) => json!(value),
+    };
+
+    if let Some(options) = spec.options {
+        let Some(as_str) = normalized.as_str() else {
+            return Err(String::from("setting requires a string value"));
+        };
+        if !options.iter().any(|option| option == &as_str) {
+            return Err(format!(
+                "Invalid value \"{as_str}\". Options: {}",
+                options.join(", ")
+            ));
+        }
+    }
+
+    Ok(normalized)
+}
+
+fn config_file_for_scope(scope: ConfigScope) -> Result<PathBuf, String> {
+    let cwd = std::env::current_dir().map_err(|error| error.to_string())?;
+    Ok(match scope {
+        ConfigScope::Global => config_home_dir()?.join("settings.json"),
+        ConfigScope::Settings => cwd.join(".codineer").join("settings.local.json"),
+    })
+}
+
+fn config_home_dir() -> Result<PathBuf, String> {
