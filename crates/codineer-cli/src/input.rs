@@ -350,3 +350,62 @@ impl EditSession {
                     let end = next_boundary(&self.text, self.cursor);
                     self.text.drain(self.cursor..end);
                 }
+            }
+        }
+    }
+}
+
+enum KeyAction {
+    Continue,
+    Submit(String),
+    Cancel,
+    Exit,
+    ToggleVim,
+}
+
+pub struct LineEditor {
+    prompt: String,
+    completions: Vec<String>,
+    history: Vec<String>,
+    yank_buffer: YankBuffer,
+    vim_enabled: bool,
+    completion_state: Option<CompletionState>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct CompletionState {
+    prefix: String,
+    matches: Vec<String>,
+    next_index: usize,
+}
+
+impl LineEditor {
+    #[must_use]
+    pub fn new(prompt: impl Into<String>, completions: Vec<String>) -> Self {
+        Self {
+            prompt: prompt.into(),
+            completions,
+            history: Vec::new(),
+            yank_buffer: YankBuffer::default(),
+            vim_enabled: false,
+            completion_state: None,
+        }
+    }
+
+    pub fn push_history(&mut self, entry: impl Into<String>) {
+        let entry = entry.into();
+        if entry.trim().is_empty() {
+            return;
+        }
+
+        self.history.push(entry);
+    }
+
+    pub fn read_line(&mut self) -> io::Result<ReadOutcome> {
+        if !io::stdin().is_terminal() || !io::stdout().is_terminal() {
+            return self.read_line_fallback();
+        }
+
+        let _raw_mode = RawModeGuard::new()?;
+        let mut stdout = io::stdout();
+        let mut session = EditSession::new(self.vim_enabled);
