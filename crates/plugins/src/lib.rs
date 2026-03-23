@@ -2376,3 +2376,229 @@ mod tests {
                     error,
                     PluginManifestValidationError::InvalidToolRequiredPermission {
                         tool_name,
+                        permission
+                    } if tool_name == "echo_tool" && permission == "admin"
+                )));
+            }
+            other => panic!("expected manifest validation errors, got {other}"),
+        }
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn load_plugin_from_directory_accumulates_multiple_validation_errors() {
+        let root = temp_dir("manifest-multi-error");
+        write_file(
+            root.join(MANIFEST_FILE_NAME).as_path(),
+            r#"{
+  "name": "",
+  "version": "1.0.0",
+  "description": "",
+  "permissions": ["admin"],
+  "commands": [
+    {"name": "", "description": "", "command": "./commands/missing.sh"}
+  ]
+}"#,
+        );
+
+        let error =
+            load_plugin_from_directory(&root).expect_err("multiple manifest errors should fail");
+        match error {
+            PluginError::ManifestValidation(errors) => {
+                assert!(errors.len() >= 4);
+                assert!(errors.iter().any(|error| matches!(
+                    error,
+                    PluginManifestValidationError::EmptyField { field } if *field == "name"
+                )));
+                assert!(errors.iter().any(|error| matches!(
+                    error,
+                    PluginManifestValidationError::EmptyField { field }
+                    if *field == "description"
+                )));
+                assert!(errors.iter().any(|error| matches!(
+                    error,
+                    PluginManifestValidationError::InvalidPermission { permission }
+                    if permission == "admin"
+                )));
+            }
+            other => panic!("expected manifest validation errors, got {other}"),
+        }
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn discovers_builtin_and_bundled_plugins() {
+        let manager = PluginManager::new(PluginManagerConfig::new(temp_dir("discover")));
+        let plugins = manager.list_plugins().expect("plugins should list");
+        assert!(plugins
+            .iter()
+            .any(|plugin| plugin.metadata.kind == PluginKind::Builtin));
+        assert!(plugins
+            .iter()
+            .any(|plugin| plugin.metadata.kind == PluginKind::Bundled));
+    }
+
+    #[test]
+    fn installs_enables_updates_and_uninstalls_external_plugins() {
+        let config_home = temp_dir("home");
+        let source_root = temp_dir("source");
+        write_external_plugin(&source_root, "demo", "1.0.0");
+
+        let mut manager = PluginManager::new(PluginManagerConfig::new(&config_home));
+        let install = manager
+            .install(source_root.to_str().expect("utf8 path"))
+            .expect("install should succeed");
+        assert_eq!(install.plugin_id, "demo@external");
+        assert!(manager
+            .list_plugins()
+            .expect("list plugins")
+            .iter()
+            .any(|plugin| plugin.metadata.id == "demo@external" && plugin.enabled));
+
+        let hooks = manager.aggregated_hooks().expect("hooks should aggregate");
+        assert_eq!(hooks.pre_tool_use.len(), 1);
+        assert!(hooks.pre_tool_use[0].contains("pre.sh"));
+
+        manager
+            .disable("demo@external")
+            .expect("disable should work");
+        assert!(manager
+            .aggregated_hooks()
+            .expect("hooks after disable")
+            .is_empty());
+        manager.enable("demo@external").expect("enable should work");
+
+        write_external_plugin(&source_root, "demo", "2.0.0");
+        let update = manager.update("demo@external").expect("update should work");
+        assert_eq!(update.old_version, "1.0.0");
+        assert_eq!(update.new_version, "2.0.0");
+
+        manager
+            .uninstall("demo@external")
+            .expect("uninstall should work");
+        assert!(!manager
+            .list_plugins()
+            .expect("list plugins")
+            .iter()
+            .any(|plugin| plugin.metadata.id == "demo@external"));
+
+        let _ = fs::remove_dir_all(config_home);
+        let _ = fs::remove_dir_all(source_root);
+    }
+
+    #[test]
+    fn auto_installs_bundled_plugins_into_the_registry() {
+        let config_home = temp_dir("bundled-home");
+        let bundled_root = temp_dir("bundled-root");
+        write_bundled_plugin(&bundled_root.join("starter"), "starter", "0.1.0", false);
+
+        let mut config = PluginManagerConfig::new(&config_home);
+        config.bundled_root = Some(bundled_root.clone());
+        let manager = PluginManager::new(config);
+
+        let installed = manager
+            .list_installed_plugins()
+            .expect("bundled plugins should auto-install");
+        assert!(installed.iter().any(|plugin| {
+            plugin.metadata.id == "starter@bundled"
+                && plugin.metadata.kind == PluginKind::Bundled
+                && !plugin.enabled
+        }));
+
+        let registry = manager.load_registry().expect("registry should exist");
+        let record = registry
+            .plugins
+            .get("starter@bundled")
+            .expect("bundled plugin should be recorded");
+        assert_eq!(record.kind, PluginKind::Bundled);
+        assert!(record.install_path.exists());
+
+        let _ = fs::remove_dir_all(config_home);
+        let _ = fs::remove_dir_all(bundled_root);
+    }
+
+    #[test]
+    fn default_bundled_root_loads_repo_bundles_as_installed_plugins() {
+        let config_home = temp_dir("default-bundled-home");
+        let manager = PluginManager::new(PluginManagerConfig::new(&config_home));
+
+        let installed = manager
+            .list_installed_plugins()
+            .expect("default bundled plugins should auto-install");
+        assert!(installed
+            .iter()
+            .any(|plugin| plugin.metadata.id == "example-bundled@bundled"));
+        assert!(installed
+            .iter()
+            .any(|plugin| plugin.metadata.id == "sample-hooks@bundled"));
+
+        let _ = fs::remove_dir_all(config_home);
+    }
+
+    #[test]
+    fn bundled_sync_prunes_removed_bundled_registry_entries() {
+        let config_home = temp_dir("bundled-prune-home");
+        let bundled_root = temp_dir("bundled-prune-root");
+        let stale_install_path = config_home
+            .join("plugins")
+            .join("installed")
+            .join("stale-bundled-external");
+        write_bundled_plugin(&bundled_root.join("active"), "active", "0.1.0", false);
+        write_file(
+            stale_install_path.join(MANIFEST_RELATIVE_PATH).as_path(),
+            r#"{
+  "name": "stale",
+  "version": "0.1.0",
+  "description": "stale bundled plugin"
+}"#,
+        );
+
+        let mut config = PluginManagerConfig::new(&config_home);
+        config.bundled_root = Some(bundled_root.clone());
+        config.install_root = Some(config_home.join("plugins").join("installed"));
+        let manager = PluginManager::new(config);
+
+        let mut registry = InstalledPluginRegistry::default();
+        registry.plugins.insert(
+            "stale@bundled".to_string(),
+            InstalledPluginRecord {
+                kind: PluginKind::Bundled,
+                id: "stale@bundled".to_string(),
+                name: "stale".to_string(),
+                version: "0.1.0".to_string(),
+                description: "stale bundled plugin".to_string(),
+                install_path: stale_install_path.clone(),
+                source: PluginInstallSource::LocalPath {
+                    path: bundled_root.join("stale"),
+                },
+                installed_at_unix_ms: 1,
+                updated_at_unix_ms: 1,
+            },
+        );
+        manager.store_registry(&registry).expect("store registry");
+        manager
+            .write_enabled_state("stale@bundled", Some(true))
+            .expect("seed bundled enabled state");
+
+        let installed = manager
+            .list_installed_plugins()
+            .expect("bundled sync should succeed");
+        assert!(installed
+            .iter()
+            .any(|plugin| plugin.metadata.id == "active@bundled"));
+        assert!(!installed
+            .iter()
+            .any(|plugin| plugin.metadata.id == "stale@bundled"));
+
+        let registry = manager.load_registry().expect("load registry");
+        assert!(!registry.plugins.contains_key("stale@bundled"));
+        assert!(!stale_install_path.exists());
+
+        let _ = fs::remove_dir_all(config_home);
+        let _ = fs::remove_dir_all(bundled_root);
+    }
+
+    #[test]
+    fn installed_plugin_discovery_keeps_registry_entries_outside_install_root() {
