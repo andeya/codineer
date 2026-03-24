@@ -2391,3 +2391,70 @@ fn render_last_tool_debug_report(session: &Session) -> Result<String, Box<dyn st
                 tool_use_id,
                 tool_name,
                 output,
+                is_error,
+            } if tool_use_id == &last_tool_use.0 => {
+                Some((tool_name.clone(), output.clone(), *is_error))
+            }
+            _ => None,
+        })
+    });
+
+    let mut lines = vec![
+        "Debug tool call".to_string(),
+        format!("  Tool id          {}", last_tool_use.0),
+        format!("  Tool name        {}", last_tool_use.1),
+        "  Input".to_string(),
+        indent_block(&last_tool_use.2, 4),
+    ];
+
+    match tool_result {
+        Some((tool_name, output, is_error)) => {
+            lines.push("  Result".to_string());
+            lines.push(format!("    name           {tool_name}"));
+            lines.push(format!(
+                "    status         {}",
+                if is_error { "error" } else { "ok" }
+            ));
+            lines.push(indent_block(&output, 4));
+        }
+        None => lines.push("  Result           missing tool result".to_string()),
+    }
+
+    Ok(lines.join("\n"))
+}
+
+fn indent_block(value: &str, spaces: usize) -> String {
+    let indent = " ".repeat(spaces);
+    value
+        .lines()
+        .map(|line| format!("{indent}{line}"))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn git_output(args: &[&str]) -> Result<String, Box<dyn std::error::Error>> {
+    let output = Command::new("git")
+        .args(args)
+        .current_dir(env::current_dir()?)
+        .output()?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        return Err(format!("git {} failed: {stderr}", args.join(" ")).into());
+    }
+    Ok(String::from_utf8(output.stdout)?)
+}
+
+fn git_status_ok(args: &[&str]) -> Result<(), Box<dyn std::error::Error>> {
+    let output = Command::new("git")
+        .args(args)
+        .current_dir(env::current_dir()?)
+        .output()?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        return Err(format!("git {} failed: {stderr}", args.join(" ")).into());
+    }
+    Ok(())
+}
+
+fn command_exists(name: &str) -> bool {
+    Command::new("which")
