@@ -2715,3 +2715,116 @@ mod tests {
         assert_eq!(
             load_enabled_plugins(&manager.settings_path()).get("starter@bundled"),
             Some(&true)
+        );
+
+        let mut reloaded_config = PluginManagerConfig::new(&config_home);
+        reloaded_config.bundled_root = Some(bundled_root.clone());
+        reloaded_config.enabled_plugins = load_enabled_plugins(&manager.settings_path());
+        let reloaded_manager = PluginManager::new(reloaded_config);
+        let reloaded = reloaded_manager
+            .list_installed_plugins()
+            .expect("bundled plugins should still be listed");
+        assert!(reloaded
+            .iter()
+            .any(|plugin| { plugin.metadata.id == "starter@bundled" && plugin.enabled }));
+
+        let _ = fs::remove_dir_all(config_home);
+        let _ = fs::remove_dir_all(bundled_root);
+    }
+
+    #[test]
+    fn persists_bundled_plugin_disable_state_across_reloads() {
+        let config_home = temp_dir("bundled-disabled-home");
+        let bundled_root = temp_dir("bundled-disabled-root");
+        write_bundled_plugin(&bundled_root.join("starter"), "starter", "0.1.0", true);
+
+        let mut config = PluginManagerConfig::new(&config_home);
+        config.bundled_root = Some(bundled_root.clone());
+        let mut manager = PluginManager::new(config);
+
+        manager
+            .disable("starter@bundled")
+            .expect("disable bundled plugin should succeed");
+        assert_eq!(
+            load_enabled_plugins(&manager.settings_path()).get("starter@bundled"),
+            Some(&false)
+        );
+
+        let mut reloaded_config = PluginManagerConfig::new(&config_home);
+        reloaded_config.bundled_root = Some(bundled_root.clone());
+        reloaded_config.enabled_plugins = load_enabled_plugins(&manager.settings_path());
+        let reloaded_manager = PluginManager::new(reloaded_config);
+        let reloaded = reloaded_manager
+            .list_installed_plugins()
+            .expect("bundled plugins should still be listed");
+        assert!(reloaded
+            .iter()
+            .any(|plugin| { plugin.metadata.id == "starter@bundled" && !plugin.enabled }));
+
+        let _ = fs::remove_dir_all(config_home);
+        let _ = fs::remove_dir_all(bundled_root);
+    }
+
+    #[test]
+    fn validates_plugin_source_before_install() {
+        let config_home = temp_dir("validate-home");
+        let source_root = temp_dir("validate-source");
+        write_external_plugin(&source_root, "validator", "1.0.0");
+        let manager = PluginManager::new(PluginManagerConfig::new(&config_home));
+        let manifest = manager
+            .validate_plugin_source(source_root.to_str().expect("utf8 path"))
+            .expect("manifest should validate");
+        assert_eq!(manifest.name, "validator");
+        let _ = fs::remove_dir_all(config_home);
+        let _ = fs::remove_dir_all(source_root);
+    }
+
+    #[test]
+    fn plugin_registry_tracks_enabled_state_and_lookup() {
+        let config_home = temp_dir("registry-home");
+        let source_root = temp_dir("registry-source");
+        write_external_plugin(&source_root, "registry-demo", "1.0.0");
+
+        let mut manager = PluginManager::new(PluginManagerConfig::new(&config_home));
+        manager
+            .install(source_root.to_str().expect("utf8 path"))
+            .expect("install should succeed");
+        manager
+            .disable("registry-demo@external")
+            .expect("disable should succeed");
+
+        let registry = manager.plugin_registry().expect("registry should build");
+        let plugin = registry
+            .get("registry-demo@external")
+            .expect("installed plugin should be discoverable");
+        assert_eq!(plugin.metadata().name, "registry-demo");
+        assert!(!plugin.is_enabled());
+        assert!(registry.contains("registry-demo@external"));
+        assert!(!registry.contains("missing@external"));
+
+        let _ = fs::remove_dir_all(config_home);
+        let _ = fs::remove_dir_all(source_root);
+    }
+
+    #[test]
+    fn rejects_plugin_sources_with_missing_hook_paths() {
+        let config_home = temp_dir("broken-home");
+        let source_root = temp_dir("broken-source");
+        write_broken_plugin(&source_root, "broken");
+
+        let manager = PluginManager::new(PluginManagerConfig::new(&config_home));
+        let error = manager
+            .validate_plugin_source(source_root.to_str().expect("utf8 path"))
+            .expect_err("missing hook file should fail validation");
+        assert!(error.to_string().contains("does not exist"));
+
+        let mut manager = PluginManager::new(PluginManagerConfig::new(&config_home));
+        let install_error = manager
+            .install(source_root.to_str().expect("utf8 path"))
+            .expect_err("install should reject invalid hook paths");
+        assert!(install_error.to_string().contains("does not exist"));
+
+        let _ = fs::remove_dir_all(config_home);
+        let _ = fs::remove_dir_all(source_root);
+    }
+
