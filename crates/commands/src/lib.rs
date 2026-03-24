@@ -1568,3 +1568,217 @@ fn render_agents_usage(unexpected: Option<&str>) -> String {
 fn render_skills_usage(unexpected: Option<&str>) -> String {
     let mut lines = vec![
         "Skills".to_string(),
+        "  Usage            /skills".to_string(),
+        "  Direct CLI       codineer skills".to_string(),
+        "  Sources          .codineer/skills, ~/.codineer/skills".to_string(),
+    ];
+    if let Some(args) = unexpected {
+        lines.push(format!("  Unexpected       {args}"));
+    }
+    lines.join("\n")
+}
+
+#[must_use]
+pub fn handle_slash_command(
+    input: &str,
+    session: &Session,
+    compaction: CompactionConfig,
+) -> Option<SlashCommandResult> {
+    match SlashCommand::parse(input)? {
+        SlashCommand::Compact => {
+            let result = compact_session(session, compaction);
+            let message = if result.removed_message_count == 0 {
+                "Compaction skipped: session is below the compaction threshold.".to_string()
+            } else {
+                format!(
+                    "Compacted {} messages into a resumable system summary.",
+                    result.removed_message_count
+                )
+            };
+            Some(SlashCommandResult {
+                message,
+                session: result.compacted_session,
+            })
+        }
+        SlashCommand::Help => Some(SlashCommandResult {
+            message: render_slash_command_help(),
+            session: session.clone(),
+        }),
+        SlashCommand::Status
+        | SlashCommand::Branch { .. }
+        | SlashCommand::Bughunter { .. }
+        | SlashCommand::Worktree { .. }
+        | SlashCommand::Commit
+        | SlashCommand::CommitPushPr { .. }
+        | SlashCommand::Pr { .. }
+        | SlashCommand::Issue { .. }
+        | SlashCommand::Ultraplan { .. }
+        | SlashCommand::Teleport { .. }
+        | SlashCommand::DebugToolCall
+        | SlashCommand::Model { .. }
+        | SlashCommand::Permissions { .. }
+        | SlashCommand::Clear { .. }
+        | SlashCommand::Cost
+        | SlashCommand::Resume { .. }
+        | SlashCommand::Config { .. }
+        | SlashCommand::Memory
+        | SlashCommand::Init
+        | SlashCommand::Diff
+        | SlashCommand::Version
+        | SlashCommand::Export { .. }
+        | SlashCommand::Session { .. }
+        | SlashCommand::Plugins { .. }
+        | SlashCommand::Agents { .. }
+        | SlashCommand::Skills { .. }
+        | SlashCommand::Unknown(_) => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        handle_branch_slash_command, handle_commit_push_pr_slash_command,
+        handle_commit_slash_command, handle_plugins_slash_command, handle_slash_command,
+        handle_worktree_slash_command, load_agents_from_roots, load_skills_from_roots,
+        render_agents_report, render_plugins_report, render_skills_report,
+        render_slash_command_help, resume_supported_slash_commands, slash_command_specs,
+        suggest_slash_commands, CommitPushPrRequest, DefinitionSource, SkillRoot, SlashCommand,
+    };
+    use plugins::{PluginKind, PluginManager, PluginManagerConfig, PluginMetadata, PluginSummary};
+    use runtime::{CompactionConfig, ContentBlock, ConversationMessage, MessageRole, Session};
+    use std::env;
+    use std::fs;
+    use std::path::{Path, PathBuf};
+    use std::process::Command;
+    use std::sync::{Mutex, OnceLock};
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[cfg(unix)]
+    use std::os::unix::fs::PermissionsExt;
+
+    fn temp_dir(label: &str) -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time should be after epoch")
+            .as_nanos();
+        std::env::temp_dir().join(format!("commands-plugin-{label}-{nanos}"))
+    }
+
+    fn env_lock() -> std::sync::MutexGuard<'static, ()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+            .lock()
+            .expect("env lock")
+    }
+
+    fn run_command(cwd: &Path, program: &str, args: &[&str]) -> String {
+        let output = Command::new(program)
+            .args(args)
+            .current_dir(cwd)
+            .output()
+            .expect("command should run");
+        assert!(
+            output.status.success(),
+            "{} {} failed: {}",
+            program,
+            args.join(" "),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        String::from_utf8(output.stdout).expect("stdout should be utf8")
+    }
+
+    fn init_git_repo(label: &str) -> PathBuf {
+        let root = temp_dir(label);
+        fs::create_dir_all(&root).expect("repo root");
+
+        let init = Command::new("git")
+            .args(["init", "-b", "main"])
+            .current_dir(&root)
+            .output()
+            .expect("git init should run");
+        if !init.status.success() {
+            let fallback = Command::new("git")
+                .arg("init")
+                .current_dir(&root)
+                .output()
+                .expect("fallback git init should run");
+            assert!(
+                fallback.status.success(),
+                "fallback git init should succeed"
+            );
+            let rename = Command::new("git")
+                .args(["branch", "-m", "main"])
+                .current_dir(&root)
+                .output()
+                .expect("git branch -m should run");
+            assert!(rename.status.success(), "git branch -m main should succeed");
+        }
+
+        run_command(&root, "git", &["config", "user.name", "Codineer Tests"]);
+        run_command(
+            &root,
+            "git",
+            &["config", "user.email", "codineer@example.com"],
+        );
+        fs::write(root.join("README.md"), "seed\n").expect("seed file");
+        run_command(&root, "git", &["add", "README.md"]);
+        run_command(&root, "git", &["commit", "-m", "chore: seed repo"]);
+        root
+    }
+
+    fn init_bare_repo(label: &str) -> PathBuf {
+        let root = temp_dir(label);
+        let output = Command::new("git")
+            .args(["init", "--bare"])
+            .arg(&root)
+            .output()
+            .expect("bare repo should initialize");
+        assert!(output.status.success(), "git init --bare should succeed");
+        root
+    }
+
+    #[cfg(unix)]
+    fn write_fake_gh(bin_dir: &Path, log_path: &Path, url: &str) {
+        fs::create_dir_all(bin_dir).expect("bin dir");
+        let script = format!(
+            "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then\n  echo 'gh 1.0.0'\n  exit 0\nfi\nprintf '%s\\n' \"$*\" >> \"{}\"\nif [ \"$1\" = \"pr\" ] && [ \"$2\" = \"create\" ]; then\n  echo '{}'\n  exit 0\nfi\nif [ \"$1\" = \"pr\" ] && [ \"$2\" = \"view\" ]; then\n  echo '{{\"url\":\"{}\"}}'\n  exit 0\nfi\nexit 0\n",
+            log_path.display(),
+            url,
+            url,
+        );
+        let path = bin_dir.join("gh");
+        fs::write(&path, script).expect("gh stub");
+        let mut permissions = fs::metadata(&path).expect("metadata").permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(&path, permissions).expect("chmod");
+    }
+
+    fn write_external_plugin(root: &Path, name: &str, version: &str) {
+        fs::create_dir_all(root.join(".codineer-plugin")).expect("manifest dir");
+        fs::write(
+            root.join(".codineer-plugin").join("plugin.json"),
+            format!(
+                "{{\n  \"name\": \"{name}\",\n  \"version\": \"{version}\",\n  \"description\": \"commands plugin\"\n}}"
+            ),
+        )
+        .expect("write manifest");
+    }
+
+    fn write_bundled_plugin(root: &Path, name: &str, version: &str, default_enabled: bool) {
+        fs::create_dir_all(root.join(".codineer-plugin")).expect("manifest dir");
+        fs::write(
+            root.join(".codineer-plugin").join("plugin.json"),
+            format!(
+                "{{\n  \"name\": \"{name}\",\n  \"version\": \"{version}\",\n  \"description\": \"bundled commands plugin\",\n  \"defaultEnabled\": {}\n}}",
+                if default_enabled { "true" } else { "false" }
+            ),
+        )
+        .expect("write bundled manifest");
+    }
+
+    fn write_agent(root: &Path, name: &str, description: &str, model: &str, reasoning: &str) {
+        fs::create_dir_all(root).expect("agent root");
+        fs::write(
+            root.join(format!("{name}.toml")),
+            format!(
+                "name = \"{name}\"\ndescription = \"{description}\"\nmodel = \"{model}\"\nmodel_reasoning_effort = \"{reasoning}\"\n"
