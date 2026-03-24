@@ -3209,3 +3209,217 @@ mod tests {
             "WebFetch",
             &json!({
                 "url": "not a url",
+                "prompt": "Summarize"
+            }),
+        )
+        .expect_err("invalid URL should fail");
+        assert!(error.contains("relative URL without a base") || error.contains("invalid"));
+    }
+
+    #[test]
+    fn web_search_extracts_and_filters_results() {
+        let server = TestServer::spawn(Arc::new(|request_line: &str| {
+            assert!(request_line.contains("GET /search?q=rust+web+search "));
+            HttpResponse::html(
+                200,
+                "OK",
+                r#"
+                <html><body>
+                  <a class="result__a" href="https://docs.rs/reqwest">Reqwest docs</a>
+                  <a class="result__a" href="https://example.com/blocked">Blocked result</a>
+                </body></html>
+                "#,
+            )
+        }));
+
+        std::env::set_var(
+            "CODINEER_WEB_SEARCH_BASE_URL",
+            format!("http://{}/search", server.addr()),
+        );
+        let result = execute_tool(
+            "WebSearch",
+            &json!({
+                "query": "rust web search",
+                "allowed_domains": ["https://DOCS.rs/"],
+                "blocked_domains": ["HTTPS://EXAMPLE.COM"]
+            }),
+        )
+        .expect("WebSearch should succeed");
+        std::env::remove_var("CODINEER_WEB_SEARCH_BASE_URL");
+
+        let output: serde_json::Value = serde_json::from_str(&result).expect("valid json");
+        assert_eq!(output["query"], "rust web search");
+        let results = output["results"].as_array().expect("results array");
+        let search_result = results
+            .iter()
+            .find(|item| item.get("content").is_some())
+            .expect("search result block present");
+        let content = search_result["content"].as_array().expect("content array");
+        assert_eq!(content.len(), 1);
+        assert_eq!(content[0]["title"], "Reqwest docs");
+        assert_eq!(content[0]["url"], "https://docs.rs/reqwest");
+    }
+
+    #[test]
+    fn web_search_handles_generic_links_and_invalid_base_url() {
+        let _guard = env_lock()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let server = TestServer::spawn(Arc::new(|request_line: &str| {
+            assert!(request_line.contains("GET /fallback?q=generic+links "));
+            HttpResponse::html(
+                200,
+                "OK",
+                r#"
+                <html><body>
+                  <a href="https://example.com/one">Example One</a>
+                  <a href="https://example.com/one">Duplicate Example One</a>
+                  <a href="https://docs.rs/tokio">Tokio Docs</a>
+                </body></html>
+                "#,
+            )
+        }));
+
+        std::env::set_var(
+            "CODINEER_WEB_SEARCH_BASE_URL",
+            format!("http://{}/fallback", server.addr()),
+        );
+        let result = execute_tool(
+            "WebSearch",
+            &json!({
+                "query": "generic links"
+            }),
+        )
+        .expect("WebSearch fallback parsing should succeed");
+        std::env::remove_var("CODINEER_WEB_SEARCH_BASE_URL");
+
+        let output: serde_json::Value = serde_json::from_str(&result).expect("valid json");
+        let results = output["results"].as_array().expect("results array");
+        let search_result = results
+            .iter()
+            .find(|item| item.get("content").is_some())
+            .expect("search result block present");
+        let content = search_result["content"].as_array().expect("content array");
+        assert_eq!(content.len(), 2);
+        assert_eq!(content[0]["url"], "https://example.com/one");
+        assert_eq!(content[1]["url"], "https://docs.rs/tokio");
+
+        std::env::set_var("CODINEER_WEB_SEARCH_BASE_URL", "://bad-base-url");
+        let error = execute_tool("WebSearch", &json!({ "query": "generic links" }))
+            .expect_err("invalid base URL should fail");
+        std::env::remove_var("CODINEER_WEB_SEARCH_BASE_URL");
+        assert!(error.contains("relative URL without a base") || error.contains("empty host"));
+    }
+
+    #[test]
+    fn pending_tools_preserve_multiple_streaming_tool_calls_by_index() {
+        let mut events = Vec::new();
+        let mut pending_tools = BTreeMap::new();
+
+        push_output_block(
+            OutputContentBlock::ToolUse {
+                id: "tool-1".to_string(),
+                name: "read_file".to_string(),
+                input: json!({}),
+            },
+            1,
+            &mut events,
+            &mut pending_tools,
+            true,
+        );
+        push_output_block(
+            OutputContentBlock::ToolUse {
+                id: "tool-2".to_string(),
+                name: "grep_search".to_string(),
+                input: json!({}),
+            },
+            2,
+            &mut events,
+            &mut pending_tools,
+            true,
+        );
+
+        pending_tools
+            .get_mut(&1)
+            .expect("first tool pending")
+            .2
+            .push_str("{\"path\":\"src/main.rs\"}");
+        pending_tools
+            .get_mut(&2)
+            .expect("second tool pending")
+            .2
+            .push_str("{\"pattern\":\"TODO\"}");
+
+        assert_eq!(
+            pending_tools.remove(&1),
+            Some((
+                "tool-1".to_string(),
+                "read_file".to_string(),
+                "{\"path\":\"src/main.rs\"}".to_string(),
+            ))
+        );
+        assert_eq!(
+            pending_tools.remove(&2),
+            Some((
+                "tool-2".to_string(),
+                "grep_search".to_string(),
+                "{\"pattern\":\"TODO\"}".to_string(),
+            ))
+        );
+    }
+
+    #[test]
+    fn todo_write_persists_and_returns_previous_state() {
+        let _guard = env_lock()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let path = temp_path("todos.json");
+        std::env::set_var("CODINEER_TODO_STORE", &path);
+
+        let first = execute_tool(
+            "TodoWrite",
+            &json!({
+                "todos": [
+                    {"content": "Add tool", "activeForm": "Adding tool", "status": "in_progress"},
+                    {"content": "Run tests", "activeForm": "Running tests", "status": "pending"}
+                ]
+            }),
+        )
+        .expect("TodoWrite should succeed");
+        let first_output: serde_json::Value = serde_json::from_str(&first).expect("valid json");
+        assert_eq!(first_output["oldTodos"].as_array().expect("array").len(), 0);
+
+        let second = execute_tool(
+            "TodoWrite",
+            &json!({
+                "todos": [
+                    {"content": "Add tool", "activeForm": "Adding tool", "status": "completed"},
+                    {"content": "Run tests", "activeForm": "Running tests", "status": "completed"},
+                    {"content": "Verify", "activeForm": "Verifying", "status": "completed"}
+                ]
+            }),
+        )
+        .expect("TodoWrite should succeed");
+        std::env::remove_var("CODINEER_TODO_STORE");
+        let _ = std::fs::remove_file(path);
+
+        let second_output: serde_json::Value = serde_json::from_str(&second).expect("valid json");
+        assert_eq!(
+            second_output["oldTodos"].as_array().expect("array").len(),
+            2
+        );
+        assert_eq!(
+            second_output["newTodos"].as_array().expect("array").len(),
+            3
+        );
+        assert!(second_output["verificationNudgeNeeded"].is_null());
+    }
+
+    #[test]
+    fn todo_write_rejects_invalid_payloads_and_sets_verification_nudge() {
+        let _guard = env_lock()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let path = temp_path("todos-errors.json");
+        std::env::set_var("CODINEER_TODO_STORE", &path);
+
