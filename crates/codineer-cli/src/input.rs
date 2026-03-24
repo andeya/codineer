@@ -409,3 +409,61 @@ impl LineEditor {
         let _raw_mode = RawModeGuard::new()?;
         let mut stdout = io::stdout();
         let mut session = EditSession::new(self.vim_enabled);
+        session.render(&mut stdout, &self.prompt, self.vim_enabled)?;
+
+        loop {
+            let Event::Key(key) = event::read()? else {
+                continue;
+            };
+            if !matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat) {
+                continue;
+            }
+
+            match self.handle_key_event(&mut session, key) {
+                KeyAction::Continue => {
+                    session.render(&mut stdout, &self.prompt, self.vim_enabled)?;
+                }
+                KeyAction::Submit(line) => {
+                    session.finalize_render(&mut stdout, &self.prompt, self.vim_enabled)?;
+                    return Ok(ReadOutcome::Submit(line));
+                }
+                KeyAction::Cancel => {
+                    session.clear_render(&mut stdout)?;
+                    writeln!(stdout)?;
+                    return Ok(ReadOutcome::Cancel);
+                }
+                KeyAction::Exit => {
+                    session.clear_render(&mut stdout)?;
+                    writeln!(stdout)?;
+                    return Ok(ReadOutcome::Exit);
+                }
+                KeyAction::ToggleVim => {
+                    session.clear_render(&mut stdout)?;
+                    self.vim_enabled = !self.vim_enabled;
+                    writeln!(
+                        stdout,
+                        "Vim mode {}.",
+                        if self.vim_enabled {
+                            "enabled"
+                        } else {
+                            "disabled"
+                        }
+                    )?;
+                    session = EditSession::new(self.vim_enabled);
+                    session.render(&mut stdout, &self.prompt, self.vim_enabled)?;
+                }
+            }
+        }
+    }
+
+    fn read_line_fallback(&mut self) -> io::Result<ReadOutcome> {
+        loop {
+            let mut stdout = io::stdout();
+            write!(stdout, "{}", self.prompt)?;
+            stdout.flush()?;
+
+            let mut buffer = String::new();
+            let bytes_read = io::stdin().read_line(&mut buffer)?;
+            if bytes_read == 0 {
+                return Ok(ReadOutcome::Exit);
+            }
