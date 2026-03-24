@@ -627,3 +627,93 @@ mod tests {
         let root = temp_dir();
         fs::create_dir_all(&root).expect("root dir");
         std::process::Command::new("git")
+            .args(["init", "--quiet"])
+            .current_dir(&root)
+            .status()
+            .expect("git init should run");
+        fs::write(root.join("CODINEER.md"), "rules").expect("write instructions");
+        fs::write(root.join("tracked.txt"), "hello").expect("write tracked file");
+
+        let context =
+            ProjectContext::discover_with_git(&root, "2026-03-31").expect("context should load");
+
+        let status = context.git_status.expect("git status should be present");
+        assert!(status.contains("## No commits yet on") || status.contains("## "));
+        assert!(status.contains("?? CODINEER.md"));
+        assert!(status.contains("?? tracked.txt"));
+        assert!(context.git_diff.is_none());
+
+        fs::remove_dir_all(root).expect("cleanup temp dir");
+    }
+
+    #[test]
+    fn discover_with_git_includes_diff_snapshot_for_tracked_changes() {
+        let _guard = env_lock();
+        let root = temp_dir();
+        fs::create_dir_all(&root).expect("root dir");
+        std::process::Command::new("git")
+            .args(["init", "--quiet"])
+            .current_dir(&root)
+            .status()
+            .expect("git init should run");
+        std::process::Command::new("git")
+            .args(["config", "user.email", "tests@example.com"])
+            .current_dir(&root)
+            .status()
+            .expect("git config email should run");
+        std::process::Command::new("git")
+            .args(["config", "user.name", "Runtime Prompt Tests"])
+            .current_dir(&root)
+            .status()
+            .expect("git config name should run");
+        fs::write(root.join("tracked.txt"), "hello\n").expect("write tracked file");
+        std::process::Command::new("git")
+            .args(["add", "tracked.txt"])
+            .current_dir(&root)
+            .status()
+            .expect("git add should run");
+        std::process::Command::new("git")
+            .args(["commit", "-m", "init", "--quiet"])
+            .current_dir(&root)
+            .status()
+            .expect("git commit should run");
+        fs::write(root.join("tracked.txt"), "hello\nworld\n").expect("rewrite tracked file");
+
+        let context =
+            ProjectContext::discover_with_git(&root, "2026-03-31").expect("context should load");
+
+        let diff = context.git_diff.expect("git diff should be present");
+        assert!(diff.contains("Unstaged changes:"));
+        assert!(diff.contains("tracked.txt"));
+
+        fs::remove_dir_all(root).expect("cleanup temp dir");
+    }
+
+    #[test]
+    fn load_system_prompt_reads_codineer_files_and_config() {
+        let root = temp_dir();
+        fs::create_dir_all(root.join(".codineer")).expect("codineer dir");
+        fs::write(root.join("CODINEER.md"), "Project rules").expect("write instructions");
+        fs::write(
+            root.join(".codineer").join("settings.json"),
+            r#"{"permissionMode":"acceptEdits"}"#,
+        )
+        .expect("write settings");
+
+        let _guard = env_lock();
+        let previous = std::env::current_dir().expect("cwd");
+        let original_home = std::env::var("HOME").ok();
+        let original_codineer_home = std::env::var("CODINEER_CONFIG_HOME").ok();
+        std::env::set_var("HOME", &root);
+        std::env::set_var("CODINEER_CONFIG_HOME", root.join("missing-home"));
+        std::env::set_current_dir(&root).expect("change cwd");
+        let prompt = super::load_system_prompt(&root, "2026-03-31", "linux", "6.8")
+            .expect("system prompt should load")
+            .join(
+                "
+
+",
+            );
+        std::env::set_current_dir(previous).expect("restore cwd");
+        if let Some(value) = original_home {
+            std::env::set_var("HOME", value);
