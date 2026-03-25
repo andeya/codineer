@@ -1925,3 +1925,74 @@ mod tests {
         );
         assert_eq!(
             SlashCommand::parse("/plugins list"),
+            Some(SlashCommand::Plugins {
+                action: Some("list".to_string()),
+                target: None
+            })
+        );
+        assert_eq!(
+            SlashCommand::parse("/plugins enable demo"),
+            Some(SlashCommand::Plugins {
+                action: Some("enable".to_string()),
+                target: Some("demo".to_string())
+            })
+        );
+        assert_eq!(
+            SlashCommand::parse("/plugins disable demo"),
+            Some(SlashCommand::Plugins {
+                action: Some("disable".to_string()),
+                target: Some("demo".to_string())
+            })
+        );
+    }
+
+    #[test]
+    fn renders_help_from_shared_specs() {
+        let help = render_slash_command_help();
+        assert!(help.contains("available via codineer --resume SESSION.json"));
+        assert!(help.contains("Core flow"));
+        assert!(help.contains("Workspace & memory"));
+        assert!(help.contains("Sessions & output"));
+        assert!(help.contains("Git & GitHub"));
+        assert!(help.contains("Automation & discovery"));
+        assert!(help.contains("/help"));
+        assert!(help.contains("/status"));
+        assert!(help.contains("/compact"));
+        assert!(help.contains("/bughunter [scope]"));
+        assert!(help.contains("/branch [list|create <name>|switch <name>]"));
+        assert!(help.contains("/worktree [list|add <path> [branch]|remove <path>|prune]"));
+        assert!(help.contains("/commit"));
+        assert!(help.contains("/commit-push-pr [context]"));
+        assert!(help.contains("/pr [context]"));
+        assert!(help.contains("/issue [context]"));
+        assert!(help.contains("/ultraplan [task]"));
+        assert!(help.contains("/teleport <symbol-or-path>"));
+        assert!(help.contains("/debug-tool-call"));
+        assert!(help.contains("/model [model]"));
+        assert!(help.contains("/permissions [read-only|workspace-write|danger-full-access]"));
+        assert!(help.contains("/clear [--confirm]"));
+        assert!(help.contains("/cost"));
+        assert!(help.contains("/resume <session-path>"));
+        assert!(help.contains("/config [env|hooks|model|plugins]"));
+        assert!(help.contains("/memory"));
+        assert!(help.contains("/init"));
+        assert!(help.contains("/diff"));
+        assert!(help.contains("/version"));
+        assert!(help.contains("/export [file]"));
+        assert!(help.contains("/session [list|switch <session-id>]"));
+        assert!(help.contains(
+            "/plugin [list|install <path>|enable <name>|disable <name>|uninstall <id>|update <id>]"
+        ));
+        assert!(help.contains("aliases: /plugins, /marketplace"));
+        assert!(help.contains("/agents"));
+        assert!(help.contains("/skills"));
+        assert_eq!(slash_command_specs().len(), 28);
+        assert_eq!(resume_supported_slash_commands().len(), 13);
+    }
+
+    #[test]
+    fn suggests_close_slash_commands() {
+        let suggestions = suggest_slash_commands("stats", 3);
+        assert!(!suggestions.is_empty());
+        assert_eq!(suggestions[0], "/status");
+    }
