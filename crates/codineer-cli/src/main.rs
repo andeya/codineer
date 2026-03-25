@@ -2790,3 +2790,202 @@ impl InternalPromptProgressReporter {
 
     fn mark_text_phase(&self, text: &str) {
         let trimmed = text.trim();
+        if trimmed.is_empty() {
+            return;
+        }
+        let detail = truncate_for_summary(first_visible_line(trimmed), 120);
+        let snapshot = {
+            let mut state = self
+                .shared
+                .state
+                .lock()
+                .expect("internal prompt progress state poisoned");
+            if state.saw_final_text {
+                return;
+            }
+            state.saw_final_text = true;
+            state.step += 1;
+            state.phase = "drafting final plan".to_string();
+            state.detail = (!detail.is_empty()).then_some(detail);
+            state.clone()
+        };
+        self.write_line(&format_internal_prompt_progress_line(
+            InternalPromptProgressEvent::Update,
+            &snapshot,
+            self.elapsed(),
+            None,
+        ));
+    }
+
+    fn emit_heartbeat(&self) {
+        let snapshot = self.snapshot();
+        self.write_line(&format_internal_prompt_progress_line(
+            InternalPromptProgressEvent::Heartbeat,
+            &snapshot,
+            self.elapsed(),
+            None,
+        ));
+    }
+
+    fn snapshot(&self) -> InternalPromptProgressState {
+        self.shared
+            .state
+            .lock()
+            .expect("internal prompt progress state poisoned")
+            .clone()
+    }
+
+    fn elapsed(&self) -> Duration {
+        self.shared.started_at.elapsed()
+    }
+
+    fn write_line(&self, line: &str) {
+        let _guard = self
+            .shared
+            .output_lock
+            .lock()
+            .expect("internal prompt progress output lock poisoned");
+        let mut stdout = io::stdout();
+        let _ = writeln!(stdout, "{line}");
+        let _ = stdout.flush();
+    }
+}
+
+impl InternalPromptProgressRun {
+    fn start_ultraplan(task: &str) -> Self {
+        let reporter = InternalPromptProgressReporter::ultraplan(task);
+        reporter.emit(InternalPromptProgressEvent::Started, None);
+
+        let (heartbeat_stop, heartbeat_rx) = mpsc::channel();
+        let heartbeat_reporter = reporter.clone();
+        let heartbeat_handle = thread::spawn(move || loop {
+            match heartbeat_rx.recv_timeout(INTERNAL_PROGRESS_HEARTBEAT_INTERVAL) {
+                Ok(()) | Err(RecvTimeoutError::Disconnected) => break,
+                Err(RecvTimeoutError::Timeout) => heartbeat_reporter.emit_heartbeat(),
+            }
+        });
+
+        Self {
+            reporter,
+            heartbeat_stop: Some(heartbeat_stop),
+            heartbeat_handle: Some(heartbeat_handle),
+        }
+    }
+
+    fn reporter(&self) -> InternalPromptProgressReporter {
+        self.reporter.clone()
+    }
+
+    fn finish_success(&mut self) {
+        self.stop_heartbeat();
+        self.reporter
+            .emit(InternalPromptProgressEvent::Complete, None);
+    }
+
+    fn finish_failure(&mut self, error: &str) {
+        self.stop_heartbeat();
+        self.reporter
+            .emit(InternalPromptProgressEvent::Failed, Some(error));
+    }
+
+    fn stop_heartbeat(&mut self) {
+        if let Some(sender) = self.heartbeat_stop.take() {
+            let _ = sender.send(());
+        }
+        if let Some(handle) = self.heartbeat_handle.take() {
+            let _ = handle.join();
+        }
+    }
+}
+
+impl Drop for InternalPromptProgressRun {
+    fn drop(&mut self) {
+        self.stop_heartbeat();
+    }
+}
+
+fn format_internal_prompt_progress_line(
+    event: InternalPromptProgressEvent,
+    snapshot: &InternalPromptProgressState,
+    elapsed: Duration,
+    error: Option<&str>,
+) -> String {
+    let elapsed_seconds = elapsed.as_secs();
+    let step_label = if snapshot.step == 0 {
+        "current step pending".to_string()
+    } else {
+        format!("current step {}", snapshot.step)
+    };
+    let mut status_bits = vec![step_label, format!("phase {}", snapshot.phase)];
+    if let Some(detail) = snapshot
+        .detail
+        .as_deref()
+        .filter(|detail| !detail.is_empty())
+    {
+        status_bits.push(detail.to_string());
+    }
+    let status = status_bits.join(" · ");
+    match event {
+        InternalPromptProgressEvent::Started => {
+            format!(
+                "🧭 {} status · planning started · {status}",
+                snapshot.command_label
+            )
+        }
+        InternalPromptProgressEvent::Update => {
+            format!("… {} status · {status}", snapshot.command_label)
+        }
+        InternalPromptProgressEvent::Heartbeat => format!(
+            "… {} heartbeat · {elapsed_seconds}s elapsed · {status}",
+            snapshot.command_label
+        ),
+        InternalPromptProgressEvent::Complete => format!(
+            "✔ {} status · completed · {elapsed_seconds}s elapsed · {} steps total",
+            snapshot.command_label, snapshot.step
+        ),
+        InternalPromptProgressEvent::Failed => format!(
+            "✘ {} status · failed · {elapsed_seconds}s elapsed · {}",
+            snapshot.command_label,
+            error.unwrap_or("unknown error")
+        ),
+    }
+}
+
+fn describe_tool_progress(name: &str, input: &str) -> String {
+    let parsed: serde_json::Value =
+        serde_json::from_str(input).unwrap_or(serde_json::Value::String(input.to_string()));
+    match name {
+        "bash" | "Bash" => {
+            let command = parsed
+                .get("command")
+                .and_then(|value| value.as_str())
+                .unwrap_or_default();
+            if command.is_empty() {
+                "running shell command".to_string()
+            } else {
+                format!("command {}", truncate_for_summary(command.trim(), 100))
+            }
+        }
+        "read_file" | "Read" => format!("reading {}", extract_tool_path(&parsed)),
+        "write_file" | "Write" => format!("writing {}", extract_tool_path(&parsed)),
+        "edit_file" | "Edit" => format!("editing {}", extract_tool_path(&parsed)),
+        "glob_search" | "Glob" => {
+            let pattern = parsed
+                .get("pattern")
+                .and_then(|value| value.as_str())
+                .unwrap_or("?");
+            let scope = parsed
+                .get("path")
+                .and_then(|value| value.as_str())
+                .unwrap_or(".");
+            format!("glob `{pattern}` in {scope}")
+        }
+        "grep_search" | "Grep" => {
+            let pattern = parsed
+                .get("pattern")
+                .and_then(|value| value.as_str())
+                .unwrap_or("?");
+            let scope = parsed
+                .get("path")
+                .and_then(|value| value.as_str())
+                .unwrap_or(".");
