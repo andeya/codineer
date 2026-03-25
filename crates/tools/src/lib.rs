@@ -3352,3 +3352,217 @@ mod tests {
 
         assert_eq!(
             pending_tools.remove(&1),
+            Some((
+                "tool-1".to_string(),
+                "read_file".to_string(),
+                "{\"path\":\"src/main.rs\"}".to_string(),
+            ))
+        );
+        assert_eq!(
+            pending_tools.remove(&2),
+            Some((
+                "tool-2".to_string(),
+                "grep_search".to_string(),
+                "{\"pattern\":\"TODO\"}".to_string(),
+            ))
+        );
+    }
+
+    #[test]
+    fn todo_write_persists_and_returns_previous_state() {
+        let _guard = env_lock()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let path = temp_path("todos.json");
+        std::env::set_var("CODINEER_TODO_STORE", &path);
+
+        let first = execute_tool(
+            "TodoWrite",
+            &json!({
+                "todos": [
+                    {"content": "Add tool", "activeForm": "Adding tool", "status": "in_progress"},
+                    {"content": "Run tests", "activeForm": "Running tests", "status": "pending"}
+                ]
+            }),
+        )
+        .expect("TodoWrite should succeed");
+        let first_output: serde_json::Value = serde_json::from_str(&first).expect("valid json");
+        assert_eq!(first_output["oldTodos"].as_array().expect("array").len(), 0);
+
+        let second = execute_tool(
+            "TodoWrite",
+            &json!({
+                "todos": [
+                    {"content": "Add tool", "activeForm": "Adding tool", "status": "completed"},
+                    {"content": "Run tests", "activeForm": "Running tests", "status": "completed"},
+                    {"content": "Verify", "activeForm": "Verifying", "status": "completed"}
+                ]
+            }),
+        )
+        .expect("TodoWrite should succeed");
+        std::env::remove_var("CODINEER_TODO_STORE");
+        let _ = std::fs::remove_file(path);
+
+        let second_output: serde_json::Value = serde_json::from_str(&second).expect("valid json");
+        assert_eq!(
+            second_output["oldTodos"].as_array().expect("array").len(),
+            2
+        );
+        assert_eq!(
+            second_output["newTodos"].as_array().expect("array").len(),
+            3
+        );
+        assert!(second_output["verificationNudgeNeeded"].is_null());
+    }
+
+    #[test]
+    fn todo_write_rejects_invalid_payloads_and_sets_verification_nudge() {
+        let _guard = env_lock()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let path = temp_path("todos-errors.json");
+        std::env::set_var("CODINEER_TODO_STORE", &path);
+
+        let empty = execute_tool("TodoWrite", &json!({ "todos": [] }))
+            .expect_err("empty todos should fail");
+        assert!(empty.contains("todos must not be empty"));
+
+        // Multiple in_progress items are now allowed for parallel workflows
+        let _multi_active = execute_tool(
+            "TodoWrite",
+            &json!({
+                "todos": [
+                    {"content": "One", "activeForm": "Doing one", "status": "in_progress"},
+                    {"content": "Two", "activeForm": "Doing two", "status": "in_progress"}
+                ]
+            }),
+        )
+        .expect("multiple in-progress todos should succeed");
+
+        let blank_content = execute_tool(
+            "TodoWrite",
+            &json!({
+                "todos": [
+                    {"content": "   ", "activeForm": "Doing it", "status": "pending"}
+                ]
+            }),
+        )
+        .expect_err("blank content should fail");
+        assert!(blank_content.contains("todo content must not be empty"));
+
+        let nudge = execute_tool(
+            "TodoWrite",
+            &json!({
+                "todos": [
+                    {"content": "Write tests", "activeForm": "Writing tests", "status": "completed"},
+                    {"content": "Fix errors", "activeForm": "Fixing errors", "status": "completed"},
+                    {"content": "Ship branch", "activeForm": "Shipping branch", "status": "completed"}
+                ]
+            }),
+        )
+        .expect("completed todos should succeed");
+        std::env::remove_var("CODINEER_TODO_STORE");
+        let _ = fs::remove_file(path);
+
+        let output: serde_json::Value = serde_json::from_str(&nudge).expect("valid json");
+        assert_eq!(output["verificationNudgeNeeded"], true);
+    }
+
+    #[test]
+    #[ignore = "requires local skill fixtures in ~/.codineer/skills/help/SKILL.md"]
+    fn skill_loads_local_skill_prompt() {
+        let _guard = env_lock()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let result = execute_tool(
+            "Skill",
+            &json!({
+                "skill": "help",
+                "args": "overview"
+            }),
+        )
+        .expect("Skill should succeed");
+
+        let output: serde_json::Value = serde_json::from_str(&result).expect("valid json");
+        assert_eq!(output["skill"], "help");
+        assert!(output["path"]
+            .as_str()
+            .expect("path")
+            .ends_with("/help/SKILL.md"));
+        assert!(output["prompt"]
+            .as_str()
+            .expect("prompt")
+            .contains("Guide on using oh-my-codex plugin"));
+
+        let dollar_result = execute_tool(
+            "Skill",
+            &json!({
+                "skill": "$help"
+            }),
+        )
+        .expect("Skill should accept $skill invocation form");
+        let dollar_output: serde_json::Value =
+            serde_json::from_str(&dollar_result).expect("valid json");
+        assert_eq!(dollar_output["skill"], "$help");
+        assert!(dollar_output["path"]
+            .as_str()
+            .expect("path")
+            .ends_with("/help/SKILL.md"));
+    }
+
+    #[test]
+    fn tool_search_supports_keyword_and_select_queries() {
+        let keyword = execute_tool(
+            "ToolSearch",
+            &json!({"query": "web current", "max_results": 3}),
+        )
+        .expect("ToolSearch should succeed");
+        let keyword_output: serde_json::Value = serde_json::from_str(&keyword).expect("valid json");
+        let matches = keyword_output["matches"].as_array().expect("matches");
+        assert!(matches.iter().any(|value| value == "WebSearch"));
+
+        let selected = execute_tool("ToolSearch", &json!({"query": "select:Agent,Skill"}))
+            .expect("ToolSearch should succeed");
+        let selected_output: serde_json::Value =
+            serde_json::from_str(&selected).expect("valid json");
+        assert_eq!(selected_output["matches"][0], "Agent");
+        assert_eq!(selected_output["matches"][1], "Skill");
+
+        let aliased = execute_tool("ToolSearch", &json!({"query": "AgentTool"}))
+            .expect("ToolSearch should support tool aliases");
+        let aliased_output: serde_json::Value = serde_json::from_str(&aliased).expect("valid json");
+        assert_eq!(aliased_output["matches"][0], "Agent");
+        assert_eq!(aliased_output["normalized_query"], "agent");
+
+        let selected_with_alias =
+            execute_tool("ToolSearch", &json!({"query": "select:AgentTool,Skill"}))
+                .expect("ToolSearch alias select should succeed");
+        let selected_with_alias_output: serde_json::Value =
+            serde_json::from_str(&selected_with_alias).expect("valid json");
+        assert_eq!(selected_with_alias_output["matches"][0], "Agent");
+        assert_eq!(selected_with_alias_output["matches"][1], "Skill");
+    }
+
+    #[test]
+    fn agent_persists_handoff_metadata() {
+        let _guard = env_lock()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let dir = temp_path("agent-store");
+        std::env::set_var("CODINEER_AGENT_STORE", &dir);
+        let captured = Arc::new(Mutex::new(None::<AgentJob>));
+        let captured_for_spawn = Arc::clone(&captured);
+
+        let manifest = execute_agent_with_spawn(
+            AgentInput {
+                description: "Audit the branch".to_string(),
+                prompt: "Check tests and outstanding work.".to_string(),
+                subagent_type: Some("Explore".to_string()),
+                name: Some("ship-audit".to_string()),
+                model: None,
+            },
+            move |job| {
+                *captured_for_spawn
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(job);
+                Ok(())
