@@ -432,3 +432,57 @@ impl TerminalRenderer {
                     } else {
                         link.text
                     };
+                    let rendered = styled_underlined(
+                        &format!("[{label}]({})", link.destination),
+                        self.color_theme.link,
+                    );
+                    state.append_raw(output, &rendered);
+                }
+            }
+            Event::Start(Tag::Image { dest_url, .. }) => {
+                let rendered = styled(&format!("[image:{dest_url}]"), self.color_theme.link);
+                state.append_raw(output, &rendered);
+            }
+            Event::Start(Tag::Table(..)) => state.table = Some(TableState::default()),
+            Event::End(TagEnd::Table) => {
+                if let Some(table) = state.table.take() {
+                    output.push_str(&self.render_table(&table));
+                    output.push_str("\n\n");
+                }
+            }
+            Event::Start(Tag::TableHead) => {
+                if let Some(table) = state.table.as_mut() {
+                    table.in_head = true;
+                }
+            }
+            Event::End(TagEnd::TableHead) => {
+                if let Some(table) = state.table.as_mut() {
+                    table.finish_row();
+                    table.in_head = false;
+                }
+            }
+            Event::Start(Tag::TableRow) => {
+                if let Some(table) = state.table.as_mut() {
+                    table.current_row.clear();
+                    table.current_cell.clear();
+                }
+            }
+            Event::End(TagEnd::TableRow) => {
+                if let Some(table) = state.table.as_mut() {
+                    table.finish_row();
+                }
+            }
+            Event::Start(Tag::TableCell) => {
+                if let Some(table) = state.table.as_mut() {
+                    table.current_cell.clear();
+                }
+            }
+            Event::End(TagEnd::TableCell) => {
+                if let Some(table) = state.table.as_mut() {
+                    table.push_cell();
+                }
+            }
+            Event::Start(Tag::Paragraph | Tag::MetadataBlock(..) | _)
+            | Event::End(TagEnd::Image | TagEnd::MetadataBlock(..) | _) => {}
+        }
+    }
