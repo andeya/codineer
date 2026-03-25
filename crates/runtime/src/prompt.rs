@@ -717,3 +717,92 @@ mod tests {
         std::env::set_current_dir(previous).expect("restore cwd");
         if let Some(value) = original_home {
             std::env::set_var("HOME", value);
+        } else {
+            std::env::remove_var("HOME");
+        }
+        if let Some(value) = original_codineer_home {
+            std::env::set_var("CODINEER_CONFIG_HOME", value);
+        } else {
+            std::env::remove_var("CODINEER_CONFIG_HOME");
+        }
+
+        assert!(prompt.contains("Project rules"));
+        assert!(prompt.contains("permissionMode"));
+        fs::remove_dir_all(root).expect("cleanup temp dir");
+    }
+
+    #[test]
+    fn renders_codineer_style_sections_with_project_context() {
+        let root = temp_dir();
+        fs::create_dir_all(root.join(".codineer")).expect("codineer dir");
+        fs::write(root.join("CODINEER.md"), "Project rules").expect("write CODINEER.md");
+        fs::write(
+            root.join(".codineer").join("settings.json"),
+            r#"{"permissionMode":"acceptEdits"}"#,
+        )
+        .expect("write settings");
+
+        let project_context =
+            ProjectContext::discover(&root, "2026-03-31").expect("context should load");
+        let config = ConfigLoader::new(&root, root.join("missing-home"))
+            .load()
+            .expect("config should load");
+        let prompt = SystemPromptBuilder::new()
+            .with_output_style("Concise", "Prefer short answers.")
+            .with_os("linux", "6.8")
+            .with_project_context(project_context)
+            .with_runtime_config(config)
+            .render();
+
+        assert!(prompt.contains("# System"));
+        assert!(prompt.contains("# Project context"));
+        assert!(prompt.contains("# Codineer instructions"));
+        assert!(prompt.contains("Project rules"));
+        assert!(prompt.contains("permissionMode"));
+        assert!(prompt.contains(SYSTEM_PROMPT_DYNAMIC_BOUNDARY));
+
+        fs::remove_dir_all(root).expect("cleanup temp dir");
+    }
+
+    #[test]
+    fn truncates_instruction_content_to_budget() {
+        let content = "x".repeat(5_000);
+        let rendered = truncate_instruction_content(&content, 4_000);
+        assert!(rendered.contains("[truncated]"));
+        assert!(rendered.chars().count() <= 4_000 + "\n\n[truncated]".chars().count());
+    }
+
+    #[test]
+    fn discovers_dot_codineer_instructions_markdown() {
+        let root = temp_dir();
+        let nested = root.join("apps").join("api");
+        fs::create_dir_all(nested.join(".codineer")).expect("nested codineer dir");
+        fs::write(
+            nested.join(".codineer").join("instructions.md"),
+            "instruction markdown",
+        )
+        .expect("write instructions.md");
+
+        let context = ProjectContext::discover(&nested, "2026-03-31").expect("context should load");
+        assert!(context
+            .instruction_files
+            .iter()
+            .any(|file| file.path.ends_with(".codineer/instructions.md")));
+        assert!(
+            render_instruction_files(&context.instruction_files).contains("instruction markdown")
+        );
+
+        fs::remove_dir_all(root).expect("cleanup temp dir");
+    }
+
+    #[test]
+    fn renders_instruction_file_metadata() {
+        let rendered = render_instruction_files(&[ContextFile {
+            path: PathBuf::from("/tmp/project/CODINEER.md"),
+            content: "Project rules".to_string(),
+        }]);
+        assert!(rendered.contains("# Codineer instructions"));
+        assert!(rendered.contains("scope: /tmp/project"));
+        assert!(rendered.contains("Project rules"));
+    }
+}
