@@ -486,3 +486,57 @@ impl TerminalRenderer {
             | Event::End(TagEnd::Image | TagEnd::MetadataBlock(..) | _) => {}
         }
     }
+
+    fn start_heading(state: &mut RenderState, level: u8, output: &mut String) {
+        state.heading_level = Some(level);
+        if !output.is_empty() {
+            output.push('\n');
+        }
+    }
+
+    fn start_quote(&self, state: &mut RenderState, output: &mut String) {
+        state.quote += 1;
+        let _ = write!(output, "{}", styled("│ ", self.color_theme.quote));
+    }
+
+    fn start_item(state: &mut RenderState, output: &mut String) {
+        let depth = state.list_stack.len().saturating_sub(1);
+        output.push_str(&"  ".repeat(depth));
+
+        let marker = match state.list_stack.last_mut() {
+            Some(ListKind::Ordered { next_index }) => {
+                let value = *next_index;
+                *next_index += 1;
+                format!("{value}. ")
+            }
+            _ => "• ".to_string(),
+        };
+        output.push_str(&marker);
+    }
+
+    fn start_code_block(&self, code_language: &str, output: &mut String) {
+        let label = if code_language.is_empty() {
+            "code".to_string()
+        } else {
+            code_language.to_string()
+        };
+        let _ = writeln!(
+            output,
+            "{}",
+            styled_bold(&format!("╭─ {label}"), self.color_theme.code_block_border)
+        );
+    }
+
+    fn finish_code_block(&self, code_buffer: &str, code_language: &str, output: &mut String) {
+        output.push_str(&self.highlight_code(code_buffer, code_language));
+        let _ = write!(
+            output,
+            "{}",
+            styled_bold("╰─", self.color_theme.code_block_border)
+        );
+        output.push_str("\n\n");
+    }
+
+    fn push_text(
+        &self,
+        text: &str,
