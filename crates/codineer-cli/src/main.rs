@@ -2723,3 +2723,535 @@ impl InternalPromptProgressReporter {
     fn ultraplan(task: &str) -> Self {
         Self {
             shared: Arc::new(InternalPromptProgressShared {
+                state: Mutex::new(InternalPromptProgressState {
+                    command_label: "Ultraplan",
+                    task_label: task.to_string(),
+                    step: 0,
+                    phase: "planning started".to_string(),
+                    detail: Some(format!("task: {task}")),
+                    saw_final_text: false,
+                }),
+                output_lock: Mutex::new(()),
+                started_at: Instant::now(),
+            }),
+        }
+    }
+
+    fn emit(&self, event: InternalPromptProgressEvent, error: Option<&str>) {
+        let snapshot = self.snapshot();
+        let line = format_internal_prompt_progress_line(event, &snapshot, self.elapsed(), error);
+        self.write_line(&line);
+    }
+
+    fn mark_model_phase(&self) {
+        let snapshot = {
+            let mut state = self
+                .shared
+                .state
+                .lock()
+                .expect("internal prompt progress state poisoned");
+            state.step += 1;
+            state.phase = if state.step == 1 {
+                "analyzing request".to_string()
+            } else {
+                "reviewing findings".to_string()
+            };
+            state.detail = Some(format!("task: {}", state.task_label));
+            state.clone()
+        };
+        self.write_line(&format_internal_prompt_progress_line(
+            InternalPromptProgressEvent::Update,
+            &snapshot,
+            self.elapsed(),
+            None,
+        ));
+    }
+
+    fn mark_tool_phase(&self, name: &str, input: &str) {
+        let detail = describe_tool_progress(name, input);
+        let snapshot = {
+            let mut state = self
+                .shared
+                .state
+                .lock()
+                .expect("internal prompt progress state poisoned");
+            state.step += 1;
+            state.phase = format!("running {name}");
+            state.detail = Some(detail);
+            state.clone()
+        };
+        self.write_line(&format_internal_prompt_progress_line(
+            InternalPromptProgressEvent::Update,
+            &snapshot,
+            self.elapsed(),
+            None,
+        ));
+    }
+
+    fn mark_text_phase(&self, text: &str) {
+        let trimmed = text.trim();
+        if trimmed.is_empty() {
+            return;
+        }
+        let detail = truncate_for_summary(first_visible_line(trimmed), 120);
+        let snapshot = {
+            let mut state = self
+                .shared
+                .state
+                .lock()
+                .expect("internal prompt progress state poisoned");
+            if state.saw_final_text {
+                return;
+            }
+            state.saw_final_text = true;
+            state.step += 1;
+            state.phase = "drafting final plan".to_string();
+            state.detail = (!detail.is_empty()).then_some(detail);
+            state.clone()
+        };
+        self.write_line(&format_internal_prompt_progress_line(
+            InternalPromptProgressEvent::Update,
+            &snapshot,
+            self.elapsed(),
+            None,
+        ));
+    }
+
+    fn emit_heartbeat(&self) {
+        let snapshot = self.snapshot();
+        self.write_line(&format_internal_prompt_progress_line(
+            InternalPromptProgressEvent::Heartbeat,
+            &snapshot,
+            self.elapsed(),
+            None,
+        ));
+    }
+
+    fn snapshot(&self) -> InternalPromptProgressState {
+        self.shared
+            .state
+            .lock()
+            .expect("internal prompt progress state poisoned")
+            .clone()
+    }
+
+    fn elapsed(&self) -> Duration {
+        self.shared.started_at.elapsed()
+    }
+
+    fn write_line(&self, line: &str) {
+        let _guard = self
+            .shared
+            .output_lock
+            .lock()
+            .expect("internal prompt progress output lock poisoned");
+        let mut stdout = io::stdout();
+        let _ = writeln!(stdout, "{line}");
+        let _ = stdout.flush();
+    }
+}
+
+impl InternalPromptProgressRun {
+    fn start_ultraplan(task: &str) -> Self {
+        let reporter = InternalPromptProgressReporter::ultraplan(task);
+        reporter.emit(InternalPromptProgressEvent::Started, None);
+
+        let (heartbeat_stop, heartbeat_rx) = mpsc::channel();
+        let heartbeat_reporter = reporter.clone();
+        let heartbeat_handle = thread::spawn(move || loop {
+            match heartbeat_rx.recv_timeout(INTERNAL_PROGRESS_HEARTBEAT_INTERVAL) {
+                Ok(()) | Err(RecvTimeoutError::Disconnected) => break,
+                Err(RecvTimeoutError::Timeout) => heartbeat_reporter.emit_heartbeat(),
+            }
+        });
+
+        Self {
+            reporter,
+            heartbeat_stop: Some(heartbeat_stop),
+            heartbeat_handle: Some(heartbeat_handle),
+        }
+    }
+
+    fn reporter(&self) -> InternalPromptProgressReporter {
+        self.reporter.clone()
+    }
+
+    fn finish_success(&mut self) {
+        self.stop_heartbeat();
+        self.reporter
+            .emit(InternalPromptProgressEvent::Complete, None);
+    }
+
+    fn finish_failure(&mut self, error: &str) {
+        self.stop_heartbeat();
+        self.reporter
+            .emit(InternalPromptProgressEvent::Failed, Some(error));
+    }
+
+    fn stop_heartbeat(&mut self) {
+        if let Some(sender) = self.heartbeat_stop.take() {
+            let _ = sender.send(());
+        }
+        if let Some(handle) = self.heartbeat_handle.take() {
+            let _ = handle.join();
+        }
+    }
+}
+
+impl Drop for InternalPromptProgressRun {
+    fn drop(&mut self) {
+        self.stop_heartbeat();
+    }
+}
+
+fn format_internal_prompt_progress_line(
+    event: InternalPromptProgressEvent,
+    snapshot: &InternalPromptProgressState,
+    elapsed: Duration,
+    error: Option<&str>,
+) -> String {
+    let elapsed_seconds = elapsed.as_secs();
+    let step_label = if snapshot.step == 0 {
+        "current step pending".to_string()
+    } else {
+        format!("current step {}", snapshot.step)
+    };
+    let mut status_bits = vec![step_label, format!("phase {}", snapshot.phase)];
+    if let Some(detail) = snapshot
+        .detail
+        .as_deref()
+        .filter(|detail| !detail.is_empty())
+    {
+        status_bits.push(detail.to_string());
+    }
+    let status = status_bits.join(" · ");
+    match event {
+        InternalPromptProgressEvent::Started => {
+            format!(
+                "🧭 {} status · planning started · {status}",
+                snapshot.command_label
+            )
+        }
+        InternalPromptProgressEvent::Update => {
+            format!("… {} status · {status}", snapshot.command_label)
+        }
+        InternalPromptProgressEvent::Heartbeat => format!(
+            "… {} heartbeat · {elapsed_seconds}s elapsed · {status}",
+            snapshot.command_label
+        ),
+        InternalPromptProgressEvent::Complete => format!(
+            "✔ {} status · completed · {elapsed_seconds}s elapsed · {} steps total",
+            snapshot.command_label, snapshot.step
+        ),
+        InternalPromptProgressEvent::Failed => format!(
+            "✘ {} status · failed · {elapsed_seconds}s elapsed · {}",
+            snapshot.command_label,
+            error.unwrap_or("unknown error")
+        ),
+    }
+}
+
+fn describe_tool_progress(name: &str, input: &str) -> String {
+    let parsed: serde_json::Value =
+        serde_json::from_str(input).unwrap_or(serde_json::Value::String(input.to_string()));
+    match name {
+        "bash" | "Bash" => {
+            let command = parsed
+                .get("command")
+                .and_then(|value| value.as_str())
+                .unwrap_or_default();
+            if command.is_empty() {
+                "running shell command".to_string()
+            } else {
+                format!("command {}", truncate_for_summary(command.trim(), 100))
+            }
+        }
+        "read_file" | "Read" => format!("reading {}", extract_tool_path(&parsed)),
+        "write_file" | "Write" => format!("writing {}", extract_tool_path(&parsed)),
+        "edit_file" | "Edit" => format!("editing {}", extract_tool_path(&parsed)),
+        "glob_search" | "Glob" => {
+            let pattern = parsed
+                .get("pattern")
+                .and_then(|value| value.as_str())
+                .unwrap_or("?");
+            let scope = parsed
+                .get("path")
+                .and_then(|value| value.as_str())
+                .unwrap_or(".");
+            format!("glob `{pattern}` in {scope}")
+        }
+        "grep_search" | "Grep" => {
+            let pattern = parsed
+                .get("pattern")
+                .and_then(|value| value.as_str())
+                .unwrap_or("?");
+            let scope = parsed
+                .get("path")
+                .and_then(|value| value.as_str())
+                .unwrap_or(".");
+            format!("grep `{pattern}` in {scope}")
+        }
+        "web_search" | "WebSearch" => parsed
+            .get("query")
+            .and_then(|value| value.as_str())
+            .map_or_else(
+                || "running web search".to_string(),
+                |query| format!("query {}", truncate_for_summary(query, 100)),
+            ),
+        _ => {
+            let summary = summarize_tool_payload(input);
+            if summary.is_empty() {
+                format!("running {name}")
+            } else {
+                format!("{name}: {summary}")
+            }
+        }
+    }
+}
+
+struct RuntimeParams {
+    session: Session,
+    model: String,
+    system_prompt: Vec<String>,
+    enable_tools: bool,
+    emit_output: bool,
+    allowed_tools: Option<AllowedToolSet>,
+    permission_mode: PermissionMode,
+    progress_reporter: Option<InternalPromptProgressReporter>,
+    mcp_manager: SharedMcpManager,
+}
+
+fn build_runtime(
+    params: RuntimeParams,
+) -> Result<ConversationRuntime<DefaultRuntimeClient, CliToolExecutor>, Box<dyn std::error::Error>>
+{
+    let RuntimeParams {
+        session,
+        model,
+        system_prompt,
+        enable_tools,
+        emit_output,
+        allowed_tools,
+        permission_mode,
+        progress_reporter,
+        mcp_manager,
+    } = params;
+    let (feature_config, tool_registry) = build_runtime_plugin_state()?;
+    Ok(ConversationRuntime::new_with_features(
+        session,
+        DefaultRuntimeClient::new(
+            model,
+            enable_tools,
+            emit_output,
+            allowed_tools.clone(),
+            tool_registry.clone(),
+            progress_reporter,
+            Arc::clone(&mcp_manager),
+        )?,
+        CliToolExecutor::new(
+            allowed_tools.clone(),
+            emit_output,
+            tool_registry.clone(),
+            Arc::clone(&mcp_manager),
+        ),
+        permission_policy(permission_mode, &tool_registry),
+        system_prompt,
+        &feature_config,
+    ))
+}
+
+struct CliPermissionPrompter {
+    current_mode: PermissionMode,
+}
+
+impl CliPermissionPrompter {
+    fn new(current_mode: PermissionMode) -> Self {
+        Self { current_mode }
+    }
+}
+
+impl runtime::PermissionPrompter for CliPermissionPrompter {
+    fn decide(
+        &mut self,
+        request: &runtime::PermissionRequest,
+    ) -> runtime::PermissionPromptDecision {
+        println!();
+        println!("Permission approval required");
+        println!("  Tool             {}", request.tool_name);
+        println!("  Current mode     {}", self.current_mode.as_str());
+        println!("  Required mode    {}", request.required_mode.as_str());
+        println!("  Input            {}", request.input);
+        print!("Approve this tool call? [y/N]: ");
+        let _ = io::stdout().flush();
+
+        let mut response = String::new();
+        match io::stdin().read_line(&mut response) {
+            Ok(_) => {
+                let normalized = response.trim().to_ascii_lowercase();
+                if matches!(normalized.as_str(), "y" | "yes") {
+                    runtime::PermissionPromptDecision::Allow
+                } else {
+                    runtime::PermissionPromptDecision::Deny {
+                        reason: format!(
+                            "tool '{}' denied by user approval prompt",
+                            request.tool_name
+                        ),
+                    }
+                }
+            }
+            Err(error) => runtime::PermissionPromptDecision::Deny {
+                reason: format!("permission approval failed: {error}"),
+            },
+        }
+    }
+}
+
+struct DefaultRuntimeClient {
+    runtime: tokio::runtime::Runtime,
+    client: ProviderClient,
+    model: String,
+    enable_tools: bool,
+    emit_output: bool,
+    allowed_tools: Option<AllowedToolSet>,
+    tool_registry: GlobalToolRegistry,
+    progress_reporter: Option<InternalPromptProgressReporter>,
+    mcp_manager: SharedMcpManager,
+}
+
+impl DefaultRuntimeClient {
+    fn new(
+        model: String,
+        enable_tools: bool,
+        emit_output: bool,
+        allowed_tools: Option<AllowedToolSet>,
+        tool_registry: GlobalToolRegistry,
+        progress_reporter: Option<InternalPromptProgressReporter>,
+        mcp_manager: SharedMcpManager,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        let model = if model == "auto" {
+            api::auto_detect_default_model()
+                .ok_or_else(no_credentials_error)?
+                .to_string()
+        } else {
+            model
+        };
+        let resolved = api::resolve_model_alias(&model);
+        let provider_kind = api::detect_provider_kind(&resolved);
+        let auth = if provider_kind == ProviderKind::CodineerApi {
+            Some(resolve_cli_auth_source().map_err(|err| provider_hint(&model, &err))?)
+        } else {
+            None
+        };
+        let client = ProviderClient::from_model_with_default_auth(&resolved, auth)
+            .map_err(|err| provider_hint(&model, &err))?;
+        Ok(Self {
+            runtime: tokio::runtime::Runtime::new()?,
+            client,
+            model,
+            enable_tools,
+            emit_output,
+            allowed_tools,
+            tool_registry,
+            progress_reporter,
+            mcp_manager,
+        })
+    }
+}
+
+fn no_credentials_error() -> String {
+    "no API credentials found\n\n\
+     Configure one of the supported providers:\n\
+     \x20 Anthropic (Claude)  export ANTHROPIC_API_KEY=sk-…  or  codineer login\n\
+     \x20 OpenAI              export OPENAI_API_KEY=sk-…\n\
+     \x20 xAI (Grok)          export XAI_API_KEY=xai-…\n\n\
+     Then run codineer again, or specify a model:\n\
+     \x20 codineer --model <name>"
+        .to_string()
+}
+
+fn provider_hint(model: &str, err: &dyn std::fmt::Display) -> String {
+    format!(
+        "{err}\n\n\
+         Current model: {model}\n\n\
+         Supported providers:\n\
+         \x20 Anthropic (Claude)  ANTHROPIC_API_KEY or `codineer login`\n\
+         \x20 OpenAI               OPENAI_API_KEY\n\
+         \x20 xAI (Grok)          XAI_API_KEY\n\n\
+         Switch models with: codineer --model <name>"
+    )
+}
+
+fn resolve_cli_auth_source() -> Result<AuthSource, Box<dyn std::error::Error>> {
+    Ok(resolve_startup_auth_source(|| {
+        let cwd = env::current_dir().map_err(api::ApiError::from)?;
+        let config = ConfigLoader::default_for(&cwd).load().map_err(|error| {
+            api::ApiError::Auth(format!("failed to load runtime OAuth config: {error}"))
+        })?;
+        Ok(config.oauth().cloned())
+    })?)
+}
+
+fn write_flush(out: &mut dyn Write, buf: &str) -> Result<(), RuntimeError> {
+    write!(out, "{buf}")
+        .and_then(|()| out.flush())
+        .map_err(|error| RuntimeError::new(error.to_string()))
+}
+
+struct StreamState {
+    renderer: TerminalRenderer,
+    markdown_stream: MarkdownStreamState,
+    events: Vec<AssistantEvent>,
+    pending_tool: Option<(String, String, String)>,
+    saw_stop: bool,
+}
+
+impl StreamState {
+    fn new() -> Self {
+        Self {
+            renderer: TerminalRenderer::new(),
+            markdown_stream: MarkdownStreamState::default(),
+            events: Vec::new(),
+            pending_tool: None,
+            saw_stop: false,
+        }
+    }
+
+    fn handle_event(
+        &mut self,
+        event: ApiStreamEvent,
+        progress: Option<&InternalPromptProgressReporter>,
+        out: &mut dyn Write,
+    ) -> Result<(), RuntimeError> {
+        match event {
+            ApiStreamEvent::MessageStart(start) => {
+                for block in start.message.content {
+                    push_output_block(
+                        block,
+                        out,
+                        &mut self.events,
+                        &mut self.pending_tool,
+                        true,
+                    )?;
+                }
+            }
+            ApiStreamEvent::ContentBlockStart(start) => {
+                push_output_block(
+                    start.content_block,
+                    out,
+                    &mut self.events,
+                    &mut self.pending_tool,
+                    true,
+                )?;
+            }
+            ApiStreamEvent::ContentBlockDelta(delta) => match delta.delta {
+                ContentBlockDelta::TextDelta { text } => {
+                    if !text.is_empty() {
+                        if let Some(reporter) = progress {
+                            reporter.mark_text_phase(&text);
+                        }
+                        if let Some(rendered) = self.markdown_stream.push(&self.renderer, &text) {
+                            write_flush(out, &rendered)?;
+                        }
+                        self.events.push(AssistantEvent::TextDelta(text));
+                    }
+                }
