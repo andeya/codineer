@@ -13,3 +13,10 @@ class Codineer < Formula
 
   on_linux do
     if Hardware::CPU.arm?
+      url "https://github.com/andeya/codineer/releases/latest/download/codineer-#{version}-aarch64-unknown-linux-gnu.tar.gz"
+    else
+      url "https://github.com/andeya/codineer/releases/latest/download/codineer-#{version}-x86_64-unknown-linux-gnu.tar.gz"
+    end
+  end
+
+  def install
