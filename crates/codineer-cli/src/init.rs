@@ -316,3 +316,56 @@ fn verification_lines(cwd: &Path, detection: &RepoDetection) -> Vec<String> {
         lines.push("- Run Rust verification from `rust/`: `cargo fmt`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`".to_string());
     } else if detection.has(RepoFeature::RustRoot) {
         lines.push("- Run Rust verification from the repo root: `cargo fmt`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`".to_string());
+    }
+    if detection.has(RepoFeature::Python) {
+        if cwd.join("pyproject.toml").is_file() {
+            lines.push("- Run the Python project checks declared in `pyproject.toml` (for example: `pytest`, `ruff check`, and `mypy` when configured).".to_string());
+        } else {
+            lines.push(
+                "- Run the repo's Python test/lint commands before shipping changes.".to_string(),
+            );
+        }
+    }
+    if detection.has(RepoFeature::PackageJson) {
+        lines.push("- Run the JavaScript/TypeScript checks from `package.json` before shipping changes (`npm test`, `npm run lint`, `npm run build`, or the repo equivalent).".to_string());
+    }
+    if detection.has(RepoFeature::TestsDir) && detection.has(RepoFeature::SrcDir) {
+        lines.push("- `src/` and `tests/` are both present; update both surfaces together when behavior changes.".to_string());
+    }
+    lines
+}
+
+fn repository_shape_lines(detection: &RepoDetection) -> Vec<String> {
+    let mut lines = Vec::new();
+    if detection.has(RepoFeature::RustDir) {
+        lines.push(
+            "- `rust/` contains the Rust workspace and active CLI/runtime implementation."
+                .to_string(),
+        );
+    }
+    if detection.has(RepoFeature::SrcDir) {
+        lines.push("- `src/` contains source files that should stay consistent with generated guidance and tests.".to_string());
+    }
+    if detection.has(RepoFeature::TestsDir) {
+        lines.push("- `tests/` contains validation surfaces that should be reviewed alongside code changes.".to_string());
+    }
+    lines
+}
+
+fn framework_notes(detection: &RepoDetection) -> Vec<String> {
+    let mut lines = Vec::new();
+    if detection.has(RepoFeature::NextJs) {
+        lines.push("- Next.js detected: preserve routing/data-fetching conventions and verify production builds after changing app structure.".to_string());
+    }
+    if detection.has(RepoFeature::React) && !detection.has(RepoFeature::NextJs) {
+        lines.push("- React detected: keep component behavior covered with focused tests and avoid unnecessary prop/API churn.".to_string());
+    }
+    if detection.has(RepoFeature::Vite) {
+        lines.push("- Vite detected: validate the production bundle after changing build-sensitive configuration or imports.".to_string());
+    }
+    if detection.has(RepoFeature::NestJs) {
+        lines.push("- NestJS detected: keep module/provider boundaries explicit and verify controller/service wiring after refactors.".to_string());
+    }
+    lines
+}
+
