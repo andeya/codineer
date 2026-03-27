@@ -540,3 +540,58 @@ impl TerminalRenderer {
     fn push_text(
         &self,
         text: &str,
+        state: &mut RenderState,
+        output: &mut String,
+        code_buffer: &mut String,
+        in_code_block: bool,
+    ) {
+        if in_code_block {
+            code_buffer.push_str(text);
+        } else {
+            state.append_styled(output, text, &self.color_theme);
+        }
+    }
+
+    fn render_table(&self, table: &TableState) -> String {
+        let mut rows = Vec::new();
+        if !table.headers.is_empty() {
+            rows.push(table.headers.clone());
+        }
+        rows.extend(table.rows.iter().cloned());
+
+        if rows.is_empty() {
+            return String::new();
+        }
+
+        let column_count = rows.iter().map(Vec::len).max().unwrap_or(0);
+        let widths = (0..column_count)
+            .map(|column| {
+                rows.iter()
+                    .filter_map(|row| row.get(column))
+                    .map(|cell| visible_width(cell))
+                    .max()
+                    .unwrap_or(0)
+            })
+            .collect::<Vec<_>>();
+
+        let border = styled("│", self.color_theme.table_border);
+        let separator = widths
+            .iter()
+            .map(|width| "─".repeat(*width + 2))
+            .collect::<Vec<_>>()
+            .join(&styled("┼", self.color_theme.table_border));
+        let separator = format!("{border}{separator}{border}");
+
+        let mut output = String::new();
+        if !table.headers.is_empty() {
+            output.push_str(&self.render_table_row(&table.headers, &widths, true));
+            output.push('\n');
+            output.push_str(&separator);
+            if !table.rows.is_empty() {
+                output.push('\n');
+            }
+        }
+
+        for (index, row) in table.rows.iter().enumerate() {
+            output.push_str(&self.render_table_row(row, &widths, false));
+            if index + 1 < table.rows.len() {
