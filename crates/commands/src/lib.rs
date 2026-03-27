@@ -2139,3 +2139,145 @@ mod tests {
             },
         ]);
 
+        assert!(rendered.contains("demo"));
+        assert!(rendered.contains("v1.2.3"));
+        assert!(rendered.contains("enabled"));
+        assert!(rendered.contains("sample"));
+        assert!(rendered.contains("v0.9.0"));
+        assert!(rendered.contains("disabled"));
+    }
+
+    #[test]
+    fn lists_agents_from_project_and_user_roots() {
+        let workspace = temp_dir("agents-workspace");
+        let project_agents = workspace.join(".codineer").join("agents");
+        let user_home = temp_dir("agents-home");
+        let user_agents = user_home.join(".codineer").join("agents");
+
+        write_agent(
+            &project_agents,
+            "planner",
+            "Project planner",
+            "gpt-5.4",
+            "medium",
+        );
+        write_agent(
+            &user_agents,
+            "planner",
+            "User planner",
+            "gpt-5.4-mini",
+            "high",
+        );
+        write_agent(
+            &user_agents,
+            "verifier",
+            "Verification agent",
+            "gpt-5.4-mini",
+            "high",
+        );
+
+        let roots = vec![
+            (DefinitionSource::Project, project_agents),
+            (DefinitionSource::User, user_agents),
+        ];
+        let report =
+            render_agents_report(&load_agents_from_roots(&roots).expect("agent roots should load"));
+
+        assert!(report.contains("Agents"));
+        assert!(report.contains("2 active agents"));
+        assert!(report.contains("Project (.codineer):"));
+        assert!(report.contains("planner · Project planner · gpt-5.4 · medium"));
+        assert!(report.contains("User (~/.codineer):"));
+        assert!(report.contains("(shadowed by Project (.codineer)) planner · User planner"));
+        assert!(report.contains("verifier · Verification agent · gpt-5.4-mini · high"));
+
+        let _ = fs::remove_dir_all(workspace);
+        let _ = fs::remove_dir_all(user_home);
+    }
+
+    #[test]
+    fn lists_skills_from_project_and_user_roots() {
+        let workspace = temp_dir("skills-workspace");
+        let project_skills = workspace.join(".codineer").join("skills");
+        let user_home = temp_dir("skills-home");
+        let user_skills = user_home.join(".codineer").join("skills");
+
+        write_skill(&project_skills, "plan", "Project planning guidance");
+        write_skill(&user_skills, "plan", "User planning guidance");
+        write_skill(&user_skills, "help", "Help guidance");
+
+        let roots = vec![
+            SkillRoot {
+                source: DefinitionSource::Project,
+                path: project_skills,
+            },
+            SkillRoot {
+                source: DefinitionSource::User,
+                path: user_skills,
+            },
+        ];
+        let report =
+            render_skills_report(&load_skills_from_roots(&roots).expect("skill roots should load"));
+
+        assert!(report.contains("Skills"));
+        assert!(report.contains("2 available skills"));
+        assert!(report.contains("Project (.codineer):"));
+        assert!(report.contains("plan · Project planning guidance"));
+        assert!(report.contains("User (~/.codineer):"));
+        assert!(report.contains("(shadowed by Project (.codineer)) plan · User planning guidance"));
+        assert!(report.contains("help · Help guidance"));
+
+        let _ = fs::remove_dir_all(workspace);
+        let _ = fs::remove_dir_all(user_home);
+    }
+
+    #[test]
+    fn agents_and_skills_usage_support_help_and_unexpected_args() {
+        let cwd = temp_dir("slash-usage");
+
+        let agents_help =
+            super::handle_agents_slash_command(Some("help"), &cwd).expect("agents help");
+        assert!(agents_help.contains("Usage            /agents"));
+        assert!(agents_help.contains("Direct CLI       codineer agents"));
+
+        let agents_unexpected =
+            super::handle_agents_slash_command(Some("show planner"), &cwd).expect("agents usage");
+        assert!(agents_unexpected.contains("Unexpected       show planner"));
+
+        let skills_help =
+            super::handle_skills_slash_command(Some("--help"), &cwd).expect("skills help");
+        assert!(skills_help.contains("Usage            /skills"));
+        assert!(skills_help.contains("~/.codineer/skills"));
+
+        let skills_unexpected =
+            super::handle_skills_slash_command(Some("show help"), &cwd).expect("skills usage");
+        assert!(skills_unexpected.contains("Unexpected       show help"));
+
+        let _ = fs::remove_dir_all(cwd);
+    }
+
+    #[test]
+    fn parses_quoted_skill_frontmatter_values() {
+        let contents = "---\nname: \"hud\"\ndescription: 'Quoted description'\n---\n";
+        let (name, description) = super::parse_skill_frontmatter(contents);
+        assert_eq!(name.as_deref(), Some("hud"));
+        assert_eq!(description.as_deref(), Some("Quoted description"));
+    }
+
+    #[test]
+    fn installs_plugin_from_path_and_lists_it() {
+        let config_home = temp_dir("home");
+        let source_root = temp_dir("source");
+        write_external_plugin(&source_root, "demo", "1.0.0");
+
+        let mut manager = PluginManager::new(PluginManagerConfig::new(&config_home));
+        let install = handle_plugins_slash_command(
+            Some("install"),
+            Some(source_root.to_str().expect("utf8 path")),
+            &mut manager,
+        )
+        .expect("install command should succeed");
+        assert!(install.reload_runtime);
+        assert!(install.message.contains("installed demo@external"));
+        assert!(install.message.contains("Name             demo"));
+        assert!(install.message.contains("Version          1.0.0"));
