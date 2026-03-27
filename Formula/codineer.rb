@@ -20,3 +20,10 @@ class Codineer < Formula
   end
 
   def install
+    bin.install "codineer"
+  end
+
+  test do
+    assert_match "Codineer CLI", shell_output("#{bin}/codineer --version")
+  end
+end
