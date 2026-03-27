@@ -3587,3 +3587,70 @@ fn format_tool_result(name: &str, output: &str, is_error: bool) -> String {
         "glob_search" | "Glob" => format_glob_result(icon, &parsed),
         "grep_search" | "Grep" => format_grep_result(icon, &parsed),
         _ => format_generic_tool_result(icon, name, &parsed),
+    }
+}
+
+const DISPLAY_TRUNCATION_NOTICE: &str =
+    "\x1b[2m… output truncated for display; full result preserved in session.\x1b[0m";
+const READ_DISPLAY_MAX_LINES: usize = 80;
+const READ_DISPLAY_MAX_CHARS: usize = 6_000;
+const TOOL_OUTPUT_DISPLAY_MAX_LINES: usize = 60;
+const TOOL_OUTPUT_DISPLAY_MAX_CHARS: usize = 4_000;
+
+fn extract_tool_path(parsed: &serde_json::Value) -> String {
+    parsed
+        .get("file_path")
+        .or_else(|| parsed.get("filePath"))
+        .or_else(|| parsed.get("path"))
+        .and_then(|value| value.as_str())
+        .unwrap_or("?")
+        .to_string()
+}
+
+fn format_search_start(label: &str, parsed: &serde_json::Value) -> String {
+    let pattern = parsed
+        .get("pattern")
+        .and_then(|value| value.as_str())
+        .unwrap_or("?");
+    let scope = parsed
+        .get("path")
+        .and_then(|value| value.as_str())
+        .unwrap_or(".");
+    format!("{label} {pattern}\n\x1b[2min {scope}\x1b[0m")
+}
+
+fn format_patch_preview(old_value: &str, new_value: &str) -> Option<String> {
+    if old_value.is_empty() && new_value.is_empty() {
+        return None;
+    }
+    Some(format!(
+        "\x1b[38;5;203m- {}\x1b[0m\n\x1b[38;5;70m+ {}\x1b[0m",
+        truncate_for_summary(first_visible_line(old_value), 72),
+        truncate_for_summary(first_visible_line(new_value), 72)
+    ))
+}
+
+fn format_bash_call(parsed: &serde_json::Value) -> String {
+    let command = parsed
+        .get("command")
+        .and_then(|value| value.as_str())
+        .unwrap_or_default();
+    if command.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "\x1b[48;5;236;38;5;255m $ {} \x1b[0m",
+            truncate_for_summary(command, 160)
+        )
+    }
+}
+
+fn first_visible_line(text: &str) -> &str {
+    text.lines()
+        .find(|line| !line.trim().is_empty())
+        .unwrap_or(text)
+}
+
+fn format_bash_result(icon: &str, parsed: &serde_json::Value) -> String {
+    let mut lines = vec![format!("{icon} \x1b[38;5;245mbash\x1b[0m")];
+    if let Some(task_id) = parsed
