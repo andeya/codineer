@@ -3322,3 +3322,268 @@ impl DefaultRuntimeClient {
                 let mut specs = filter_tool_specs(&self.tool_registry, self.allowed_tools.as_ref());
                 specs.extend(discover_mcp_tools(&self.runtime, &self.mcp_manager));
                 specs
+            }),
+            tool_choice: self.enable_tools.then_some(ToolChoice::Auto),
+            stream: true,
+        }
+    }
+}
+
+impl ApiClient for DefaultRuntimeClient {
+    fn stream(&mut self, request: ApiRequest) -> Result<Vec<AssistantEvent>, RuntimeError> {
+        if let Some(progress_reporter) = &self.progress_reporter {
+            progress_reporter.mark_model_phase();
+        }
+        let message_request = self.build_message_request(&request);
+
+        self.runtime.block_on(async {
+            let mut stream = self
+                .client
+                .stream_message(&message_request)
+                .await
+                .map_err(|error| RuntimeError::new(error.to_string()))?;
+            let mut stdout = io::stdout();
+            let mut sink = io::sink();
+            let out: &mut dyn Write = if self.emit_output {
+                &mut stdout
+            } else {
+                &mut sink
+            };
+            let mut state = StreamState::new();
+            while let Some(event) = stream
+                .next_event()
+                .await
+                .map_err(|error| RuntimeError::new(error.to_string()))?
+            {
+                state.handle_event(event, self.progress_reporter.as_ref(), out)?;
+            }
+
+            let events = state.ensure_stop_event();
+            if events
+                .iter()
+                .any(|event| matches!(event, AssistantEvent::MessageStop))
+            {
+                return Ok(events);
+            }
+
+            let response = self
+                .client
+                .send_message(&MessageRequest {
+                    stream: false,
+                    ..message_request.clone()
+                })
+                .await
+                .map_err(|error| RuntimeError::new(error.to_string()))?;
+            response_to_events(response, out)
+        })
+    }
+}
+
+fn final_assistant_text(summary: &runtime::TurnSummary) -> String {
+    summary
+        .assistant_messages
+        .last()
+        .map(|message| {
+            message
+                .blocks
+                .iter()
+                .filter_map(|block| match block {
+                    ContentBlock::Text { text } => Some(text.as_str()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+                .join("")
+        })
+        .unwrap_or_default()
+}
+
+fn collect_tool_uses(summary: &runtime::TurnSummary) -> Vec<serde_json::Value> {
+    summary
+        .assistant_messages
+        .iter()
+        .flat_map(|message| message.blocks.iter())
+        .filter_map(|block| match block {
+            ContentBlock::ToolUse { id, name, input } => Some(json!({
+                "id": id,
+                "name": name,
+                "input": input,
+            })),
+            _ => None,
+        })
+        .collect()
+}
+
+fn collect_tool_results(summary: &runtime::TurnSummary) -> Vec<serde_json::Value> {
+    summary
+        .tool_results
+        .iter()
+        .flat_map(|message| message.blocks.iter())
+        .filter_map(|block| match block {
+            ContentBlock::ToolResult {
+                tool_use_id,
+                tool_name,
+                output,
+                is_error,
+            } => Some(json!({
+                "tool_use_id": tool_use_id,
+                "tool_name": tool_name,
+                "output": output,
+                "is_error": is_error,
+            })),
+            _ => None,
+        })
+        .collect()
+}
+
+fn slash_command_completion_candidates() -> Vec<String> {
+    let mut candidates = slash_command_specs()
+        .iter()
+        .flat_map(|spec| {
+            std::iter::once(spec.name)
+                .chain(spec.aliases.iter().copied())
+                .map(|name| format!("/{name}"))
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+    candidates.extend([
+        String::from("/vim"),
+        String::from("/exit"),
+        String::from("/quit"),
+    ]);
+    candidates.sort();
+    candidates.dedup();
+    candidates
+}
+
+fn suggest_repl_commands(name: &str) -> Vec<String> {
+    let normalized = name.trim().trim_start_matches('/').to_ascii_lowercase();
+    if normalized.is_empty() {
+        return Vec::new();
+    }
+
+    let mut ranked = slash_command_completion_candidates()
+        .into_iter()
+        .filter_map(|candidate| {
+            let raw = candidate.trim_start_matches('/').to_ascii_lowercase();
+            let distance = edit_distance(&normalized, &raw);
+            let prefix_match = raw.starts_with(&normalized) || normalized.starts_with(&raw);
+            let near_match = distance <= 2;
+            (prefix_match || near_match).then_some((distance, candidate))
+        })
+        .collect::<Vec<_>>();
+    ranked.sort();
+    ranked.dedup_by(|left, right| left.1 == right.1);
+    ranked
+        .into_iter()
+        .map(|(_, candidate)| candidate)
+        .take(3)
+        .collect()
+}
+
+fn edit_distance(left: &str, right: &str) -> usize {
+    if left == right {
+        return 0;
+    }
+    if left.is_empty() {
+        return right.chars().count();
+    }
+    if right.is_empty() {
+        return left.chars().count();
+    }
+
+    let right_chars = right.chars().collect::<Vec<_>>();
+    let mut previous = (0..=right_chars.len()).collect::<Vec<_>>();
+    let mut current = vec![0; right_chars.len() + 1];
+
+    for (left_index, left_char) in left.chars().enumerate() {
+        current[0] = left_index + 1;
+        for (right_index, right_char) in right_chars.iter().enumerate() {
+            let substitution_cost = usize::from(left_char != *right_char);
+            current[right_index + 1] = (previous[right_index + 1] + 1)
+                .min(current[right_index] + 1)
+                .min(previous[right_index] + substitution_cost);
+        }
+        std::mem::swap(&mut previous, &mut current);
+    }
+
+    previous[right_chars.len()]
+}
+
+fn format_tool_call_start(name: &str, input: &str) -> String {
+    let parsed: serde_json::Value =
+        serde_json::from_str(input).unwrap_or(serde_json::Value::String(input.to_string()));
+
+    let detail = match name {
+        "bash" | "Bash" => format_bash_call(&parsed),
+        "read_file" | "Read" => {
+            let path = extract_tool_path(&parsed);
+            format!("\x1b[2m📄 Reading {path}…\x1b[0m")
+        }
+        "write_file" | "Write" => {
+            let path = extract_tool_path(&parsed);
+            let lines = parsed
+                .get("content")
+                .and_then(|value| value.as_str())
+                .map_or(0, |content| content.lines().count());
+            format!("\x1b[1;32m✏️ Writing {path}\x1b[0m \x1b[2m({lines} lines)\x1b[0m")
+        }
+        "edit_file" | "Edit" => {
+            let path = extract_tool_path(&parsed);
+            let old_value = parsed
+                .get("old_string")
+                .or_else(|| parsed.get("oldString"))
+                .and_then(|value| value.as_str())
+                .unwrap_or_default();
+            let new_value = parsed
+                .get("new_string")
+                .or_else(|| parsed.get("newString"))
+                .and_then(|value| value.as_str())
+                .unwrap_or_default();
+            format!(
+                "\x1b[1;33m📝 Editing {path}\x1b[0m{}",
+                format_patch_preview(old_value, new_value)
+                    .map(|preview| format!("\n{preview}"))
+                    .unwrap_or_default()
+            )
+        }
+        "glob_search" | "Glob" => format_search_start("🔎 Glob", &parsed),
+        "grep_search" | "Grep" => format_search_start("🔎 Grep", &parsed),
+        "web_search" | "WebSearch" => parsed
+            .get("query")
+            .and_then(|value| value.as_str())
+            .unwrap_or("?")
+            .to_string(),
+        _ => summarize_tool_payload(input),
+    };
+
+    let border = "─".repeat(name.len() + 8);
+    format!(
+        "\x1b[38;5;245m╭─ \x1b[1;36m{name}\x1b[0;38;5;245m ─╮\x1b[0m\n\x1b[38;5;245m│\x1b[0m {detail}\n\x1b[38;5;245m╰{border}╯\x1b[0m"
+    )
+}
+
+fn format_tool_result(name: &str, output: &str, is_error: bool) -> String {
+    let icon = if is_error {
+        "\x1b[1;31m✗\x1b[0m"
+    } else {
+        "\x1b[1;32m✓\x1b[0m"
+    };
+    if is_error {
+        let summary = truncate_for_summary(output.trim(), 160);
+        return if summary.is_empty() {
+            format!("{icon} \x1b[38;5;245m{name}\x1b[0m")
+        } else {
+            format!("{icon} \x1b[38;5;245m{name}\x1b[0m\n\x1b[38;5;203m{summary}\x1b[0m")
+        };
+    }
+
+    let parsed: serde_json::Value =
+        serde_json::from_str(output).unwrap_or(serde_json::Value::String(output.to_string()));
+    match name {
+        "bash" | "Bash" => format_bash_result(icon, &parsed),
+        "read_file" | "Read" => format_read_result(icon, &parsed),
+        "write_file" | "Write" => format_write_result(icon, &parsed),
+        "edit_file" | "Edit" => format_edit_result(icon, &parsed),
+        "glob_search" | "Glob" => format_glob_result(icon, &parsed),
+        "grep_search" | "Grep" => format_grep_result(icon, &parsed),
+        _ => format_generic_tool_result(icon, name, &parsed),
