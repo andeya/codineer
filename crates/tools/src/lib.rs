@@ -3780,3 +3780,146 @@ mod tests {
         let path = temp_path("subagent-input.txt");
         std::fs::write(&path, "hello from child").expect("write input file");
 
+        let mut runtime = ConversationRuntime::new(
+            Session::new(),
+            MockSubagentApiClient {
+                calls: 0,
+                input_path: path.display().to_string(),
+            },
+            SubagentToolExecutor::new(BTreeSet::from([String::from("read_file")])),
+            agent_permission_policy(),
+            vec![String::from("system prompt")],
+        );
+
+        let summary = runtime
+            .run_turn("Inspect the delegated file", None)
+            .expect("subagent loop should succeed");
+
+        assert_eq!(
+            final_assistant_text(&summary),
+            "Scope: completed mock review"
+        );
+        assert!(runtime
+            .session()
+            .messages
+            .iter()
+            .flat_map(|message| message.blocks.iter())
+            .any(|block| matches!(
+                block,
+                runtime::ContentBlock::ToolResult { output, .. }
+                    if output.contains("hello from child")
+            )));
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn agent_rejects_blank_required_fields() {
+        let missing_description = execute_tool(
+            "Agent",
+            &json!({
+                "description": "  ",
+                "prompt": "Inspect"
+            }),
+        )
+        .expect_err("blank description should fail");
+        assert!(missing_description.contains("description must not be empty"));
+
+        let missing_prompt = execute_tool(
+            "Agent",
+            &json!({
+                "description": "Inspect branch",
+                "prompt": " "
+            }),
+        )
+        .expect_err("blank prompt should fail");
+        assert!(missing_prompt.contains("prompt must not be empty"));
+    }
+
+    #[test]
+    fn notebook_edit_replaces_inserts_and_deletes_cells() {
+        let path = temp_path("notebook.ipynb");
+        std::fs::write(
+            &path,
+            r#"{
+  "cells": [
+    {"cell_type": "code", "id": "cell-a", "metadata": {}, "source": ["print(1)\n"], "outputs": [], "execution_count": null}
+  ],
+  "metadata": {"kernelspec": {"language": "python"}},
+  "nbformat": 4,
+  "nbformat_minor": 5
+}"#,
+        )
+        .expect("write notebook");
+
+        let replaced = execute_tool(
+            "NotebookEdit",
+            &json!({
+                "notebook_path": path.display().to_string(),
+                "cell_id": "cell-a",
+                "new_source": "print(2)\n",
+                "edit_mode": "replace"
+            }),
+        )
+        .expect("NotebookEdit replace should succeed");
+        let replaced_output: serde_json::Value = serde_json::from_str(&replaced).expect("json");
+        assert_eq!(replaced_output["cell_id"], "cell-a");
+        assert_eq!(replaced_output["cell_type"], "code");
+
+        let inserted = execute_tool(
+            "NotebookEdit",
+            &json!({
+                "notebook_path": path.display().to_string(),
+                "cell_id": "cell-a",
+                "new_source": "# heading\n",
+                "cell_type": "markdown",
+                "edit_mode": "insert"
+            }),
+        )
+        .expect("NotebookEdit insert should succeed");
+        let inserted_output: serde_json::Value = serde_json::from_str(&inserted).expect("json");
+        assert_eq!(inserted_output["cell_type"], "markdown");
+        let appended = execute_tool(
+            "NotebookEdit",
+            &json!({
+                "notebook_path": path.display().to_string(),
+                "new_source": "print(3)\n",
+                "edit_mode": "insert"
+            }),
+        )
+        .expect("NotebookEdit append should succeed");
+        let appended_output: serde_json::Value = serde_json::from_str(&appended).expect("json");
+        assert_eq!(appended_output["cell_type"], "code");
+
+        let deleted = execute_tool(
+            "NotebookEdit",
+            &json!({
+                "notebook_path": path.display().to_string(),
+                "cell_id": "cell-a",
+                "edit_mode": "delete"
+            }),
+        )
+        .expect("NotebookEdit delete should succeed without new_source");
+        let deleted_output: serde_json::Value = serde_json::from_str(&deleted).expect("json");
+        assert!(deleted_output["cell_type"].is_null());
+        assert_eq!(deleted_output["new_source"], "");
+
+        let final_notebook: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).expect("read notebook"))
+                .expect("valid notebook json");
+        let cells = final_notebook["cells"].as_array().expect("cells array");
+        assert_eq!(cells.len(), 2);
+        assert_eq!(cells[0]["cell_type"], "markdown");
+        assert!(cells[0].get("outputs").is_none());
+        assert_eq!(cells[1]["cell_type"], "code");
+        assert_eq!(cells[1]["source"][0], "print(3)\n");
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn notebook_edit_rejects_invalid_inputs() {
+        let text_path = temp_path("notebook.txt");
+        fs::write(&text_path, "not a notebook").expect("write text file");
+        let wrong_extension = execute_tool(
+            "NotebookEdit",
+            &json!({
