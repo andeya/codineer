@@ -3787,3 +3787,69 @@ fn format_edit_result(icon: &str, parsed: &serde_json::Value) -> String {
 }
 
 fn format_glob_result(icon: &str, parsed: &serde_json::Value) -> String {
+    let num_files = parsed
+        .get("numFiles")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(0);
+    let filenames = parsed
+        .get("filenames")
+        .and_then(|value| value.as_array())
+        .map(|files| {
+            files
+                .iter()
+                .filter_map(|value| value.as_str())
+                .take(8)
+                .collect::<Vec<_>>()
+                .join("\n")
+        })
+        .unwrap_or_default();
+    if filenames.is_empty() {
+        format!("{icon} \x1b[38;5;245mglob_search\x1b[0m matched {num_files} files")
+    } else {
+        format!("{icon} \x1b[38;5;245mglob_search\x1b[0m matched {num_files} files\n{filenames}")
+    }
+}
+
+fn format_grep_result(icon: &str, parsed: &serde_json::Value) -> String {
+    let num_matches = parsed
+        .get("numMatches")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(0);
+    let num_files = parsed
+        .get("numFiles")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(0);
+    let content = parsed
+        .get("content")
+        .and_then(|value| value.as_str())
+        .unwrap_or_default();
+    let filenames = parsed
+        .get("filenames")
+        .and_then(|value| value.as_array())
+        .map(|files| {
+            files
+                .iter()
+                .filter_map(|value| value.as_str())
+                .take(8)
+                .collect::<Vec<_>>()
+                .join("\n")
+        })
+        .unwrap_or_default();
+    let summary = format!(
+        "{icon} \x1b[38;5;245mgrep_search\x1b[0m {num_matches} matches across {num_files} files"
+    );
+    if !content.trim().is_empty() {
+        format!(
+            "{summary}\n{}",
+            truncate_output_for_display(
+                content,
+                TOOL_OUTPUT_DISPLAY_MAX_LINES,
+                TOOL_OUTPUT_DISPLAY_MAX_CHARS,
+            )
+        )
+    } else if !filenames.is_empty() {
+        format!("{summary}\n{filenames}")
+    } else {
+        summary
+    }
+}
