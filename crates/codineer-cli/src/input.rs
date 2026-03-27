@@ -526,3 +526,61 @@ impl LineEditor {
                 if session.mode != EditorMode::Normal && session.mode != EditorMode::Visual {
                     session.insert_text("\n");
                 }
+                KeyAction::Continue
+            }
+            KeyCode::Enter => session.submit_or_toggle(),
+            KeyCode::Esc => session.handle_escape(),
+            KeyCode::Backspace => {
+                session.handle_backspace();
+                KeyAction::Continue
+            }
+            KeyCode::Delete => {
+                session.delete_char_under_cursor();
+                KeyAction::Continue
+            }
+            KeyCode::Left => {
+                session.move_left();
+                KeyAction::Continue
+            }
+            KeyCode::Right => {
+                session.move_right();
+                KeyAction::Continue
+            }
+            KeyCode::Up => {
+                self.history_up(session);
+                KeyAction::Continue
+            }
+            KeyCode::Down => {
+                self.history_down(session);
+                KeyAction::Continue
+            }
+            KeyCode::Home => {
+                session.move_line_start();
+                KeyAction::Continue
+            }
+            KeyCode::End => {
+                session.move_line_end();
+                KeyAction::Continue
+            }
+            KeyCode::Tab => {
+                self.complete_slash_command(session);
+                KeyAction::Continue
+            }
+            KeyCode::Char(ch) => {
+                self.handle_char(session, ch);
+                KeyAction::Continue
+            }
+            _ => KeyAction::Continue,
+        }
+    }
+
+    fn handle_char(&mut self, session: &mut EditSession, ch: char) {
+        match session.mode {
+            EditorMode::Plain | EditorMode::Insert | EditorMode::Command => {
+                session.insert_char(ch);
+            }
+            EditorMode::Normal => self.handle_normal_char(session, ch),
+            EditorMode::Visual => Self::handle_visual_char(session, ch),
+        }
+    }
+
