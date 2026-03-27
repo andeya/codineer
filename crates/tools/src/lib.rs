@@ -3637,3 +3637,75 @@ mod tests {
                 model: Some("claude-sonnet-4-6".to_string()),
             },
             |job| {
+                persist_agent_terminal_state(
+                    &job.manifest,
+                    "completed",
+                    Some("Finished successfully"),
+                    None,
+                )
+            },
+        )
+        .expect("completed agent should succeed");
+
+        let completed_manifest = std::fs::read_to_string(&completed.manifest_file)
+            .expect("completed manifest should exist");
+        let completed_output =
+            std::fs::read_to_string(&completed.output_file).expect("completed output should exist");
+        assert!(completed_manifest.contains("\"status\": \"completed\""));
+        assert!(completed_output.contains("Finished successfully"));
+
+        let failed = execute_agent_with_spawn(
+            AgentInput {
+                description: "Fail the task".to_string(),
+                prompt: "Do the failing work".to_string(),
+                subagent_type: Some("Verification".to_string()),
+                name: Some("fail-task".to_string()),
+                model: None,
+            },
+            |job| {
+                persist_agent_terminal_state(
+                    &job.manifest,
+                    "failed",
+                    None,
+                    Some(String::from("simulated failure")),
+                )
+            },
+        )
+        .expect("failed agent should still spawn");
+
+        let failed_manifest =
+            std::fs::read_to_string(&failed.manifest_file).expect("failed manifest should exist");
+        let failed_output =
+            std::fs::read_to_string(&failed.output_file).expect("failed output should exist");
+        assert!(failed_manifest.contains("\"status\": \"failed\""));
+        assert!(failed_manifest.contains("simulated failure"));
+        assert!(failed_output.contains("simulated failure"));
+
+        let spawn_error = execute_agent_with_spawn(
+            AgentInput {
+                description: "Spawn error task".to_string(),
+                prompt: "Never starts".to_string(),
+                subagent_type: None,
+                name: Some("spawn-error".to_string()),
+                model: None,
+            },
+            |_| Err(String::from("thread creation failed")),
+        )
+        .expect_err("spawn errors should surface");
+        assert!(spawn_error.contains("failed to spawn sub-agent"));
+        let spawn_error_manifest = std::fs::read_dir(&dir)
+            .expect("agent dir should exist")
+            .filter_map(Result::ok)
+            .map(|entry| entry.path())
+            .filter(|path| path.extension().and_then(|ext| ext.to_str()) == Some("json"))
+            .find_map(|path| {
+                let contents = std::fs::read_to_string(&path).ok()?;
+                contents
+                    .contains("\"name\": \"spawn-error\"")
+                    .then_some(contents)
+            })
+            .expect("failed manifest should still be written");
+        assert!(spawn_error_manifest.contains("\"status\": \"failed\""));
+        assert!(spawn_error_manifest.contains("thread creation failed"));
+
+        std::env::remove_var("CODINEER_AGENT_STORE");
