@@ -595,3 +595,111 @@ impl TerminalRenderer {
         for (index, row) in table.rows.iter().enumerate() {
             output.push_str(&self.render_table_row(row, &widths, false));
             if index + 1 < table.rows.len() {
+                output.push('\n');
+            }
+        }
+
+        output
+    }
+
+    fn render_table_row(&self, row: &[String], widths: &[usize], is_header: bool) -> String {
+        let border = styled("│", self.color_theme.table_border);
+        let mut line = String::new();
+        line.push_str(&border);
+
+        for (index, width) in widths.iter().enumerate() {
+            let cell = row.get(index).map_or("", String::as_str);
+            line.push(' ');
+            if is_header {
+                let _ = write!(line, "{}", styled_bold(cell, self.color_theme.heading));
+            } else {
+                line.push_str(cell);
+            }
+            let padding = width.saturating_sub(visible_width(cell));
+            line.push_str(&" ".repeat(padding + 1));
+            line.push_str(&border);
+        }
+
+        line
+    }
+
+    #[must_use]
+    pub fn highlight_code(&self, code: &str, language: &str) -> String {
+        if !color_enabled() {
+            return code.to_string();
+        }
+
+        let syntax = self
+            .syntax_set
+            .find_syntax_by_token(language)
+            .unwrap_or_else(|| self.syntax_set.find_syntax_plain_text());
+        let mut syntax_highlighter = HighlightLines::new(syntax, &self.syntax_theme);
+        let mut colored_output = String::new();
+
+        for line in LinesWithEndings::from(code) {
+            match syntax_highlighter.highlight_line(line, &self.syntax_set) {
+                Ok(ranges) => {
+                    let escaped = as_24_bit_terminal_escaped(&ranges[..], false);
+                    colored_output.push_str(&apply_code_block_background(&escaped));
+                }
+                Err(_) => colored_output.push_str(&apply_code_block_background(line)),
+            }
+        }
+
+        colored_output
+    }
+
+    pub fn stream_markdown(&self, markdown: &str, out: &mut impl Write) -> io::Result<()> {
+        let rendered_markdown = self.markdown_to_ansi(markdown);
+        write!(out, "{rendered_markdown}")?;
+        if !rendered_markdown.ends_with('\n') {
+            writeln!(out)?;
+        }
+        out.flush()
+    }
+}
+
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct MarkdownStreamState {
+    pending: String,
+}
+
+impl MarkdownStreamState {
+    #[must_use]
+    pub fn push(&mut self, renderer: &TerminalRenderer, delta: &str) -> Option<String> {
+        self.pending.push_str(delta);
+        let split = find_stream_safe_boundary(&self.pending)?;
+        let ready = self.pending[..split].to_string();
+        self.pending.drain(..split);
+        Some(renderer.markdown_to_ansi(&ready))
+    }
+
+    #[must_use]
+    pub fn flush(&mut self, renderer: &TerminalRenderer) -> Option<String> {
+        if self.pending.trim().is_empty() {
+            self.pending.clear();
+            None
+        } else {
+            let pending = std::mem::take(&mut self.pending);
+            Some(renderer.markdown_to_ansi(&pending))
+        }
+    }
+}
+
+fn apply_code_block_background(line: &str) -> String {
+    let trimmed = line.trim_end_matches('\n');
+    let trailing_newline = if trimmed.len() == line.len() {
+        ""
+    } else {
+        "\n"
+    };
+    let with_background = trimmed.replace("\u{1b}[0m", "\u{1b}[0;48;5;236m");
+    format!("\u{1b}[48;5;236m{with_background}\u{1b}[0m{trailing_newline}")
+}
+
+fn find_stream_safe_boundary(markdown: &str) -> Option<usize> {
+    let mut in_fence = false;
+    let mut last_boundary = None;
+
+    for (offset, line) in markdown.split_inclusive('\n').scan(0usize, |cursor, line| {
+        let start = *cursor;
