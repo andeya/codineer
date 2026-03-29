@@ -3986,3 +3986,70 @@ fn response_to_events(
     for block in response.content {
         push_output_block(block, out, &mut events, &mut pending_tool, false)?;
         if let Some((id, name, input)) = pending_tool.take() {
+            events.push(AssistantEvent::ToolUse { id, name, input });
+        }
+    }
+
+    events.push(AssistantEvent::Usage(TokenUsage {
+        input_tokens: response.usage.input_tokens,
+        output_tokens: response.usage.output_tokens,
+        cache_creation_input_tokens: response.usage.cache_creation_input_tokens,
+        cache_read_input_tokens: response.usage.cache_read_input_tokens,
+    }));
+    events.push(AssistantEvent::MessageStop);
+    Ok(events)
+}
+
+struct CliToolExecutor {
+    renderer: TerminalRenderer,
+    emit_output: bool,
+    allowed_tools: Option<AllowedToolSet>,
+    tool_registry: GlobalToolRegistry,
+    mcp_manager: SharedMcpManager,
+}
+
+impl CliToolExecutor {
+    fn new(
+        allowed_tools: Option<AllowedToolSet>,
+        emit_output: bool,
+        tool_registry: GlobalToolRegistry,
+        mcp_manager: SharedMcpManager,
+    ) -> Self {
+        Self {
+            renderer: TerminalRenderer::new(),
+            emit_output,
+            allowed_tools,
+            tool_registry,
+            mcp_manager,
+        }
+    }
+
+    fn execute_mcp_tool(&mut self, tool_name: &str, input: &str) -> Result<String, ToolError> {
+        let arguments: Option<serde_json::Value> = if input.trim().is_empty() {
+            None
+        } else {
+            Some(
+                serde_json::from_str(input)
+                    .map_err(|e| ToolError::new(format!("invalid MCP tool input JSON: {e}")))?,
+            )
+        };
+        let rt = tokio::runtime::Runtime::new()
+            .map_err(|e| ToolError::new(format!("failed to create async runtime: {e}")))?;
+        let mut guard = self
+            .mcp_manager
+            .lock()
+            .map_err(|e| ToolError::new(format!("MCP manager lock poisoned: {e}")))?;
+        let response = rt
+            .block_on(guard.call_tool(tool_name, arguments))
+            .map_err(|e| ToolError::new(format!("MCP tool call failed: {e}")))?;
+        match response.result {
+            Some(result) => {
+                let text = result
+                    .content
+                    .iter()
+                    .filter_map(|block| {
+                        block
+                            .data
+                            .get("text")
+                            .and_then(|v| v.as_str())
+                    })
