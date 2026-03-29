@@ -584,3 +584,62 @@ impl LineEditor {
         }
     }
 
+    fn handle_normal_char(&mut self, session: &mut EditSession, ch: char) {
+        if let Some(operator) = session.pending_operator.take() {
+            match (operator, ch) {
+                ('d', 'd') => {
+                    self.delete_current_line(session);
+                    return;
+                }
+                ('y', 'y') => {
+                    self.yank_current_line(session);
+                    return;
+                }
+                _ => {}
+            }
+        }
+
+        match ch {
+            'h' => session.move_left(),
+            'j' => session.move_down(),
+            'k' => session.move_up(),
+            'l' => session.move_right(),
+            'd' | 'y' => session.pending_operator = Some(ch),
+            'p' => self.paste_after(session),
+            'i' => session.enter_insert_mode(),
+            'v' => session.enter_visual_mode(),
+            ':' => session.enter_command_mode(),
+            _ => {}
+        }
+    }
+
+    fn handle_visual_char(session: &mut EditSession, ch: char) {
+        match ch {
+            'h' => session.move_left(),
+            'j' => session.move_down(),
+            'k' => session.move_up(),
+            'l' => session.move_right(),
+            'v' => session.enter_normal_mode(),
+            _ => {}
+        }
+    }
+
+    fn delete_current_line(&mut self, session: &mut EditSession) {
+        let (line_start_idx, line_end_idx, delete_start_idx) =
+            current_line_delete_range(&session.text, session.cursor);
+        self.yank_buffer.text = session.text[line_start_idx..line_end_idx].to_string();
+        self.yank_buffer.linewise = true;
+        session.text.drain(delete_start_idx..line_end_idx);
+        session.cursor = delete_start_idx.min(session.text.len());
+    }
+
+    fn yank_current_line(&mut self, session: &mut EditSession) {
+        let (line_start_idx, line_end_idx, _) =
+            current_line_delete_range(&session.text, session.cursor);
+        self.yank_buffer.text = session.text[line_start_idx..line_end_idx].to_string();
+        self.yank_buffer.linewise = true;
+    }
+
+    fn paste_after(&mut self, session: &mut EditSession) {
+        if self.yank_buffer.text.is_empty() {
+            return;
