@@ -643,3 +643,237 @@ impl LineEditor {
     fn paste_after(&mut self, session: &mut EditSession) {
         if self.yank_buffer.text.is_empty() {
             return;
+        }
+
+        if self.yank_buffer.linewise {
+            let line_end_idx = line_end(&session.text, session.cursor);
+            let insert_at = if line_end_idx < session.text.len() {
+                line_end_idx + 1
+            } else {
+                session.text.len()
+            };
+            let mut insertion = self.yank_buffer.text.clone();
+            if insert_at == session.text.len()
+                && !session.text.is_empty()
+                && !session.text.ends_with('\n')
+            {
+                insertion.insert(0, '\n');
+            }
+            if insert_at < session.text.len() && !insertion.ends_with('\n') {
+                insertion.push('\n');
+            }
+            session.text.insert_str(insert_at, &insertion);
+            session.cursor = if insertion.starts_with('\n') {
+                insert_at + 1
+            } else {
+                insert_at
+            };
+            return;
+        }
+
+        let insert_at = next_boundary(&session.text, session.cursor);
+        session.text.insert_str(insert_at, &self.yank_buffer.text);
+        session.cursor = insert_at + self.yank_buffer.text.len();
+    }
+
+    fn complete_slash_command(&mut self, session: &mut EditSession) {
+        if session.mode == EditorMode::Command {
+            self.completion_state = None;
+            return;
+        }
+        if let Some(state) = self
+            .completion_state
+            .as_mut()
+            .filter(|_| session.cursor == session.text.len())
+            .filter(|state| {
+                state
+                    .matches
+                    .iter()
+                    .any(|candidate| candidate == &session.text)
+            })
+        {
+            let candidate = state.matches[state.next_index % state.matches.len()].clone();
+            state.next_index += 1;
+            session.text.replace_range(..session.cursor, &candidate);
+            session.cursor = candidate.len();
+            return;
+        }
+        let Some(prefix) = slash_command_prefix(&session.text, session.cursor) else {
+            self.completion_state = None;
+            return;
+        };
+        let matches = self
+            .completions
+            .iter()
+            .filter(|candidate| candidate.starts_with(prefix) && candidate.as_str() != prefix)
+            .cloned()
+            .collect::<Vec<_>>();
+        if matches.is_empty() {
+            self.completion_state = None;
+            return;
+        }
+
+        let candidate = if let Some(state) = self
+            .completion_state
+            .as_mut()
+            .filter(|state| state.prefix == prefix && state.matches == matches)
+        {
+            let index = state.next_index % state.matches.len();
+            state.next_index += 1;
+            state.matches[index].clone()
+        } else {
+            let candidate = matches[0].clone();
+            self.completion_state = Some(CompletionState {
+                prefix: prefix.to_string(),
+                matches,
+                next_index: 1,
+            });
+            candidate
+        };
+
+        session.text.replace_range(..session.cursor, &candidate);
+        session.cursor = candidate.len();
+    }
+
+    fn history_up(&self, session: &mut EditSession) {
+        if session.mode == EditorMode::Command || self.history.is_empty() {
+            return;
+        }
+
+        let next_index = if let Some(index) = session.history_index {
+            index.saturating_sub(1)
+        } else {
+            session.history_backup = Some(session.text.clone());
+            self.history.len() - 1
+        };
+
+        session.history_index = Some(next_index);
+        session.set_text_from_history(self.history[next_index].clone());
+    }
+
+    fn history_down(&self, session: &mut EditSession) {
+        if session.mode == EditorMode::Command {
+            return;
+        }
+
+        let Some(index) = session.history_index else {
+            return;
+        };
+
+        if index + 1 < self.history.len() {
+            let next_index = index + 1;
+            session.history_index = Some(next_index);
+            session.set_text_from_history(self.history[next_index].clone());
+            return;
+        }
+
+        session.history_index = None;
+        let restored = session.history_backup.take().unwrap_or_default();
+        session.set_text_from_history(restored);
+        if self.vim_enabled {
+            session.enter_insert_mode();
+        } else {
+            session.mode = EditorMode::Plain;
+        }
+    }
+}
+
+fn is_vim_toggle(line: &str) -> bool {
+    line.trim() == "/vim"
+}
+
+struct RawModeGuard;
+
+impl RawModeGuard {
+    fn new() -> io::Result<Self> {
+        terminal::enable_raw_mode().map_err(io::Error::other)?;
+        Ok(Self)
+    }
+}
+
+impl Drop for RawModeGuard {
+    fn drop(&mut self) {
+        let _ = terminal::disable_raw_mode();
+    }
+}
+
+fn previous_boundary(text: &str, cursor: usize) -> usize {
+    if cursor == 0 {
+        return 0;
+    }
+
+    text[..cursor]
+        .char_indices()
+        .next_back()
+        .map_or(0, |(index, _)| index)
+}
+
+fn previous_command_boundary(text: &str, cursor: usize) -> usize {
+    previous_boundary(text, cursor).max(1)
+}
+
+fn next_boundary(text: &str, cursor: usize) -> usize {
+    if cursor >= text.len() {
+        return text.len();
+    }
+
+    text[cursor..]
+        .chars()
+        .next()
+        .map_or(text.len(), |ch| cursor + ch.len_utf8())
+}
+
+fn remove_previous_char(text: &mut String, cursor: &mut usize) {
+    if *cursor == 0 {
+        return;
+    }
+
+    let start = previous_boundary(text, *cursor);
+    text.drain(start..*cursor);
+    *cursor = start;
+}
+
+fn line_start(text: &str, cursor: usize) -> usize {
+    text[..cursor].rfind('\n').map_or(0, |index| index + 1)
+}
+
+fn line_end(text: &str, cursor: usize) -> usize {
+    text[cursor..]
+        .find('\n')
+        .map_or(text.len(), |index| cursor + index)
+}
+
+fn move_vertical(text: &str, cursor: usize, delta: isize) -> usize {
+    let starts = line_starts(text);
+    let current_row = text[..cursor].bytes().filter(|byte| *byte == b'\n').count();
+    let current_start = starts[current_row];
+    let current_col = text[current_start..cursor].chars().count();
+
+    let max_row = isize::try_from(starts.len().saturating_sub(1)).unwrap_or(isize::MAX);
+    let target_row =
+        usize::try_from((isize::try_from(current_row).unwrap_or(0) + delta).clamp(0, max_row))
+            .unwrap_or(0);
+    if target_row == current_row {
+        return cursor;
+    }
+
+    let target_start = starts[target_row];
+    let target_end = if target_row + 1 < starts.len() {
+        starts[target_row + 1] - 1
+    } else {
+        text.len()
+    };
+    byte_index_for_char_column(&text[target_start..target_end], current_col) + target_start
+}
+
+fn line_starts(text: &str) -> Vec<usize> {
+    let mut starts = vec![0];
+    for (index, ch) in text.char_indices() {
+        if ch == '\n' {
+            starts.push(index + 1);
+        }
+    }
+    starts
+}
+
+fn byte_index_for_char_column(text: &str, column: usize) -> usize {
