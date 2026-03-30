@@ -4279,3 +4279,75 @@ mod tests {
 
         std::env::set_current_dir(&original_dir).expect("restore cwd");
         match original_home {
+            Some(value) => std::env::set_var("HOME", value),
+            None => std::env::remove_var("HOME"),
+        }
+        match original_config_home {
+            Some(value) => std::env::set_var("CODINEER_CONFIG_HOME", value),
+            None => std::env::remove_var("CODINEER_CONFIG_HOME"),
+        }
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn structured_output_echoes_input_payload() {
+        let result = execute_tool("StructuredOutput", &json!({"ok": true, "items": [1, 2, 3]}))
+            .expect("StructuredOutput should succeed");
+        let output: serde_json::Value = serde_json::from_str(&result).expect("json");
+        assert_eq!(output["data"], "Structured output provided successfully");
+        assert_eq!(output["structured_output"]["ok"], true);
+        assert_eq!(output["structured_output"]["items"][1], 2);
+    }
+
+    #[test]
+    fn repl_executes_python_code() {
+        let result = execute_tool(
+            "REPL",
+            &json!({"language": "python", "code": "print(1 + 1)", "timeout_ms": 500}),
+        )
+        .expect("REPL should succeed");
+        let output: serde_json::Value = serde_json::from_str(&result).expect("json");
+        assert_eq!(output["language"], "python");
+        assert_eq!(output["exitCode"], 0);
+        assert!(output["stdout"].as_str().expect("stdout").contains('2'));
+    }
+
+    #[test]
+    fn powershell_runs_via_stub_shell() {
+        let _guard = env_lock()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let dir = std::env::temp_dir().join(format!(
+            "codineer-pwsh-bin-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("time")
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).expect("create dir");
+        let script = dir.join("pwsh");
+        std::fs::write(
+            &script,
+            r#"#!/bin/sh
+while [ "$1" != "-Command" ] && [ $# -gt 0 ]; do shift; done
+shift
+printf 'pwsh:%s' "$1"
+"#,
+        )
+        .expect("write script");
+        std::process::Command::new("/bin/chmod")
+            .arg("+x")
+            .arg(&script)
+            .status()
+            .expect("chmod");
+        let original_path = std::env::var("PATH").unwrap_or_default();
+        std::env::set_var("PATH", format!("{}:{}", dir.display(), original_path));
+
+        let result = execute_tool(
+            "PowerShell",
+            &json!({"command": "Write-Output hello", "timeout": 1000}),
+        )
+        .expect("PowerShell should succeed");
+
+        let background = execute_tool(
+            "PowerShell",
