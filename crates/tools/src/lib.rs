@@ -4422,3 +4422,74 @@ printf 'pwsh:%s' "$1"
                         let response = handler(&request_line);
                         stream
                             .write_all(response.to_bytes().as_slice())
+                            .expect("write response");
+                    }
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                        thread::sleep(Duration::from_millis(10));
+                    }
+                    Err(error) => panic!("server accept failed: {error}"),
+                }
+            });
+
+            Self {
+                addr,
+                shutdown: Some(tx),
+                handle: Some(handle),
+            }
+        }
+
+        fn addr(&self) -> SocketAddr {
+            self.addr
+        }
+    }
+
+    impl Drop for TestServer {
+        fn drop(&mut self) {
+            if let Some(tx) = self.shutdown.take() {
+                let _ = tx.send(());
+            }
+            if let Some(handle) = self.handle.take() {
+                handle.join().expect("join test server");
+            }
+        }
+    }
+
+    struct HttpResponse {
+        status: u16,
+        reason: &'static str,
+        content_type: &'static str,
+        body: String,
+    }
+
+    impl HttpResponse {
+        fn html(status: u16, reason: &'static str, body: &str) -> Self {
+            Self {
+                status,
+                reason,
+                content_type: "text/html; charset=utf-8",
+                body: body.to_string(),
+            }
+        }
+
+        fn text(status: u16, reason: &'static str, body: &str) -> Self {
+            Self {
+                status,
+                reason,
+                content_type: "text/plain; charset=utf-8",
+                body: body.to_string(),
+            }
+        }
+
+        fn to_bytes(&self) -> Vec<u8> {
+            format!(
+                "HTTP/1.1 {} {}\r\nContent-Type: {}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                self.status,
+                self.reason,
+                self.content_type,
+                self.body.len(),
+                self.body
+            )
+            .into_bytes()
+        }
+    }
+}
