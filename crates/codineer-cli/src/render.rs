@@ -757,3 +757,57 @@ fn strip_ansi(input: &str) -> String {
 mod tests {
     use super::{color_enabled, strip_ansi, MarkdownStreamState, Spinner, TerminalRenderer};
 
+    #[test]
+    fn renders_markdown_with_styling_and_lists() {
+        let terminal_renderer = TerminalRenderer::new();
+        let markdown_output = terminal_renderer
+            .render_markdown("# Heading\n\nThis is **bold** and *italic*.\n\n- item\n\n`code`");
+
+        assert!(markdown_output.contains("Heading"));
+        assert!(markdown_output.contains("• item"));
+        assert!(markdown_output.contains("code"));
+        if color_enabled() {
+            assert!(markdown_output.contains('\u{1b}'));
+        }
+    }
+
+    #[test]
+    fn renders_links_as_colored_markdown_labels() {
+        let terminal_renderer = TerminalRenderer::new();
+        let markdown_output =
+            terminal_renderer.render_markdown("See [Codineer](https://example.com/docs) now.");
+        let plain_text = strip_ansi(&markdown_output);
+
+        assert!(plain_text.contains("[Codineer](https://example.com/docs)"));
+        if color_enabled() {
+            assert!(markdown_output.contains('\u{1b}'));
+        }
+    }
+
+    #[test]
+    fn highlights_fenced_code_blocks() {
+        let terminal_renderer = TerminalRenderer::new();
+        let markdown_output =
+            terminal_renderer.markdown_to_ansi("```rust\nfn hi() { println!(\"hi\"); }\n```");
+        let plain_text = strip_ansi(&markdown_output);
+
+        assert!(plain_text.contains("╭─ rust"));
+        assert!(plain_text.contains("fn hi"));
+        if color_enabled() {
+            assert!(markdown_output.contains('\u{1b}'));
+            assert!(markdown_output.contains("[48;5;236m"));
+        }
+    }
+
+    #[test]
+    fn renders_ordered_and_nested_lists() {
+        let terminal_renderer = TerminalRenderer::new();
+        let markdown_output =
+            terminal_renderer.render_markdown("1. first\n2. second\n   - nested\n   - child");
+        let plain_text = strip_ansi(&markdown_output);
+
+        assert!(plain_text.contains("1. first"));
+        assert!(plain_text.contains("2. second"));
+        assert!(plain_text.contains("  • nested"));
+        assert!(plain_text.contains("  • child"));
+    }
