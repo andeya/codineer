@@ -995,3 +995,61 @@ mod tests {
     #[test]
     fn normal_mode_supports_motion_and_insert_transition() {
         // given
+        let mut editor = LineEditor::new("> ", vec![]);
+        editor.vim_enabled = true;
+        let mut session = EditSession::new(true);
+        session.text = "hello".to_string();
+        session.cursor = session.text.len();
+        let _ = session.handle_escape();
+
+        // when
+        editor.handle_char(&mut session, 'h');
+        editor.handle_char(&mut session, 'i');
+        editor.handle_char(&mut session, '!');
+
+        // then
+        assert_eq!(session.mode, EditorMode::Insert);
+        assert_eq!(session.text, "hel!lo");
+    }
+
+    #[test]
+    fn yy_and_p_paste_yanked_line_after_current_line() {
+        // given
+        let mut editor = LineEditor::new("> ", vec![]);
+        editor.vim_enabled = true;
+        let mut session = EditSession::new(true);
+        session.text = "alpha\nbeta\ngamma".to_string();
+        session.cursor = 0;
+        let _ = session.handle_escape();
+
+        // when
+        editor.handle_char(&mut session, 'y');
+        editor.handle_char(&mut session, 'y');
+        editor.handle_char(&mut session, 'p');
+
+        // then
+        assert_eq!(session.text, "alpha\nalpha\nbeta\ngamma");
+    }
+
+    #[test]
+    fn dd_and_p_paste_deleted_line_after_current_line() {
+        // given
+        let mut editor = LineEditor::new("> ", vec![]);
+        editor.vim_enabled = true;
+        let mut session = EditSession::new(true);
+        session.text = "alpha\nbeta\ngamma".to_string();
+        session.cursor = 0;
+        let _ = session.handle_escape();
+
+        // when
+        editor.handle_char(&mut session, 'j');
+        editor.handle_char(&mut session, 'd');
+        editor.handle_char(&mut session, 'd');
+        editor.handle_char(&mut session, 'p');
+
+        // then
+        assert_eq!(session.text, "alpha\ngamma\nbeta\n");
+    }
+
+    #[test]
+    fn visual_mode_tracks_selection_with_motions() {
