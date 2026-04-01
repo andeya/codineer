@@ -4584,3 +4584,336 @@ mod tests {
 
     #[test]
     fn parses_resume_flag_with_slash_command() {
+        let args = vec![
+            "--resume".to_string(),
+            "session.json".to_string(),
+            "/compact".to_string(),
+        ];
+        assert_eq!(
+            parse_args(&args).expect("args should parse"),
+            CliAction::ResumeSession {
+                session_path: PathBuf::from("session.json"),
+                commands: vec!["/compact".to_string()],
+            }
+        );
+    }
+
+    #[test]
+    fn parses_resume_flag_with_multiple_slash_commands() {
+        let args = vec![
+            "--resume".to_string(),
+            "session.json".to_string(),
+            "/status".to_string(),
+            "/compact".to_string(),
+            "/cost".to_string(),
+        ];
+        assert_eq!(
+            parse_args(&args).expect("args should parse"),
+            CliAction::ResumeSession {
+                session_path: PathBuf::from("session.json"),
+                commands: vec![
+                    "/status".to_string(),
+                    "/compact".to_string(),
+                    "/cost".to_string(),
+                ],
+            }
+        );
+    }
+
+    #[test]
+    fn filtered_tool_specs_respect_allowlist() {
+        let allowed = ["read_file", "grep_search"]
+            .into_iter()
+            .map(str::to_string)
+            .collect();
+        let filtered = filter_tool_specs(&GlobalToolRegistry::builtin(), Some(&allowed));
+        let names = filtered
+            .into_iter()
+            .map(|spec| spec.name)
+            .collect::<Vec<_>>();
+        assert_eq!(names, vec!["read_file", "grep_search"]);
+    }
+
+    #[test]
+    fn filtered_tool_specs_include_plugin_tools() {
+        let filtered = filter_tool_specs(&registry_with_plugin_tool(), None);
+        let names = filtered
+            .into_iter()
+            .map(|definition| definition.name)
+            .collect::<Vec<_>>();
+        assert!(names.contains(&"bash".to_string()));
+        assert!(names.contains(&"plugin_echo".to_string()));
+    }
+
+    #[test]
+    fn permission_policy_uses_plugin_tool_permissions() {
+        let policy = permission_policy(PermissionMode::ReadOnly, &registry_with_plugin_tool());
+        let required = policy.required_mode_for("plugin_echo");
+        assert_eq!(required, PermissionMode::WorkspaceWrite);
+    }
+
+    #[test]
+    fn shared_help_uses_resume_annotation_copy() {
+        let help = commands::render_slash_command_help();
+        assert!(help.contains("Slash commands"));
+        assert!(help.contains("Tab completes commands inside the REPL."));
+        assert!(help.contains("available via codineer --resume SESSION.json"));
+    }
+
+    #[test]
+    fn repl_help_includes_shared_commands_and_exit() {
+        let help = render_repl_help();
+        assert!(help.contains("Interactive REPL"));
+        assert!(help.contains("/help"));
+        assert!(help.contains("/status"));
+        assert!(help.contains("/model [model]"));
+        assert!(help.contains("/permissions [read-only|workspace-write|danger-full-access]"));
+        assert!(help.contains("/clear [--confirm]"));
+        assert!(help.contains("/cost"));
+        assert!(help.contains("/resume <session-path>"));
+        assert!(help.contains("/config [env|hooks|model|plugins]"));
+        assert!(help.contains("/memory"));
+        assert!(help.contains("/init"));
+        assert!(help.contains("/diff"));
+        assert!(help.contains("/version"));
+        assert!(help.contains("/export [file]"));
+        assert!(help.contains("/session [list|switch <session-id>]"));
+        assert!(help.contains(
+            "/plugin [list|install <path>|enable <name>|disable <name>|uninstall <id>|update <id>]"
+        ));
+        assert!(help.contains("aliases: /plugins, /marketplace"));
+        assert!(help.contains("/agents"));
+        assert!(help.contains("/skills"));
+        assert!(help.contains("/exit"));
+        assert!(help.contains("Tab cycles slash command matches"));
+    }
+
+    #[test]
+    fn completion_candidates_include_repl_only_exit_commands() {
+        let candidates = slash_command_completion_candidates();
+        assert!(candidates.contains(&"/help".to_string()));
+        assert!(candidates.contains(&"/vim".to_string()));
+        assert!(candidates.contains(&"/exit".to_string()));
+        assert!(candidates.contains(&"/quit".to_string()));
+    }
+
+    #[test]
+    fn unknown_repl_command_suggestions_include_repl_shortcuts() {
+        let rendered = render_unknown_repl_command("exi");
+        assert!(rendered.contains("Unknown slash command"));
+        assert!(rendered.contains("/exit"));
+        assert!(rendered.contains("/help"));
+    }
+
+    #[test]
+    fn resume_supported_command_list_matches_expected_surface() {
+        let names = resume_supported_slash_commands()
+            .into_iter()
+            .map(|spec| spec.name)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            names,
+            vec![
+                "help", "status", "compact", "clear", "cost", "config", "memory", "init", "diff",
+                "version", "export", "agents", "skills",
+            ]
+        );
+    }
+
+    #[test]
+    fn resume_report_uses_sectioned_layout() {
+        let report = format_resume_report("session.json", 14, 6);
+        assert!(report.contains("Session resumed"));
+        assert!(report.contains("Session file     session.json"));
+        assert!(report.contains("History          14 messages · 6 turns"));
+        assert!(report.contains("/status · /diff · /export"));
+    }
+
+    #[test]
+    fn compact_report_uses_structured_output() {
+        let compacted = format_compact_report(8, 5, false);
+        assert!(compacted.contains("Compact"));
+        assert!(compacted.contains("Result           compacted"));
+        assert!(compacted.contains("Messages removed 8"));
+        assert!(compacted.contains("Use /status"));
+        let skipped = format_compact_report(0, 3, true);
+        assert!(skipped.contains("Result           skipped"));
+    }
+
+    #[test]
+    fn cost_report_uses_sectioned_layout() {
+        let report = format_cost_report(runtime::TokenUsage {
+            input_tokens: 20,
+            output_tokens: 8,
+            cache_creation_input_tokens: 3,
+            cache_read_input_tokens: 1,
+        });
+        assert!(report.contains("Cost"));
+        assert!(report.contains("Input tokens     20"));
+        assert!(report.contains("Output tokens    8"));
+        assert!(report.contains("Cache create     3"));
+        assert!(report.contains("Cache read       1"));
+        assert!(report.contains("Total tokens     32"));
+        assert!(report.contains("/compact"));
+    }
+
+    #[test]
+    fn permissions_report_uses_sectioned_layout() {
+        let report = format_permissions_report("workspace-write");
+        assert!(report.contains("Permissions"));
+        assert!(report.contains("Active mode      workspace-write"));
+        assert!(report.contains("Effect           Editing tools can modify files in the workspace"));
+        assert!(report.contains("Modes"));
+        assert!(report.contains("read-only          ○ available Read/search tools only"));
+        assert!(report.contains("workspace-write    ● current   Edit files inside the workspace"));
+        assert!(report.contains("danger-full-access ○ available Unrestricted tool access"));
+    }
+
+    #[test]
+    fn permissions_switch_report_is_structured() {
+        let report = format_permissions_switch_report("read-only", "workspace-write");
+        assert!(report.contains("Permissions updated"));
+        assert!(report.contains("Previous mode    read-only"));
+        assert!(report.contains("Active mode      workspace-write"));
+        assert!(report.contains("Applies to       Subsequent tool calls in this REPL"));
+    }
+
+    #[test]
+    fn init_help_mentions_direct_subcommand() {
+        let mut help = Vec::new();
+        print_help_to(&mut help).expect("help should render");
+        let help = String::from_utf8(help).expect("help should be utf8");
+        assert!(help.contains("codineer init"));
+        assert!(help.contains("codineer agents"));
+        assert!(help.contains("codineer skills"));
+        assert!(help.contains("codineer /skills"));
+    }
+
+    #[test]
+    fn model_report_uses_sectioned_layout() {
+        let report = format_model_report("sonnet", 12, 4);
+        assert!(report.contains("Model"));
+        assert!(report.contains("Current          sonnet"));
+        assert!(report.contains("Session          12 messages · 4 turns"));
+        assert!(report.contains("Aliases"));
+        assert!(report.contains("/model <name>    Switch models for this REPL session"));
+    }
+
+    #[test]
+    fn model_switch_report_preserves_context_summary() {
+        let report = format_model_switch_report("sonnet", "opus", 9);
+        assert!(report.contains("Model updated"));
+        assert!(report.contains("Previous         sonnet"));
+        assert!(report.contains("Current          opus"));
+        assert!(report.contains("Preserved        9 messages"));
+    }
+
+    #[test]
+    fn status_line_reports_model_and_token_totals() {
+        let status = format_status_report(
+            "sonnet",
+            StatusUsage {
+                message_count: 7,
+                turns: 3,
+                latest: runtime::TokenUsage {
+                    input_tokens: 5,
+                    output_tokens: 4,
+                    cache_creation_input_tokens: 1,
+                    cache_read_input_tokens: 0,
+                },
+                cumulative: runtime::TokenUsage {
+                    input_tokens: 20,
+                    output_tokens: 8,
+                    cache_creation_input_tokens: 2,
+                    cache_read_input_tokens: 1,
+                },
+                estimated_tokens: 128,
+            },
+            "workspace-write",
+            &super::StatusContext {
+                cwd: PathBuf::from("/tmp/project"),
+                session_path: Some(PathBuf::from("session.json")),
+                loaded_config_files: 2,
+                discovered_config_files: 3,
+                memory_file_count: 4,
+                project_root: Some(PathBuf::from("/tmp")),
+                git_branch: Some("main".to_string()),
+            },
+        );
+        assert!(status.contains("Session"));
+        assert!(status.contains("Model            sonnet"));
+        assert!(status.contains("Permissions      workspace-write"));
+        assert!(status.contains("Activity         7 messages · 3 turns"));
+        assert!(status.contains("Tokens           est 128 · latest 10 · total 31"));
+        assert!(status.contains("Folder           /tmp/project"));
+        assert!(status.contains("Project root     /tmp"));
+        assert!(status.contains("Git branch       main"));
+        assert!(status.contains("Session file     session.json"));
+        assert!(status.contains("Config files     loaded 2/3"));
+        assert!(status.contains("Memory files     4"));
+        assert!(status.contains("/session list"));
+    }
+
+    #[test]
+    fn config_report_supports_section_views() {
+        let report = render_config_report(Some("env")).expect("config report should render");
+        assert!(report.contains("Merged section: env"));
+        let plugins_report =
+            render_config_report(Some("plugins")).expect("plugins config report should render");
+        assert!(plugins_report.contains("Merged section: plugins"));
+    }
+
+    #[test]
+    fn memory_report_uses_sectioned_layout() {
+        let report = render_memory_report().expect("memory report should render");
+        assert!(report.contains("Memory"));
+        assert!(report.contains("Working directory"));
+        assert!(report.contains("Instruction files"));
+        assert!(report.contains("Discovered files"));
+    }
+
+    #[test]
+    fn config_report_uses_sectioned_layout() {
+        let report = render_config_report(None).expect("config report should render");
+        assert!(report.contains("Config"));
+        assert!(report.contains("Discovered files"));
+        assert!(report.contains("Merged JSON"));
+    }
+
+    #[test]
+    fn parses_git_status_metadata() {
+        let (root, branch) = parse_git_status_metadata(Some(
+            "## rcc/cli...origin/rcc/cli
+ M src/main.rs",
+        ));
+        assert_eq!(branch.as_deref(), Some("rcc/cli"));
+        let _ = root;
+    }
+
+    #[test]
+    fn status_context_reads_real_workspace_metadata() {
+        let context = status_context(None).expect("status context should load");
+        assert!(context.cwd.is_absolute());
+        assert_eq!(context.discovered_config_files, 5);
+        assert!(context.loaded_config_files <= context.discovered_config_files);
+    }
+
+    #[test]
+    fn normalizes_supported_permission_modes() {
+        assert_eq!(normalize_permission_mode("read-only"), Some("read-only"));
+        assert_eq!(
+            normalize_permission_mode("workspace-write"),
+            Some("workspace-write")
+        );
+        assert_eq!(
+            normalize_permission_mode("danger-full-access"),
+            Some("danger-full-access")
+        );
+        assert_eq!(normalize_permission_mode("unknown"), None);
+    }
+
+    #[test]
+    fn clear_command_requires_explicit_confirmation_flag() {
+        assert_eq!(
+            SlashCommand::parse("/clear"),
+            Some(SlashCommand::Clear { confirm: false })
