@@ -5050,3 +5050,136 @@ mod tests {
         assert!(rendered.contains("stdout 000"));
         assert!(rendered.contains("stdout 059"));
         assert!(!rendered.contains("stdout 119"));
+        assert!(rendered.contains("full result preserved in session"));
+        assert!(output.contains("stdout 119"));
+    }
+
+    #[test]
+    fn tool_rendering_truncates_generic_long_output_for_display_only() {
+        let items = (0..120)
+            .map(|index| format!("payload {index:03}"))
+            .collect::<Vec<_>>();
+        let output = json!({
+            "summary": "plugin payload",
+            "items": items,
+        })
+        .to_string();
+
+        let rendered = format_tool_result("plugin_echo", &output, false);
+
+        assert!(rendered.contains("plugin_echo"));
+        assert!(rendered.contains("payload 000"));
+        assert!(rendered.contains("payload 040"));
+        assert!(!rendered.contains("payload 080"));
+        assert!(!rendered.contains("payload 119"));
+        assert!(rendered.contains("full result preserved in session"));
+        assert!(output.contains("payload 119"));
+    }
+
+    #[test]
+    fn tool_rendering_truncates_raw_generic_output_for_display_only() {
+        let output = (0..120)
+            .map(|index| format!("raw {index:03}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        let rendered = format_tool_result("plugin_echo", &output, false);
+
+        assert!(rendered.contains("plugin_echo"));
+        assert!(rendered.contains("raw 000"));
+        assert!(rendered.contains("raw 059"));
+        assert!(!rendered.contains("raw 119"));
+        assert!(rendered.contains("full result preserved in session"));
+        assert!(output.contains("raw 119"));
+    }
+
+    #[test]
+    fn ultraplan_progress_lines_include_phase_step_and_elapsed_status() {
+        let snapshot = InternalPromptProgressState {
+            command_label: "Ultraplan",
+            task_label: "ship plugin progress".to_string(),
+            step: 3,
+            phase: "running read_file".to_string(),
+            detail: Some("reading rust/crates/codineer-cli/src/main.rs".to_string()),
+            saw_final_text: false,
+        };
+
+        let started = format_internal_prompt_progress_line(
+            InternalPromptProgressEvent::Started,
+            &snapshot,
+            Duration::from_secs(0),
+            None,
+        );
+        let heartbeat = format_internal_prompt_progress_line(
+            InternalPromptProgressEvent::Heartbeat,
+            &snapshot,
+            Duration::from_secs(9),
+            None,
+        );
+        let completed = format_internal_prompt_progress_line(
+            InternalPromptProgressEvent::Complete,
+            &snapshot,
+            Duration::from_secs(12),
+            None,
+        );
+        let failed = format_internal_prompt_progress_line(
+            InternalPromptProgressEvent::Failed,
+            &snapshot,
+            Duration::from_secs(12),
+            Some("network timeout"),
+        );
+
+        assert!(started.contains("planning started"));
+        assert!(started.contains("current step 3"));
+        assert!(heartbeat.contains("heartbeat"));
+        assert!(heartbeat.contains("9s elapsed"));
+        assert!(heartbeat.contains("phase running read_file"));
+        assert!(completed.contains("completed"));
+        assert!(completed.contains("3 steps total"));
+        assert!(failed.contains("failed"));
+        assert!(failed.contains("network timeout"));
+    }
+
+    #[test]
+    fn describe_tool_progress_summarizes_known_tools() {
+        assert_eq!(
+            describe_tool_progress("read_file", r#"{"path":"src/main.rs"}"#),
+            "reading src/main.rs"
+        );
+        assert!(
+            describe_tool_progress("bash", r#"{"command":"cargo test -p codineer-cli"}"#)
+                .contains("cargo test -p codineer-cli")
+        );
+        assert_eq!(
+            describe_tool_progress("grep_search", r#"{"pattern":"ultraplan","path":"rust"}"#),
+            "grep `ultraplan` in rust"
+        );
+    }
+
+    #[test]
+    fn push_output_block_renders_markdown_text() {
+        let mut out = Vec::new();
+        let mut events = Vec::new();
+        let mut pending_tool = None;
+
+        push_output_block(
+            OutputContentBlock::Text {
+                text: "# Heading".to_string(),
+            },
+            &mut out,
+            &mut events,
+            &mut pending_tool,
+            false,
+        )
+        .expect("text block should render");
+
+        let rendered = String::from_utf8(out).expect("utf8");
+        assert!(rendered.contains("Heading"));
+        if std::env::var_os("NO_COLOR").is_none() {
+            assert!(rendered.contains('\u{1b}'));
+        }
+    }
+
+    #[test]
+    fn push_output_block_skips_empty_object_prefix_for_tool_streams() {
+        let mut out = Vec::new();
