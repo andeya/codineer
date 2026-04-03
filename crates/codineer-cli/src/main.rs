@@ -73,28 +73,29 @@ pub(crate) const GIT_SHA: Option<&str> = option_env!("GIT_SHA");
 
 pub(crate) fn logo_ascii(color: bool) -> String {
     if color {
-        let b = "\x1b[38;5;33m";
-        let c = "\x1b[38;5;45m";
-        let g = "\x1b[38;5;34m";
-        let o = "\x1b[38;5;208m";
-        let w = "\x1b[1;38;5;45m";
+        let v = "\x1b[38;5;99m";
+        let c = "\x1b[38;5;81m";
+        let a = "\x1b[38;5;214m";
+        let t = "\x1b[1;97m";
         let d = "\x1b[2m";
         let r = "\x1b[0m";
         [
-            format!("{b}    ▄▄▄▄▄▄▄    {r}"),
-            format!("{c}  ▄████████▄    {r} {w}C O D I N E E R{r}"),
-            format!("{o} ████████████   {r} {d}Your local AI coding agent{r}"),
-            format!("{g}  ▀████████▀   {r}"),
-            format!("{b}    ▀▀▀▀▀▀     {r}"),
+            format!("{v}          ▄██▄{r}"),
+            format!("{v}       ▄██▀  ▀██▄{r}"),
+            format!("{v}      ██  {c}❯{v}     ██{r}     {t}C O D I N E E R{r}"),
+            format!("{v}      ██     {a}▍{v}  ██{r}     {d}Your local AI coding agent{r}"),
+            format!("{v}       ▀██▄  ▄██▀{r}"),
+            format!("{v}          ▀██▀{r}"),
         ]
         .join("\n")
     } else {
         [
-            "    ▄▄▄▄▄▄▄    ",
-            "  ▄████████▄    C O D I N E E R",
-            " ████████████   Your local AI coding agent",
-            "  ▀████████▀   ",
-            "    ▀▀▀▀▀▀     ",
+            "          ▄██▄",
+            "       ▄██▀  ▀██▄",
+            "      ██  ❯     ██     C O D I N E E R",
+            "      ██     ▍  ██     Your local AI coding agent",
+            "       ▀██▄  ▄██▀",
+            "          ▀██▀",
         ]
         .join("\n")
     }
@@ -102,15 +103,14 @@ pub(crate) fn logo_ascii(color: bool) -> String {
 
 pub(crate) fn logo_line(color: bool) -> String {
     if color {
-        let b = "\x1b[38;5;33m";
-        let c = "\x1b[38;5;45m";
-        let o = "\x1b[38;5;208m";
-        let g = "\x1b[38;5;34m";
-        let w = "\x1b[1;38;5;45m";
+        let v = "\x1b[38;5;99m";
+        let c = "\x1b[38;5;81m";
+        let a = "\x1b[38;5;214m";
+        let t = "\x1b[1;97m";
         let r = "\x1b[0m";
-        format!("{b}▄{c}█{o}▀{g}█{r} {w}Codineer{r}")
+        format!("{v}◆{r} {c}❯{a}▍{r} {t}Codineer{r}")
     } else {
-        "▄█▀█ Codineer".to_string()
+        "◆ ❯▍ Codineer".to_string()
     }
 }
 

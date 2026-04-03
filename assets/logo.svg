@@ -1,30 +1,22 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
   <defs>
-    <linearGradient id="hex-fill" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#0D1117"/>
-      <stop offset="100%" stop-color="#161B22"/>
+    <linearGradient id="gem" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#6366F1"/>
+      <stop offset="100%" stop-color="#06B6D4"/>
     </linearGradient>
-    <linearGradient id="hex-stroke" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#1F6FEB"/>
-      <stop offset="100%" stop-color="#58A6FF"/>
+    <linearGradient id="gem-shine" x1="256" y1="40" x2="256" y2="350" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="rgba(255,255,255,0.20)"/>
+      <stop offset="100%" stop-color="rgba(255,255,255,0)"/>
     </linearGradient>
-    <linearGradient id="prompt" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%" stop-color="#3FB950"/>
-      <stop offset="100%" stop-color="#56D364"/>
+    <linearGradient id="amber" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FBBF24"/>
+      <stop offset="100%" stop-color="#F59E0B"/>
     </linearGradient>
-    <linearGradient id="cursor-grad" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" stop-color="#F0883E"/>
-      <stop offset="100%" stop-color="#DB6D28"/>
-    </linearGradient>
-    <filter id="glow-blue">
-      <feGaussianBlur stdDeviation="4" result="blur"/>
-      <feMerge>
-        <feMergeNode in="blur"/>
-        <feMergeNode in="SourceGraphic"/>
-      </feMerge>
+    <filter id="drop">
+      <feDropShadow dx="0" dy="8" stdDeviation="16" flood-color="#4338CA" flood-opacity="0.3"/>
     </filter>
-    <filter id="glow-green">
-      <feGaussianBlur stdDeviation="3" result="blur"/>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="4" result="blur"/>
       <feMerge>
         <feMergeNode in="blur"/>
         <feMergeNode in="SourceGraphic"/>
@@ -32,19 +24,24 @@
     </filter>
   </defs>
 
-  <polygon points="256,48 440,154 440,366 256,472 72,366 72,154"
-           fill="url(#hex-fill)" stroke="url(#hex-stroke)" stroke-width="5"
-           filter="url(#glow-blue)"/>
+  <rect x="103" y="103" width="306" height="306" rx="22" ry="22"
+        transform="rotate(45, 256, 256)"
+        fill="url(#gem)" filter="url(#drop)"/>
 
-  <polygon points="256,82 410,172 410,348 256,438 102,348 102,172"
-           fill="none" stroke="#21262D" stroke-width="1.5"/>
+  <rect x="103" y="103" width="306" height="306" rx="22" ry="22"
+        transform="rotate(45, 256, 256)"
+        fill="url(#gem-shine)"/>
 
-  <g filter="url(#glow-green)">
-    <path d="M 148 196 L 248 260 L 148 324"
-          stroke="url(#prompt)" stroke-width="22" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <rect x="118" y="118" width="276" height="276" rx="18" ry="18"
+        transform="rotate(45, 256, 256)"
+        fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="1.5"/>
+
+  <g filter="url(#glow)">
+    <path d="M 152 192 L 262 260 L 152 328"
+          stroke="rgba(255,255,255,0.95)" stroke-width="28" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
   </g>
 
-  <rect x="278" y="304" width="96" height="18" rx="4" fill="url(#cursor-grad)">
+  <rect x="290" y="300" width="80" height="22" rx="5" fill="url(#amber)">
     <animate attributeName="opacity" values="1;0.2;1" dur="1.2s" repeatCount="indefinite"/>
   </rect>
 </svg>

@@ -1,5 +1,9 @@
 <p align="center">
-  <img src="assets/logo-light.svg" alt="Codineer" width="360">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/logo-dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset="assets/logo-light.svg">
+    <img alt="Codineer" src="assets/logo-light.svg" width="360">
+  </picture>
   <br>
   <em>Your local AI coding agent — one binary, zero cloud lock-in.</em>
 </p>
