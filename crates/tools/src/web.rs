@@ -108,12 +108,18 @@ pub(crate) fn execute_web_search(input: &WebSearchInput) -> Result<WebSearchOutp
 }
 
 pub(crate) fn build_http_client() -> Result<Client, String> {
-    Client::builder()
+    use std::sync::OnceLock;
+    static CLIENT: OnceLock<Client> = OnceLock::new();
+    if let Some(client) = CLIENT.get() {
+        return Ok(client.clone());
+    }
+    let new_client = Client::builder()
         .timeout(Duration::from_secs(20))
         .redirect(reqwest::redirect::Policy::limited(10))
         .user_agent("codineer-rust-tools/0.1")
         .build()
-        .map_err(|error| error.to_string())
+        .map_err(|error| error.to_string())?;
+    Ok(CLIENT.get_or_init(|| new_client).clone())
 }
 
 pub(crate) fn normalize_fetch_url(url: &str) -> Result<String, String> {
