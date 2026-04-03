@@ -59,12 +59,14 @@ impl ProviderClient {
         request: &MessageRequest,
     ) -> Result<MessageStream, ApiError> {
         match self {
-            Self::CodineerApi(client) => {
-                client.stream_message(request).await.map(MessageStream::CodineerApi)
-            }
-            Self::Xai(client) | Self::OpenAi(client) => {
-                client.stream_message(request).await.map(MessageStream::OpenAiCompat)
-            }
+            Self::CodineerApi(client) => client
+                .stream_message(request)
+                .await
+                .map(MessageStream::CodineerApi),
+            Self::Xai(client) | Self::OpenAi(client) => client
+                .stream_message(request)
+                .await
+                .map(MessageStream::OpenAiCompat),
         }
     }
 }

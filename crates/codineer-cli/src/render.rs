@@ -403,7 +403,10 @@ impl TerminalRenderer {
                 self.push_text(text.as_ref(), state, output, code_buffer, *in_code_block);
             }
             Event::Html(html) | Event::InlineHtml(html) => {
-                let sanitized: String = html.chars().filter(|c| !c.is_control() || *c == '\n').collect();
+                let sanitized: String = html
+                    .chars()
+                    .filter(|c| !c.is_control() || *c == '\n')
+                    .collect();
                 state.append_raw(output, &sanitized);
             }
             Event::FootnoteReference(reference) => {

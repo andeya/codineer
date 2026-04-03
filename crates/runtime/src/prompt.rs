@@ -464,8 +464,16 @@ fn render_config_section(config: &RuntimeConfig) -> String {
 fn redact_config_json(value: &crate::json::JsonValue) -> crate::json::JsonValue {
     use crate::json::JsonValue;
     const SENSITIVE_KEYS: &[&str] = &[
-        "env", "token", "secret", "password", "key", "credential",
-        "authorization", "auth_token", "api_key", "refresh_token",
+        "env",
+        "token",
+        "secret",
+        "password",
+        "key",
+        "credential",
+        "authorization",
+        "auth_token",
+        "api_key",
+        "refresh_token",
     ];
 
     match value {
@@ -483,9 +491,7 @@ fn redact_config_json(value: &crate::json::JsonValue) -> crate::json::JsonValue 
                 .collect();
             JsonValue::Object(redacted)
         }
-        JsonValue::Array(items) => {
-            JsonValue::Array(items.iter().map(redact_config_json).collect())
-        }
+        JsonValue::Array(items) => JsonValue::Array(items.iter().map(redact_config_json).collect()),
         other => other.clone(),
     }
 }

@@ -81,6 +81,14 @@ const DEFAULT_OAUTH_CALLBACK_PORT: u16 = 4545;
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 const BUILD_TARGET: Option<&str> = option_env!("TARGET");
 const GIT_SHA: Option<&str> = option_env!("GIT_SHA");
+
+fn logo_line(color: bool) -> String {
+    if color {
+        "\x1b[38;5;33m ⬡\x1b[0m \x1b[1;38;5;45mCodineer\x1b[0m".to_string()
+    } else {
+        "⬡ Codineer".to_string()
+    }
+}
 const INTERNAL_PROGRESS_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(3);
 
 type AllowedToolSet = BTreeSet<String>;
@@ -1180,13 +1188,12 @@ impl LiveCli {
             .is_some_and(|path| path.join("CODINEER.md").is_file());
         let mut lines = if color {
             vec![
-                "\x1b[38;5;33m ⬡\x1b[0m \x1b[1;38;5;45mCodineer\x1b[0m \x1b[2m· ready\x1b[0m"
-                    .to_string(),
+                format!("{} \x1b[2m· ready\x1b[0m", logo_line(true)),
                 format!("   \x1b[2m{}\x1b[0m", "Your local AI coding agent"),
             ]
         } else {
             vec![
-                "⬡ Codineer · ready".to_string(),
+                format!("{} · ready", logo_line(false)),
                 "  Your local AI coding agent".to_string(),
             ]
         };
@@ -4236,10 +4243,11 @@ fn print_help_section(out: &mut impl Write, title: &str, entries: &[&str]) -> io
 }
 
 fn print_help_to(out: &mut impl Write) -> io::Result<()> {
-    writeln!(out, "Codineer CLI v{VERSION}")?;
+    let color = io::stdout().is_terminal();
+    writeln!(out, "{} v{VERSION}", logo_line(color))?;
     writeln!(
         out,
-        "  Interactive coding assistant for the current workspace."
+        "  Your local AI coding agent."
     )?;
     writeln!(out)?;
     print_help_section(
@@ -4570,6 +4578,7 @@ mod tests {
         let mut output = Vec::new();
         print_help_to(&mut output).expect("help should write");
         let text = String::from_utf8(output).expect("valid utf-8");
+        assert!(text.contains("Codineer"));
         assert!(text.contains("Environment variables"));
         assert!(text.contains("ANTHROPIC_API_KEY"));
         assert!(text.contains("XAI_API_KEY"));

@@ -352,7 +352,10 @@ pub fn generate_seatbelt_profile(cwd: &Path, status: &SandboxStatus) -> String {
     ];
 
     if let Some(home) = env::var_os("HOME") {
-        let home_str = home.to_string_lossy().replace('\\', "\\\\").replace('"', "\\\"");
+        let home_str = home
+            .to_string_lossy()
+            .replace('\\', "\\\\")
+            .replace('"', "\\\"");
         rules.push(format!(
             "(allow file-read* (subpath \"{home_str}/.cargo\"))"
         ));
