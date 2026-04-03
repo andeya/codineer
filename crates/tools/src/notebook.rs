@@ -53,7 +53,8 @@ pub(crate) fn execute_notebook_edit(
 
     let cell_id = match edit_mode {
         NotebookEditMode::Insert => {
-            let resolved_cell_type = resolved_cell_type.expect("insert cell type");
+            let resolved_cell_type =
+                resolved_cell_type.ok_or_else(|| String::from("insert requires a cell type"))?;
             let new_id = make_cell_id(cells.len());
             let new_cell = build_notebook_cell(&new_id, resolved_cell_type, &new_source);
             let insert_at = target_index.map_or(cells.len(), |index| index + 1);
@@ -65,16 +66,21 @@ pub(crate) fn execute_notebook_edit(
                 .map(ToString::to_string)
         }
         NotebookEditMode::Delete => {
-            let removed = cells.remove(target_index.expect("delete target index"));
+            let index =
+                target_index.ok_or_else(|| String::from("delete requires a target cell index"))?;
+            let removed = cells.remove(index);
             removed
                 .get("id")
                 .and_then(serde_json::Value::as_str)
                 .map(ToString::to_string)
         }
         NotebookEditMode::Replace => {
-            let resolved_cell_type = resolved_cell_type.expect("replace cell type");
+            let resolved_cell_type =
+                resolved_cell_type.ok_or_else(|| String::from("replace requires a cell type"))?;
+            let index =
+                target_index.ok_or_else(|| String::from("replace requires a target cell index"))?;
             let cell = cells
-                .get_mut(target_index.expect("replace target index"))
+                .get_mut(index)
                 .ok_or_else(|| String::from("Cell index out of range"))?;
             cell["source"] = serde_json::Value::Array(source_lines(&new_source));
             cell["cell_type"] = serde_json::Value::String(match resolved_cell_type {

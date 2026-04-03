@@ -74,11 +74,7 @@ impl InternalPromptProgressReporter {
 
     pub(crate) fn mark_model_phase(&self) {
         let snapshot = {
-            let mut state = self
-                .shared
-                .state
-                .lock()
-                .expect("internal prompt progress state poisoned");
+            let mut state = self.shared.state.lock().unwrap_or_else(|p| p.into_inner());
             state.step += 1;
             state.phase = if state.step == 1 {
                 "analyzing request".to_string()
@@ -99,11 +95,7 @@ impl InternalPromptProgressReporter {
     pub(crate) fn mark_tool_phase(&self, name: &str, input: &str) {
         let detail = describe_tool_progress(name, input);
         let snapshot = {
-            let mut state = self
-                .shared
-                .state
-                .lock()
-                .expect("internal prompt progress state poisoned");
+            let mut state = self.shared.state.lock().unwrap_or_else(|p| p.into_inner());
             state.step += 1;
             state.phase = format!("running {name}");
             state.detail = Some(detail);
@@ -124,11 +116,7 @@ impl InternalPromptProgressReporter {
         }
         let detail = truncate_for_summary(first_visible_line(trimmed), 120);
         let snapshot = {
-            let mut state = self
-                .shared
-                .state
-                .lock()
-                .expect("internal prompt progress state poisoned");
+            let mut state = self.shared.state.lock().unwrap_or_else(|p| p.into_inner());
             if state.saw_final_text {
                 return;
             }
@@ -160,7 +148,7 @@ impl InternalPromptProgressReporter {
         self.shared
             .state
             .lock()
-            .expect("internal prompt progress state poisoned")
+            .unwrap_or_else(|p| p.into_inner())
             .clone()
     }
 
@@ -173,7 +161,7 @@ impl InternalPromptProgressReporter {
             .shared
             .output_lock
             .lock()
-            .expect("internal prompt progress output lock poisoned");
+            .unwrap_or_else(|p| p.into_inner());
         let mut stdout = std::io::stdout();
         let _ = writeln!(stdout, "{line}");
         let _ = stdout.flush();

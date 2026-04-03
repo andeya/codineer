@@ -107,7 +107,7 @@ pub(crate) fn describe_install_source(source: &PluginInstallSource) -> String {
 pub(crate) fn unix_time_ms() -> u128 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .expect("time should be after epoch")
+        .unwrap_or_default()
         .as_millis()
 }
 
@@ -159,5 +159,5 @@ pub(crate) fn ensure_object<'a>(
     }
     root.get_mut(key)
         .and_then(Value::as_object_mut)
-        .expect("object should exist")
+        .unwrap_or_else(|| unreachable!("just inserted an object for key {key:?}"))
 }

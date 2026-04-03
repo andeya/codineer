@@ -231,6 +231,10 @@ impl EditSession {
             self.cursor
         };
 
+        let mut cursor = cursor.min(active_text.len());
+        while !active_text.is_char_boundary(cursor) && cursor > 0 {
+            cursor -= 1;
+        }
         let cursor_prefix = &active_text[..cursor];
         let cursor_row = cursor_prefix.bytes().filter(|byte| *byte == b'\n').count();
         let cursor_col = match cursor_prefix.rsplit_once('\n') {
