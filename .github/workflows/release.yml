@@ -63,6 +63,7 @@ jobs:
 
       - name: Package (tar.gz)
         if: matrix.archive == 'tar.gz'
+        id: pkg_tar
         shell: bash
         run: |
           staging="codineer-${{ github.ref_name }}-${{ matrix.target }}"
@@ -70,10 +71,11 @@ jobs:
           cp "${{ steps.bin.outputs.path }}" "$staging/"
           cp LICENSE README.md "$staging/" 2>/dev/null || true
           tar czf "$staging.tar.gz" "$staging"
-          echo "ASSET=$staging.tar.gz" >> "$GITHUB_ENV"
+          echo "asset=$staging.tar.gz" >> "$GITHUB_OUTPUT"
 
       - name: Package (zip)
         if: matrix.archive == 'zip'
+        id: pkg_zip
         shell: bash
         run: |
           staging="codineer-${{ github.ref_name }}-${{ matrix.target }}"
@@ -81,13 +83,13 @@ jobs:
           cp "${{ steps.bin.outputs.path }}" "$staging/"
           cp LICENSE README.md "$staging/" 2>/dev/null || true
           7z a "$staging.zip" "$staging"
-          echo "ASSET=$staging.zip" >> "$GITHUB_ENV"
+          echo "asset=$staging.zip" >> "$GITHUB_OUTPUT"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: codineer-${{ matrix.target }}
-          path: ${{ env.ASSET }}
+          path: ${{ steps.pkg_tar.outputs.asset || steps.pkg_zip.outputs.asset }}
 
   release:
     name: Create GitHub Release
