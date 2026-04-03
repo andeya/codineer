@@ -105,3 +105,97 @@ jobs:
         with:
           generate_release_notes: true
           files: artifacts/*
+
+  publish-crate:
+    name: Publish to crates.io
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Publish codineer-cli
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish -p codineer-cli --locked
+        continue-on-error: true
+
+  update-homebrew:
+    name: Update Homebrew tap
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Extract version
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Compute SHA256 checksums
+        run: |
+          for target in x86_64-apple-darwin aarch64-apple-darwin x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu; do
+            archive="codineer-${{ github.ref_name }}-${target}.tar.gz"
+            url="https://github.com/andeya/codineer/releases/download/${{ github.ref_name }}/${archive}"
+            sha=$(curl -sL "$url" | sha256sum | cut -d' ' -f1)
+            key=$(echo "$target" | tr '-' '_')
+            echo "sha_${key}=${sha}" >> "$GITHUB_ENV"
+          done
+
+      - name: Check out Homebrew tap repo
+        uses: actions/checkout@v4
+        with:
+          repository: andeya/homebrew-codineer
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+
+      - name: Update Formula
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          TAG="${{ github.ref_name }}"
+          mkdir -p Formula
+          cat > Formula/codineer.rb << FORMULA
+          class Codineer < Formula
+            desc "Local coding-agent CLI implemented in safe Rust"
+            homepage "https://github.com/andeya/codineer"
+            version "${VERSION}"
+            license "MIT"
+
+            on_macos do
+              if Hardware::CPU.arm?
+                url "https://github.com/andeya/codineer/releases/download/${TAG}/codineer-${TAG}-aarch64-apple-darwin.tar.gz"
+                sha256 "${sha_aarch64_apple_darwin}"
+              else
+                url "https://github.com/andeya/codineer/releases/download/${TAG}/codineer-${TAG}-x86_64-apple-darwin.tar.gz"
+                sha256 "${sha_x86_64_apple_darwin}"
+              end
+            end
+
+            on_linux do
+              if Hardware::CPU.arm?
+                url "https://github.com/andeya/codineer/releases/download/${TAG}/codineer-${TAG}-aarch64-unknown-linux-gnu.tar.gz"
+                sha256 "${sha_aarch64_unknown_linux_gnu}"
+              else
+                url "https://github.com/andeya/codineer/releases/download/${TAG}/codineer-${TAG}-x86_64-unknown-linux-gnu.tar.gz"
+                sha256 "${sha_x86_64_unknown_linux_gnu}"
+              end
+            end
+
+            def install
+              bin.install "codineer"
+            end
+
+            test do
+              assert_match version.to_s, shell_output("#{bin}/codineer --version")
+            end
+          end
+          FORMULA
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/codineer.rb
+          git diff --cached --quiet && exit 0
+          git commit -m "formula: bump to ${{ github.ref_name }}"
+          git push
+        continue-on-error: true
