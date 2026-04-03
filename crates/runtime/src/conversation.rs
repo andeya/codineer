@@ -5,6 +5,7 @@ use crate::compact::{
     compact_session, estimate_session_tokens, CompactionConfig, CompactionResult,
 };
 use crate::config::RuntimeFeatureConfig;
+use crate::config::RuntimeHookConfig;
 use crate::hooks::{HookRunResult, HookRunner};
 use crate::permissions::{PermissionOutcome, PermissionPolicy, PermissionPrompter};
 use crate::session::{ContentBlock, ConversationMessage, Session};
@@ -96,7 +97,7 @@ pub struct ConversationRuntime<C, T> {
     system_prompt: Vec<String>,
     max_iterations: usize,
     usage_tracker: UsageTracker,
-    hook_runner: HookRunner,
+    hook_runner: HookRunner<RuntimeHookConfig>,
 }
 
 impl<C, T> ConversationRuntime<C, T>
@@ -138,7 +139,7 @@ where
             tool_executor,
             permission_policy,
             system_prompt,
-            max_iterations: usize::MAX,
+            max_iterations: 200,
             usage_tracker,
             hook_runner: HookRunner::from_feature_config(feature_config),
         }
@@ -404,7 +405,6 @@ mod tests {
         StaticToolExecutor,
     };
     use crate::compact::CompactionConfig;
-    use crate::config::{RuntimeFeatureConfig, RuntimeHookConfig};
     use crate::permissions::{
         PermissionMode, PermissionPolicy, PermissionPromptDecision, PermissionPrompter,
         PermissionRequest,
@@ -582,6 +582,7 @@ mod tests {
     #[test]
     #[cfg(unix)]
     fn denies_tool_use_when_pre_tool_hook_blocks() {
+        use crate::config::{RuntimeFeatureConfig, RuntimeHookConfig};
         struct SingleCallApiClient;
         impl ApiClient for SingleCallApiClient {
             fn stream(&mut self, request: ApiRequest) -> Result<Vec<AssistantEvent>, RuntimeError> {
@@ -607,7 +608,7 @@ mod tests {
         }
 
         let deny_config = RuntimeFeatureConfig::default().with_hooks(RuntimeHookConfig::new(
-            vec![shell_snippet("printf 'blocked by hook'; exit 2")],
+            vec!["printf 'blocked by hook'; exit 2".to_string()],
             Vec::new(),
         ));
         let mut runtime = ConversationRuntime::new_with_features(
@@ -645,6 +646,7 @@ mod tests {
     #[test]
     #[cfg(unix)]
     fn appends_post_tool_hook_feedback_to_tool_result() {
+        use crate::config::{RuntimeFeatureConfig, RuntimeHookConfig};
         struct TwoCallApiClient {
             calls: usize,
         }
@@ -677,8 +679,8 @@ mod tests {
         }
 
         let hook_config = RuntimeFeatureConfig::default().with_hooks(RuntimeHookConfig::new(
-            vec![shell_snippet("printf 'pre hook ran'")],
-            vec![shell_snippet("printf 'post hook ran'")],
+            vec!["printf 'pre hook ran'".to_string()],
+            vec!["printf 'post hook ran'".to_string()],
         ));
         let mut runtime = ConversationRuntime::new_with_features(
             Session::new(),
@@ -795,15 +797,5 @@ mod tests {
             result.compacted_session.messages[0].role,
             MessageRole::System
         );
-    }
-
-    #[cfg(windows)]
-    fn shell_snippet(script: &str) -> String {
-        script.replace('\'', "\"")
-    }
-
-    #[cfg(not(windows))]
-    fn shell_snippet(script: &str) -> String {
-        script.to_string()
     }
 }
