@@ -536,19 +536,23 @@ mod tests {
         edit_file, glob_search, grep_search, read_file, write_file, GrepOutputMode, GrepSearchInput,
     };
 
+    fn workspace_dir() -> std::path::PathBuf {
+        std::env::temp_dir().join("codineer-test-workspace")
+    }
+
     fn temp_path(name: &str) -> std::path::PathBuf {
         let unique = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("time should move forward")
             .as_nanos();
-        std::env::temp_dir().join(format!("codineer-native-{name}-{unique}"))
+        workspace_dir().join(format!("codineer-native-{name}-{unique}"))
     }
 
     fn allow_temp_workspace() {
-        let tmp = std::env::temp_dir()
-            .canonicalize()
-            .unwrap_or_else(|_| std::env::temp_dir());
-        std::env::set_var("CODINEER_WORKSPACE_ROOT", tmp);
+        let ws = workspace_dir();
+        std::fs::create_dir_all(&ws).ok();
+        let ws = ws.canonicalize().unwrap_or(ws);
+        std::env::set_var("CODINEER_WORKSPACE_ROOT", ws);
     }
 
     #[test]
@@ -630,7 +634,9 @@ mod tests {
     #[test]
     fn rejects_write_outside_workspace() {
         allow_temp_workspace();
-        let result = write_file("/tmp/should-not-exist-codineer-test-sentinel", "malicious");
+        let sentinel = std::env::temp_dir().join("codineer-test-outside-sentinel");
+        let sentinel_str = sentinel.to_string_lossy().to_string();
+        let result = write_file(&sentinel_str, "malicious");
         let denied = result.is_err()
             && result
                 .as_ref()
@@ -638,7 +644,7 @@ mod tests {
                 .kind()
                 .eq(&std::io::ErrorKind::PermissionDenied);
         if !denied {
-            let _ = std::fs::remove_file("/tmp/should-not-exist-codineer-test-sentinel");
+            let _ = std::fs::remove_file(&sentinel);
         }
         assert!(denied, "write outside workspace must be denied");
     }
