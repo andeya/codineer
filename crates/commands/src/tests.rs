@@ -746,7 +746,12 @@ fn branch_and_worktree_commands_manage_git_state() {
     assert!(created.contains("feature/demo"));
     assert!(switched.contains("main"));
     assert!(added.contains("wt-demo"));
-    assert!(listed_worktrees.contains(worktree_path.to_str().expect("utf8 path")));
+    let wt_path_str = worktree_path.to_str().expect("utf8 path");
+    let wt_path_forward = wt_path_str.replace('\\', "/");
+    assert!(
+        listed_worktrees.contains(wt_path_str) || listed_worktrees.contains(&*wt_path_forward),
+        "listed worktrees did not contain worktree path\npath: {wt_path_str}\noutput: {listed_worktrees}"
+    );
     assert!(removed.contains("Result           removed"));
 
     let _ = fs::remove_dir_all(repo);
