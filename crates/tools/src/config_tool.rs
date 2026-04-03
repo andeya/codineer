@@ -1,5 +1,4 @@
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use serde_json::{json, Value};
 
@@ -204,8 +203,8 @@ pub(crate) fn config_home_dir() -> Result<PathBuf, String> {
     if let Ok(path) = std::env::var("CODINEER_CONFIG_HOME") {
         return Ok(PathBuf::from(path));
     }
-    let home = std::env::var("HOME").map_err(|_| String::from("HOME is not set"))?;
-    Ok(PathBuf::from(home).join(".codineer"))
+    let home = runtime::home_dir().ok_or_else(|| String::from("HOME / USERPROFILE is not set"))?;
+    Ok(home.join(".codineer"))
 }
 
 pub(crate) fn read_json_object(path: &Path) -> Result<serde_json::Map<String, Value>, String> {
@@ -256,7 +255,9 @@ pub(crate) fn set_nested_value(
     path: &[&str],
     new_value: Value,
 ) {
-    let (first, rest) = path.split_first().expect("config path must not be empty");
+    let Some((first, rest)) = path.split_first() else {
+        return;
+    };
     if rest.is_empty() {
         root.insert((*first).to_string(), new_value);
         return;
@@ -268,18 +269,11 @@ pub(crate) fn set_nested_value(
     if !entry.is_object() {
         *entry = Value::Object(serde_json::Map::new());
     }
-    let map = entry.as_object_mut().expect("object inserted");
-    set_nested_value(map, rest, new_value);
+    if let Some(map) = entry.as_object_mut() {
+        set_nested_value(map, rest, new_value);
+    }
 }
 
 pub(crate) fn iso8601_timestamp() -> String {
-    if let Ok(output) = Command::new("date")
-        .args(["-u", "+%Y-%m-%dT%H:%M:%SZ"])
-        .output()
-    {
-        if output.status.success() {
-            return String::from_utf8_lossy(&output.stdout).trim().to_string();
-        }
-    }
     crate::agent::iso8601_now()
 }

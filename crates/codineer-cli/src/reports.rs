@@ -432,6 +432,10 @@ pub(crate) fn render_diff_report() -> Result<String, Box<dyn std::error::Error>>
 pub(crate) fn render_teleport_report(target: &str) -> Result<String, Box<dyn std::error::Error>> {
     let cwd = env::current_dir()?;
 
+    if !crate::workspace::command_exists("rg") {
+        return Err("ripgrep (rg) is not installed or not in PATH".into());
+    }
+
     let file_list = Command::new("rg")
         .args(["--files"])
         .current_dir(&cwd)

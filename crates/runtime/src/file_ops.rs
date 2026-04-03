@@ -476,8 +476,7 @@ fn workspace_root() -> io::Result<PathBuf> {
 }
 
 fn enforce_workspace_boundary(resolved: &Path) -> io::Result<()> {
-    let root = workspace_root()?
-        .canonicalize()
+    let root = dunce::canonicalize(workspace_root()?)
         .unwrap_or_else(|_| workspace_root().unwrap_or_default());
     if !resolved.starts_with(&root) {
         return Err(io::Error::new(
@@ -498,7 +497,7 @@ fn normalize_path(path: &str) -> io::Result<PathBuf> {
     } else {
         std::env::current_dir()?.join(path)
     };
-    match candidate.canonicalize() {
+    match dunce::canonicalize(&candidate) {
         Ok(resolved) => {
             enforce_workspace_boundary(&resolved)?;
             Ok(resolved)
@@ -534,7 +533,7 @@ fn normalize_path_allow_missing(path: &str) -> io::Result<PathBuf> {
         std::env::current_dir()?.join(path)
     };
 
-    if let Ok(canonical) = candidate.canonicalize() {
+    if let Ok(canonical) = dunce::canonicalize(&candidate) {
         enforce_workspace_boundary(&canonical)?;
         return Ok(canonical);
     }
@@ -546,7 +545,7 @@ fn normalize_path_allow_missing(path: &str) -> io::Result<PathBuf> {
     let mut ancestor = candidate.clone();
     let mut suffix = PathBuf::new();
     loop {
-        if let Ok(canonical_ancestor) = ancestor.canonicalize() {
+        if let Ok(canonical_ancestor) = dunce::canonicalize(&ancestor) {
             enforce_workspace_boundary(&canonical_ancestor)?;
             return Ok(if suffix.as_os_str().is_empty() {
                 canonical_ancestor

@@ -250,9 +250,17 @@ impl PluginTool {
 
     pub fn execute(&self, input: &Value) -> Result<String, PluginError> {
         let input_json = input.to_string();
-        let mut process = Command::new(&self.command);
+        let mut process = if cfg!(windows) && self.command.ends_with(".sh") {
+            let mut p = Command::new("bash");
+            p.arg(&self.command);
+            p.args(&self.args);
+            p
+        } else {
+            let mut p = Command::new(&self.command);
+            p.args(&self.args);
+            p
+        };
         process
-            .args(&self.args)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())

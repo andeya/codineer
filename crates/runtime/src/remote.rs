@@ -6,7 +6,14 @@ use std::path::{Path, PathBuf};
 
 pub const DEFAULT_REMOTE_BASE_URL: &str = "https://api.codineer.dev";
 pub const DEFAULT_SESSION_TOKEN_PATH: &str = "/run/codineer/session_token";
+#[cfg(target_os = "linux")]
 pub const DEFAULT_SYSTEM_CA_BUNDLE: &str = "/etc/ssl/certs/ca-certificates.crt";
+#[cfg(target_os = "macos")]
+pub const DEFAULT_SYSTEM_CA_BUNDLE: &str = "/etc/ssl/cert.pem";
+#[cfg(windows)]
+pub const DEFAULT_SYSTEM_CA_BUNDLE: &str = "";
+#[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
+pub const DEFAULT_SYSTEM_CA_BUNDLE: &str = "";
 
 pub const UPSTREAM_PROXY_ENV_KEYS: [&str; 8] = [
     "HTTPS_PROXY",
@@ -235,8 +242,8 @@ pub fn inherited_upstream_proxy_env(
 }
 
 fn default_ca_bundle_path() -> PathBuf {
-    env::var_os("HOME")
-        .map_or_else(|| PathBuf::from("."), PathBuf::from)
+    crate::home_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
         .join(".codineer")
         .join("ca-bundle.crt")
 }

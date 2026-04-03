@@ -63,10 +63,13 @@ pub(crate) fn git_status_ok(args: &[&str]) -> Result<(), Box<dyn std::error::Err
 }
 
 pub(crate) fn command_exists(name: &str) -> bool {
-    Command::new("which")
+    let check = if cfg!(windows) { "where" } else { "which" };
+    Command::new(check)
         .arg(name)
-        .output()
-        .is_ok_and(|output| output.status.success())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .is_ok_and(|status| status.success())
 }
 
 pub(crate) fn write_temp_text_file(

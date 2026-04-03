@@ -16,23 +16,27 @@ pub(crate) fn run_lifecycle_commands(
 
     for command in commands {
         let mut process = if Path::new(command).exists() {
-            if cfg!(windows) {
-                let mut process = Command::new("cmd");
-                process.arg("/C").arg(command);
-                process
+            if cfg!(windows) && command.ends_with(".sh") {
+                let mut p = Command::new("bash");
+                p.arg(command);
+                p
+            } else if cfg!(windows) {
+                let mut p = Command::new("cmd");
+                p.arg("/C").arg(command);
+                p
             } else {
-                let mut process = Command::new("sh");
-                process.arg(command);
-                process
+                let mut p = Command::new("sh");
+                p.arg(command);
+                p
             }
         } else if cfg!(windows) {
-            let mut process = Command::new("cmd");
-            process.arg("/C").arg(command);
-            process
+            let mut p = Command::new("cmd");
+            p.arg("/C").arg(command);
+            p
         } else {
-            let mut process = Command::new("sh");
-            process.arg("-lc").arg(command);
-            process
+            let mut p = Command::new("sh");
+            p.arg("-lc").arg(command);
+            p
         };
         if let Some(root) = &metadata.root {
             process.current_dir(root);

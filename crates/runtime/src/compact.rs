@@ -370,7 +370,9 @@ fn extract_file_candidates(content: &str) -> Vec<String> {
             let candidate = token.trim_matches(|char: char| {
                 matches!(char, ',' | '.' | ':' | ';' | ')' | '(' | '"' | '\'' | '`')
             });
-            if candidate.contains('/') && has_interesting_extension(candidate) {
+            if (candidate.contains('/') || candidate.contains('\\'))
+                && has_interesting_extension(candidate)
+            {
                 Some(candidate.to_string())
             } else {
                 None

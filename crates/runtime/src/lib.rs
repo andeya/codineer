@@ -72,6 +72,14 @@ pub use remote::{
 pub use session::{ContentBlock, ConversationMessage, MessageRole, Session, SessionError};
 pub use usage::{format_usd, pricing_for_model, TokenUsage, UsageCostEstimate, UsageTracker};
 
+/// Cross-platform home directory: tries `HOME` first (Unix + WSL), falls back to `USERPROFILE` (Windows).
+#[must_use]
+pub fn home_dir() -> Option<std::path::PathBuf> {
+    std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map(std::path::PathBuf::from)
+}
+
 #[cfg(test)]
 fn test_env_lock() -> std::sync::MutexGuard<'static, ()> {
     use std::sync::Mutex;
