@@ -498,9 +498,33 @@ fn normalize_path(path: &str) -> io::Result<PathBuf> {
     } else {
         std::env::current_dir()?.join(path)
     };
-    let resolved = candidate.canonicalize()?;
-    enforce_workspace_boundary(&resolved)?;
-    Ok(resolved)
+    match candidate.canonicalize() {
+        Ok(resolved) => {
+            enforce_workspace_boundary(&resolved)?;
+            Ok(resolved)
+        }
+        Err(err) if err.kind() == io::ErrorKind::NotFound => {
+            // The file does not exist yet; canonicalize() cannot resolve it.
+            // Compare the raw candidate against the raw (non-canonical) workspace
+            // root so that both sides are consistently unresolved and symlinks do
+            // not skew the comparison.  This ensures we return PermissionDenied
+            // rather than NotFound for paths that are clearly outside the workspace
+            // (e.g. /etc/passwd on Windows where it does not exist).
+            let root = workspace_root()?;
+            if !candidate.starts_with(&root) {
+                return Err(io::Error::new(
+                    io::ErrorKind::PermissionDenied,
+                    format!(
+                        "path '{}' is outside the workspace root '{}'; access denied",
+                        candidate.display(),
+                        root.display(),
+                    ),
+                ));
+            }
+            Err(err)
+        }
+        Err(err) => Err(err),
+    }
 }
 
 fn normalize_path_allow_missing(path: &str) -> io::Result<PathBuf> {
