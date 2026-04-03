@@ -1,5 +1,4 @@
 use std::ffi::OsStr;
-use std::path::Path;
 use std::process::Command;
 
 use serde_json::json;
@@ -263,7 +262,7 @@ fn shell_command(command: &str) -> CommandWithStdin {
     };
 
     #[cfg(not(windows))]
-    let command_builder = if Path::new(command).exists() {
+    let command_builder = if std::path::Path::new(command).exists() {
         let mut cmd = Command::new("sh");
         cmd.arg(command);
         CommandWithStdin::new(cmd)
