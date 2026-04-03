@@ -166,3 +166,41 @@ impl LspManager {
         for client in drained {
             client.shutdown().await?;
         }
+        Ok(())
+    }
+
+    async fn client_for_path(&self, path: &Path) -> Result<Arc<LspClient>, LspError> {
+        let extension = path
+            .extension()
+            .map(|ext| normalize_extension(ext.to_string_lossy().as_ref()))
+            .ok_or_else(|| LspError::UnsupportedDocument(path.to_path_buf()))?;
+        let server_name = self
+            .extension_map
+            .get(&extension)
+            .ok_or_else(|| LspError::UnsupportedDocument(path.to_path_buf()))?;
+        let mut clients = self.clients.lock().await;
+        if let Some(client) = clients.get(server_name) {
+            return Ok(Arc::clone(client));
+        }
+        let config = self
+            .server_configs
+            .get(server_name)
+            .ok_or_else(|| LspError::UnknownServer(server_name.clone()))?
+            .clone();
+        let client = Arc::new(LspClient::connect(config).await?);
+        clients.insert(server_name.clone(), Arc::clone(&client));
+        Ok(client)
+    }
+}
+
+fn dedupe_locations(locations: &mut Vec<SymbolLocation>) {
+    let mut seen = BTreeSet::new();
+    locations.retain(|loc| {
+        let key = (
+            loc.path.clone(),
+            loc.range.start.line,
+            loc.range.start.character,
+        );
+        seen.insert(key)
+    });
+}

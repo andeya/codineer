@@ -1112,3 +1112,61 @@ mod tests {
         // then
         assert_eq!(editor.history, vec!["/help".to_string()]);
     }
+
+    #[test]
+    fn tab_completes_matching_slash_commands() {
+        // given
+        let mut editor = LineEditor::new("> ", vec!["/help".to_string(), "/hello".to_string()]);
+        let mut session = EditSession::new(false);
+        session.text = "/he".to_string();
+        session.cursor = session.text.len();
+
+        // when
+        editor.complete_slash_command(&mut session);
+
+        // then
+        assert_eq!(session.text, "/help");
+        assert_eq!(session.cursor, 5);
+    }
+
+    #[test]
+    fn tab_cycles_between_matching_slash_commands() {
+        // given
+        let mut editor = LineEditor::new(
+            "> ",
+            vec!["/permissions".to_string(), "/plugin".to_string()],
+        );
+        let mut session = EditSession::new(false);
+        session.text = "/p".to_string();
+        session.cursor = session.text.len();
+
+        // when
+        editor.complete_slash_command(&mut session);
+        let first = session.text.clone();
+        session.cursor = session.text.len();
+        editor.complete_slash_command(&mut session);
+        let second = session.text.clone();
+
+        // then
+        assert_eq!(first, "/permissions");
+        assert_eq!(second, "/plugin");
+    }
+
+    #[test]
+    fn ctrl_c_cancels_when_input_exists() {
+        // given
+        let mut editor = LineEditor::new("> ", vec![]);
+        let mut session = EditSession::new(false);
+        session.text = "draft".to_string();
+        session.cursor = session.text.len();
+
+        // when
+        let action = editor.handle_key_event(
+            &mut session,
+            KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL),
+        );
+
+        // then
+        assert!(matches!(action, KeyAction::Cancel));
+    }
+}

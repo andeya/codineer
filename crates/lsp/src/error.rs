@@ -72,3 +72,54 @@ mod tests {
 
         let json_str = "not json";
         let json_err: serde_json::Error = serde_json::from_str::<bool>(json_str).unwrap_err();
+        let json_display = LspError::Json(json_err);
+        assert!(!json_display.to_string().is_empty());
+
+        assert_eq!(
+            LspError::InvalidHeader("bad".into()).to_string(),
+            "invalid LSP header: bad"
+        );
+        assert_eq!(
+            LspError::MissingContentLength.to_string(),
+            "missing LSP Content-Length header"
+        );
+        assert_eq!(
+            LspError::InvalidContentLength("xyz".into()).to_string(),
+            "invalid LSP Content-Length value: xyz"
+        );
+        assert!(LspError::UnsupportedDocument(PathBuf::from("/foo.txt"))
+            .to_string()
+            .contains("/foo.txt"));
+        assert_eq!(
+            LspError::UnknownServer("rust-analyzer".into()).to_string(),
+            "unknown LSP server: rust-analyzer"
+        );
+        assert!(LspError::DuplicateExtension {
+            extension: ".rs".into(),
+            existing_server: "a".into(),
+            new_server: "b".into(),
+        }
+        .to_string()
+        .contains(".rs"));
+        assert!(LspError::PathToUrl(PathBuf::from("/bad"))
+            .to_string()
+            .contains("/bad"));
+        assert_eq!(
+            LspError::Protocol("timeout".into()).to_string(),
+            "LSP protocol error: timeout"
+        );
+    }
+
+    #[test]
+    fn from_io_error_converts() {
+        let err: LspError = std::io::Error::new(std::io::ErrorKind::BrokenPipe, "pipe").into();
+        assert!(matches!(err, LspError::Io(_)));
+    }
+
+    #[test]
+    fn from_json_error_converts() {
+        let json_err: serde_json::Error = serde_json::from_str::<bool>("x").unwrap_err();
+        let err: LspError = json_err.into();
+        assert!(matches!(err, LspError::Json(_)));
+    }
+}

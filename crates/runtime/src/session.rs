@@ -425,3 +425,78 @@ mod tests {
         let path = std::env::temp_dir().join(format!("runtime-session-{nanos}.json"));
         session.save_to_path(&path).expect("session should save");
         let restored = Session::load_from_path(&path).expect("session should load");
+        fs::remove_file(&path).expect("temp file should be removable");
+
+        assert_eq!(restored, session);
+        assert_eq!(restored.messages[2].role, MessageRole::Tool);
+        assert_eq!(
+            restored.messages[1].usage.expect("usage").total_tokens(),
+            17
+        );
+    }
+
+    #[test]
+    fn round_trips_system_role_message() {
+        let json_str = r#"{"version":1,"messages":[{"role":"system","blocks":[{"type":"text","text":"sys prompt"}]}]}"#;
+        let parsed = crate::json::JsonValue::parse(json_str).unwrap();
+        let session = Session::from_json(&parsed).unwrap();
+        assert_eq!(session.messages[0].role, MessageRole::System);
+
+        let rendered = session.to_json();
+        let restored = Session::from_json(&rendered).unwrap();
+        assert_eq!(restored, session);
+    }
+
+    #[test]
+    fn rejects_unsupported_message_role() {
+        let json_str = r#"{"version":1,"messages":[{"role":"admin","blocks":[]}]}"#;
+        let parsed = crate::json::JsonValue::parse(json_str).unwrap();
+        let err = Session::from_json(&parsed).unwrap_err();
+        assert!(err.to_string().contains("unsupported message role"));
+    }
+
+    #[test]
+    fn rejects_unsupported_block_type() {
+        let json_str =
+            r#"{"version":1,"messages":[{"role":"user","blocks":[{"type":"video","url":"x"}]}]}"#;
+        let parsed = crate::json::JsonValue::parse(json_str).unwrap();
+        let err = Session::from_json(&parsed).unwrap_err();
+        assert!(err.to_string().contains("unsupported block type"));
+    }
+
+    #[test]
+    fn rejects_missing_version() {
+        let json_str = r#"{"messages":[]}"#;
+        let parsed = crate::json::JsonValue::parse(json_str).unwrap();
+        let err = Session::from_json(&parsed).unwrap_err();
+        assert!(err.to_string().contains("version"));
+    }
+
+    #[test]
+    fn rejects_non_object_root() {
+        let parsed = crate::json::JsonValue::parse("[1,2]").unwrap();
+        let err = Session::from_json(&parsed).unwrap_err();
+        assert!(err.to_string().contains("object"));
+    }
+
+    #[test]
+    fn load_from_nonexistent_path_returns_io_error() {
+        let err = Session::load_from_path(Path::new("/nonexistent/path/session.json")).unwrap_err();
+        assert!(matches!(err, super::SessionError::Io(_)));
+    }
+
+    #[test]
+    fn session_error_display_covers_all_variants() {
+        let io_err = super::SessionError::Io(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "not found",
+        ));
+        assert!(io_err.to_string().contains("not found"));
+
+        let json_err = super::SessionError::Json(crate::json::JsonError::new("bad"));
+        assert!(json_err.to_string().contains("bad"));
+
+        let fmt_err = super::SessionError::Format("bad format".into());
+        assert!(fmt_err.to_string().contains("bad format"));
+    }
+}

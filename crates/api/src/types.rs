@@ -271,3 +271,119 @@ mod tests {
         };
         for block in [text, tool_use, tool_result] {
             let json = serde_json::to_value(&block).expect("serialize");
+            let deserialized: InputContentBlock =
+                serde_json::from_value(json).expect("deserialize");
+            assert_eq!(deserialized, block);
+        }
+    }
+
+    #[test]
+    fn message_response_deserializes_with_defaults() {
+        let json = json!({
+            "id": "msg-1",
+            "type": "message",
+            "model": "claude-opus-4-6",
+            "role": "assistant",
+            "content": [{"type": "text", "text": "hi"}],
+            "usage": {"input_tokens": 10, "output_tokens": 5}
+        });
+        let response: MessageResponse = serde_json::from_value(json).expect("deserialize");
+        assert_eq!(response.id, "msg-1");
+        assert_eq!(response.role, "assistant");
+        assert_eq!(response.usage.total_tokens(), 15);
+    }
+
+    #[test]
+    fn output_content_block_round_trips_including_thinking() {
+        let blocks = vec![
+            OutputContentBlock::Text {
+                text: "hello".to_string(),
+            },
+            OutputContentBlock::ToolUse {
+                id: "t1".to_string(),
+                name: "bash".to_string(),
+                input: json!({"command": "ls"}),
+            },
+            OutputContentBlock::Thinking {
+                thinking: "hmm".to_string(),
+                signature: Some("sig".to_string()),
+            },
+        ];
+        for block in blocks {
+            let json = serde_json::to_value(&block).expect("serialize");
+            let deserialized: OutputContentBlock =
+                serde_json::from_value(json).expect("deserialize");
+            assert_eq!(deserialized, block);
+        }
+    }
+
+    #[test]
+    fn tool_choice_variants_serialize_with_type_tag() {
+        let auto_json = serde_json::to_value(ToolChoice::Auto).expect("auto");
+        assert_eq!(auto_json, json!({"type": "auto"}));
+        let any_json = serde_json::to_value(ToolChoice::Any).expect("any");
+        assert_eq!(any_json, json!({"type": "any"}));
+        let tool_json = serde_json::to_value(ToolChoice::Tool {
+            name: "bash".to_string(),
+        })
+        .expect("tool");
+        assert_eq!(tool_json, json!({"type": "tool", "name": "bash"}));
+    }
+
+    #[test]
+    fn stream_event_deserializes_all_variants() {
+        let msg_start = json!({
+            "type": "message_start",
+            "message": {
+                "id": "msg-1", "type": "message", "model": "m",
+                "role": "assistant", "content": [],
+                "usage": {"input_tokens": 0, "output_tokens": 0}
+            }
+        });
+        let parsed: StreamEvent = serde_json::from_value(msg_start).expect("message_start");
+        assert!(matches!(parsed, StreamEvent::MessageStart(_)));
+
+        let delta = json!({
+            "type": "content_block_delta",
+            "index": 0,
+            "delta": {"type": "text_delta", "text": "hi"}
+        });
+        let parsed: StreamEvent = serde_json::from_value(delta).expect("content_block_delta");
+        assert!(matches!(parsed, StreamEvent::ContentBlockDelta(_)));
+    }
+
+    #[test]
+    fn usage_computes_total_tokens() {
+        let usage = Usage {
+            input_tokens: 100,
+            output_tokens: 50,
+            cache_read_input_tokens: 20,
+            cache_creation_input_tokens: 10,
+        };
+        assert_eq!(usage.total_tokens(), 150);
+    }
+
+    #[test]
+    fn content_block_delta_all_variants_round_trip() {
+        let deltas = vec![
+            ContentBlockDelta::TextDelta {
+                text: "hi".to_string(),
+            },
+            ContentBlockDelta::InputJsonDelta {
+                partial_json: "{\"a\"".to_string(),
+            },
+            ContentBlockDelta::ThinkingDelta {
+                thinking: "hmm".to_string(),
+            },
+            ContentBlockDelta::SignatureDelta {
+                signature: "sig".to_string(),
+            },
+        ];
+        for delta in deltas {
+            let json = serde_json::to_value(&delta).expect("serialize");
+            let deserialized: ContentBlockDelta =
+                serde_json::from_value(json).expect("deserialize");
+            assert_eq!(deserialized, delta);
+        }
+    }
+}

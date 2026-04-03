@@ -463,10 +463,7 @@ fn filter_tool_specs(
     tool_registry.definitions(allowed_tools)
 }
 
-fn discover_mcp_tools(
-    rt: &tokio::runtime::Runtime,
-    mcp: &SharedMcpManager,
-) -> Vec<ToolDefinition> {
+fn discover_mcp_tools(rt: &tokio::runtime::Runtime, mcp: &SharedMcpManager) -> Vec<ToolDefinition> {
     let Ok(mut guard) = mcp.lock() else {
         return Vec::new();
     };
@@ -476,7 +473,10 @@ fn discover_mcp_tools(
         .map(|managed| ToolDefinition {
             name: managed.qualified_name,
             description: managed.tool.description,
-            input_schema: managed.tool.input_schema.unwrap_or(json!({"type": "object"})),
+            input_schema: managed
+                .tool
+                .input_schema
+                .unwrap_or(json!({"type": "object"})),
         })
         .collect()
 }
@@ -940,11 +940,15 @@ fn run_resume_command(
         SlashCommand::Status => run_resume_status(session_path, session),
         SlashCommand::Cost => {
             let usage = UsageTracker::from_session(session).cumulative_usage();
-            Ok(ResumeCommandOutcome::keep(session, format_cost_report(usage)))
+            Ok(ResumeCommandOutcome::keep(
+                session,
+                format_cost_report(usage),
+            ))
         }
-        SlashCommand::Config { section } => {
-            Ok(ResumeCommandOutcome::keep(session, render_config_report(section.as_deref())?))
-        }
+        SlashCommand::Config { section } => Ok(ResumeCommandOutcome::keep(
+            session,
+            render_config_report(section.as_deref())?,
+        )),
         SlashCommand::Memory => Ok(ResumeCommandOutcome::keep(session, render_memory_report()?)),
         SlashCommand::Init => Ok(ResumeCommandOutcome::keep(session, init_codineer_md()?)),
         SlashCommand::Diff => Ok(ResumeCommandOutcome::keep(session, render_diff_report()?)),
@@ -952,11 +956,17 @@ fn run_resume_command(
         SlashCommand::Export { path } => run_resume_export(session, path.as_deref()),
         SlashCommand::Agents { args } => {
             let cwd = env::current_dir()?;
-            Ok(ResumeCommandOutcome::keep(session, handle_agents_slash_command(args.as_deref(), &cwd)?))
+            Ok(ResumeCommandOutcome::keep(
+                session,
+                handle_agents_slash_command(args.as_deref(), &cwd)?,
+            ))
         }
         SlashCommand::Skills { args } => {
             let cwd = env::current_dir()?;
-            Ok(ResumeCommandOutcome::keep(session, handle_skills_slash_command(args.as_deref(), &cwd)?))
+            Ok(ResumeCommandOutcome::keep(
+                session,
+                handle_skills_slash_command(args.as_deref(), &cwd)?,
+            ))
         }
         _ => Err("unsupported resumed slash command".into()),
     }
@@ -1170,11 +1180,9 @@ impl LiveCli {
             .is_some_and(|path| path.join("CODINEER.md").is_file());
         let mut lines = if color {
             vec![
-                "\x1b[38;5;33m ⬡\x1b[0m \x1b[1;38;5;45mCodineer\x1b[0m \x1b[2m· ready\x1b[0m".to_string(),
-                format!(
-                    "   \x1b[2m{}\x1b[0m",
-                    "Your local AI coding agent"
-                ),
+                "\x1b[38;5;33m ⬡\x1b[0m \x1b[1;38;5;45mCodineer\x1b[0m \x1b[2m· ready\x1b[0m"
+                    .to_string(),
+                format!("   \x1b[2m{}\x1b[0m", "Your local AI coding agent"),
             ]
         } else {
             vec![
@@ -1214,7 +1222,8 @@ impl LiveCli {
         if let Some(enrichment) = self.collect_lsp_diagnostics() {
             if let Ok(refreshed) = build_system_prompt_with_lsp(Some(&enrichment)) {
                 self.system_prompt = refreshed;
-                self.runtime.update_system_prompt(self.system_prompt.clone());
+                self.runtime
+                    .update_system_prompt(self.system_prompt.clone());
             }
         }
 
@@ -1301,25 +1310,82 @@ impl LiveCli {
         command: SlashCommand,
     ) -> Result<bool, Box<dyn std::error::Error>> {
         Ok(match command {
-            SlashCommand::Help => { println!("{}", render_repl_help()); false }
-            SlashCommand::Status => { self.print_status(); false }
-            SlashCommand::Cost => { self.print_cost(); false }
-            SlashCommand::Compact => { self.compact()?; false }
-            SlashCommand::Init => { run_init()?; false }
-            SlashCommand::Diff => { Self::print_diff()?; false }
-            SlashCommand::Version => { Self::print_version(); false }
-            SlashCommand::Memory => { Self::print_memory()?; false }
-            SlashCommand::DebugToolCall => { self.run_debug_tool_call()?; false }
-            SlashCommand::Commit => { self.run_commit()?; true }
-            SlashCommand::Bughunter { scope } => { self.run_bughunter(scope.as_deref())?; false }
-            SlashCommand::Pr { context } => { self.run_pr(context.as_deref())?; false }
-            SlashCommand::Issue { context } => { self.run_issue(context.as_deref())?; false }
-            SlashCommand::Ultraplan { task } => { self.run_ultraplan(task.as_deref())?; false }
-            SlashCommand::Teleport { target } => { Self::run_teleport(target.as_deref())?; false }
-            SlashCommand::Export { path } => { self.export_session(path.as_deref())?; false }
-            SlashCommand::Config { section } => { Self::print_config(section.as_deref())?; false }
-            SlashCommand::Agents { args } => { Self::print_agents(args.as_deref())?; false }
-            SlashCommand::Skills { args } => { Self::print_skills(args.as_deref())?; false }
+            SlashCommand::Help => {
+                println!("{}", render_repl_help());
+                false
+            }
+            SlashCommand::Status => {
+                self.print_status();
+                false
+            }
+            SlashCommand::Cost => {
+                self.print_cost();
+                false
+            }
+            SlashCommand::Compact => {
+                self.compact()?;
+                false
+            }
+            SlashCommand::Init => {
+                run_init()?;
+                false
+            }
+            SlashCommand::Diff => {
+                Self::print_diff()?;
+                false
+            }
+            SlashCommand::Version => {
+                Self::print_version();
+                false
+            }
+            SlashCommand::Memory => {
+                Self::print_memory()?;
+                false
+            }
+            SlashCommand::DebugToolCall => {
+                self.run_debug_tool_call()?;
+                false
+            }
+            SlashCommand::Commit => {
+                self.run_commit()?;
+                true
+            }
+            SlashCommand::Bughunter { scope } => {
+                self.run_bughunter(scope.as_deref())?;
+                false
+            }
+            SlashCommand::Pr { context } => {
+                self.run_pr(context.as_deref())?;
+                false
+            }
+            SlashCommand::Issue { context } => {
+                self.run_issue(context.as_deref())?;
+                false
+            }
+            SlashCommand::Ultraplan { task } => {
+                self.run_ultraplan(task.as_deref())?;
+                false
+            }
+            SlashCommand::Teleport { target } => {
+                Self::run_teleport(target.as_deref())?;
+                false
+            }
+            SlashCommand::Export { path } => {
+                self.export_session(path.as_deref())?;
+                false
+            }
+            SlashCommand::Config { section } => {
+                Self::print_config(section.as_deref())?;
+                false
+            }
+            SlashCommand::Agents { args } => {
+                Self::print_agents(args.as_deref())?;
+                false
+            }
+            SlashCommand::Skills { args } => {
+                Self::print_skills(args.as_deref())?;
+                false
+            }
             SlashCommand::Model { model } => self.set_model(model)?,
             SlashCommand::Permissions { mode } => self.set_permissions(mode)?,
             SlashCommand::Clear { confirm } => self.clear_session(confirm)?,
@@ -1945,10 +2011,7 @@ fn list_managed_sessions() -> Result<Vec<ManagedSessionSummary>, Box<dyn std::er
         let message_count = match Session::load_from_path(&path) {
             Ok(session) => session.messages.len(),
             Err(error) => {
-                eprintln!(
-                    "warning: corrupt session file {}: {error}",
-                    path.display()
-                );
+                eprintln!("warning: corrupt session file {}: {error}", path.display());
                 0
             }
         };
@@ -3225,13 +3288,7 @@ impl StreamState {
         match event {
             ApiStreamEvent::MessageStart(start) => {
                 for block in start.message.content {
-                    push_output_block(
-                        block,
-                        out,
-                        &mut self.events,
-                        &mut self.pending_tool,
-                        true,
-                    )?;
+                    push_output_block(block, out, &mut self.events, &mut self.pending_tool, true)?;
                 }
             }
             ApiStreamEvent::ContentBlockStart(start) => {
@@ -3275,7 +3332,8 @@ impl StreamState {
                     writeln!(out, "{display}")
                         .and_then(|()| out.flush())
                         .map_err(|error| RuntimeError::new(error.to_string()))?;
-                    self.events.push(AssistantEvent::ToolUse { id, name, input });
+                    self.events
+                        .push(AssistantEvent::ToolUse { id, name, input });
                 }
             }
             ApiStreamEvent::MessageDelta(delta) => {
@@ -3316,8 +3374,7 @@ impl DefaultRuntimeClient {
             model: self.model.clone(),
             max_tokens: max_tokens_for_model(&self.model),
             messages: convert_messages(&request.messages),
-            system: (!request.system_prompt.is_empty())
-                .then(|| request.system_prompt.join("\n\n")),
+            system: (!request.system_prompt.is_empty()).then(|| request.system_prompt.join("\n\n")),
             tools: self.enable_tools.then(|| {
                 let mut specs = filter_tool_specs(&self.tool_registry, self.allowed_tools.as_ref());
                 specs.extend(discover_mcp_tools(&self.runtime, &self.mcp_manager));
@@ -4047,12 +4104,7 @@ impl CliToolExecutor {
                 let text = result
                     .content
                     .iter()
-                    .filter_map(|block| {
-                        block
-                            .data
-                            .get("text")
-                            .and_then(|v| v.as_str())
-                    })
+                    .filter_map(|block| block.data.get("text").and_then(|v| v.as_str()))
                     .collect::<Vec<_>>()
                     .join("\n");
                 Ok(text)
@@ -4300,16 +4352,16 @@ fn print_help() {
 #[cfg(test)]
 mod tests {
     use super::{
-        describe_tool_progress, filter_tool_specs, format_compact_report, format_cost_report,
-        format_internal_prompt_progress_line, format_model_report, format_model_switch_report,
-        format_permissions_report, format_permissions_switch_report, format_resume_report,
-        format_status_report, format_tool_call_start, format_tool_result,
+        default_model, describe_tool_progress, filter_tool_specs, format_compact_report,
+        format_cost_report, format_internal_prompt_progress_line, format_model_report,
+        format_model_switch_report, format_permissions_report, format_permissions_switch_report,
+        format_resume_report, format_status_report, format_tool_call_start, format_tool_result,
         normalize_permission_mode, parse_args, parse_git_status_metadata, permission_policy,
         print_help_to, push_output_block, render_config_report, render_memory_report,
         render_repl_help, render_unknown_repl_command, resolve_model_alias, response_to_events,
         resume_supported_slash_commands, slash_command_completion_candidates, status_context,
         CliAction, CliOutputFormat, InternalPromptProgressEvent, InternalPromptProgressState,
-        SlashCommand, StatusUsage, default_model,
+        SlashCommand, StatusUsage,
     };
     use api::{MessageResponse, OutputContentBlock, Usage};
     use plugins::{PluginTool, PluginToolDefinition, PluginToolPermission};
@@ -4983,3 +5035,336 @@ mod tests {
         assert_eq!(converted[1].role, "assistant");
         assert_eq!(converted[2].role, "user");
     }
+
+    #[test]
+    fn repl_help_mentions_history_completion_and_multiline() {
+        let help = render_repl_help();
+        assert!(help.contains("Up/Down"));
+        assert!(help.contains("Tab cycles"));
+        assert!(help.contains("Shift+Enter or Ctrl+J"));
+    }
+
+    #[test]
+    fn tool_rendering_helpers_compact_output() {
+        let start = format_tool_call_start("read_file", r#"{"path":"src/main.rs"}"#);
+        assert!(start.contains("read_file"));
+        assert!(start.contains("src/main.rs"));
+
+        let done = format_tool_result(
+            "read_file",
+            r#"{"file":{"filePath":"src/main.rs","content":"hello","numLines":1,"startLine":1,"totalLines":1}}"#,
+            false,
+        );
+        assert!(done.contains("Read src/main.rs"));
+        assert!(done.contains("hello"));
+    }
+
+    #[test]
+    fn tool_rendering_truncates_large_read_output_for_display_only() {
+        let content = (0..200)
+            .map(|index| format!("line {index:03}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let output = json!({
+            "file": {
+                "filePath": "src/main.rs",
+                "content": content,
+                "numLines": 200,
+                "startLine": 1,
+                "totalLines": 200
+            }
+        })
+        .to_string();
+
+        let rendered = format_tool_result("read_file", &output, false);
+
+        assert!(rendered.contains("line 000"));
+        assert!(rendered.contains("line 079"));
+        assert!(!rendered.contains("line 199"));
+        assert!(rendered.contains("full result preserved in session"));
+        assert!(output.contains("line 199"));
+    }
+
+    #[test]
+    fn tool_rendering_truncates_large_bash_output_for_display_only() {
+        let stdout = (0..120)
+            .map(|index| format!("stdout {index:03}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let output = json!({
+            "stdout": stdout,
+            "stderr": "",
+            "returnCodeInterpretation": "completed successfully"
+        })
+        .to_string();
+
+        let rendered = format_tool_result("bash", &output, false);
+
+        assert!(rendered.contains("stdout 000"));
+        assert!(rendered.contains("stdout 059"));
+        assert!(!rendered.contains("stdout 119"));
+        assert!(rendered.contains("full result preserved in session"));
+        assert!(output.contains("stdout 119"));
+    }
+
+    #[test]
+    fn tool_rendering_truncates_generic_long_output_for_display_only() {
+        let items = (0..120)
+            .map(|index| format!("payload {index:03}"))
+            .collect::<Vec<_>>();
+        let output = json!({
+            "summary": "plugin payload",
+            "items": items,
+        })
+        .to_string();
+
+        let rendered = format_tool_result("plugin_echo", &output, false);
+
+        assert!(rendered.contains("plugin_echo"));
+        assert!(rendered.contains("payload 000"));
+        assert!(rendered.contains("payload 040"));
+        assert!(!rendered.contains("payload 080"));
+        assert!(!rendered.contains("payload 119"));
+        assert!(rendered.contains("full result preserved in session"));
+        assert!(output.contains("payload 119"));
+    }
+
+    #[test]
+    fn tool_rendering_truncates_raw_generic_output_for_display_only() {
+        let output = (0..120)
+            .map(|index| format!("raw {index:03}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        let rendered = format_tool_result("plugin_echo", &output, false);
+
+        assert!(rendered.contains("plugin_echo"));
+        assert!(rendered.contains("raw 000"));
+        assert!(rendered.contains("raw 059"));
+        assert!(!rendered.contains("raw 119"));
+        assert!(rendered.contains("full result preserved in session"));
+        assert!(output.contains("raw 119"));
+    }
+
+    #[test]
+    fn ultraplan_progress_lines_include_phase_step_and_elapsed_status() {
+        let snapshot = InternalPromptProgressState {
+            command_label: "Ultraplan",
+            task_label: "ship plugin progress".to_string(),
+            step: 3,
+            phase: "running read_file".to_string(),
+            detail: Some("reading rust/crates/codineer-cli/src/main.rs".to_string()),
+            saw_final_text: false,
+        };
+
+        let started = format_internal_prompt_progress_line(
+            InternalPromptProgressEvent::Started,
+            &snapshot,
+            Duration::from_secs(0),
+            None,
+        );
+        let heartbeat = format_internal_prompt_progress_line(
+            InternalPromptProgressEvent::Heartbeat,
+            &snapshot,
+            Duration::from_secs(9),
+            None,
+        );
+        let completed = format_internal_prompt_progress_line(
+            InternalPromptProgressEvent::Complete,
+            &snapshot,
+            Duration::from_secs(12),
+            None,
+        );
+        let failed = format_internal_prompt_progress_line(
+            InternalPromptProgressEvent::Failed,
+            &snapshot,
+            Duration::from_secs(12),
+            Some("network timeout"),
+        );
+
+        assert!(started.contains("planning started"));
+        assert!(started.contains("current step 3"));
+        assert!(heartbeat.contains("heartbeat"));
+        assert!(heartbeat.contains("9s elapsed"));
+        assert!(heartbeat.contains("phase running read_file"));
+        assert!(completed.contains("completed"));
+        assert!(completed.contains("3 steps total"));
+        assert!(failed.contains("failed"));
+        assert!(failed.contains("network timeout"));
+    }
+
+    #[test]
+    fn describe_tool_progress_summarizes_known_tools() {
+        assert_eq!(
+            describe_tool_progress("read_file", r#"{"path":"src/main.rs"}"#),
+            "reading src/main.rs"
+        );
+        assert!(
+            describe_tool_progress("bash", r#"{"command":"cargo test -p codineer-cli"}"#)
+                .contains("cargo test -p codineer-cli")
+        );
+        assert_eq!(
+            describe_tool_progress("grep_search", r#"{"pattern":"ultraplan","path":"rust"}"#),
+            "grep `ultraplan` in rust"
+        );
+    }
+
+    #[test]
+    fn push_output_block_renders_markdown_text() {
+        let mut out = Vec::new();
+        let mut events = Vec::new();
+        let mut pending_tool = None;
+
+        push_output_block(
+            OutputContentBlock::Text {
+                text: "# Heading".to_string(),
+            },
+            &mut out,
+            &mut events,
+            &mut pending_tool,
+            false,
+        )
+        .expect("text block should render");
+
+        let rendered = String::from_utf8(out).expect("utf8");
+        assert!(rendered.contains("Heading"));
+        if std::env::var_os("NO_COLOR").is_none() {
+            assert!(rendered.contains('\u{1b}'));
+        }
+    }
+
+    #[test]
+    fn push_output_block_skips_empty_object_prefix_for_tool_streams() {
+        let mut out = Vec::new();
+        let mut events = Vec::new();
+        let mut pending_tool = None;
+
+        push_output_block(
+            OutputContentBlock::ToolUse {
+                id: "tool-1".to_string(),
+                name: "read_file".to_string(),
+                input: json!({}),
+            },
+            &mut out,
+            &mut events,
+            &mut pending_tool,
+            true,
+        )
+        .expect("tool block should accumulate");
+
+        assert!(events.is_empty());
+        assert_eq!(
+            pending_tool,
+            Some(("tool-1".to_string(), "read_file".to_string(), String::new(),))
+        );
+    }
+
+    #[test]
+    fn response_to_events_preserves_empty_object_json_input_outside_streaming() {
+        let mut out = Vec::new();
+        let events = response_to_events(
+            MessageResponse {
+                id: "msg-1".to_string(),
+                kind: "message".to_string(),
+                model: "claude-opus-4-6".to_string(),
+                role: "assistant".to_string(),
+                content: vec![OutputContentBlock::ToolUse {
+                    id: "tool-1".to_string(),
+                    name: "read_file".to_string(),
+                    input: json!({}),
+                }],
+                stop_reason: Some("tool_use".to_string()),
+                stop_sequence: None,
+                usage: Usage {
+                    input_tokens: 1,
+                    output_tokens: 1,
+                    cache_creation_input_tokens: 0,
+                    cache_read_input_tokens: 0,
+                },
+                request_id: None,
+            },
+            &mut out,
+        )
+        .expect("response conversion should succeed");
+
+        assert!(matches!(
+            &events[0],
+            AssistantEvent::ToolUse { name, input, .. }
+                if name == "read_file" && input == "{}"
+        ));
+    }
+
+    #[test]
+    fn response_to_events_preserves_non_empty_json_input_outside_streaming() {
+        let mut out = Vec::new();
+        let events = response_to_events(
+            MessageResponse {
+                id: "msg-2".to_string(),
+                kind: "message".to_string(),
+                model: "claude-opus-4-6".to_string(),
+                role: "assistant".to_string(),
+                content: vec![OutputContentBlock::ToolUse {
+                    id: "tool-2".to_string(),
+                    name: "read_file".to_string(),
+                    input: json!({ "path": "rust/Cargo.toml" }),
+                }],
+                stop_reason: Some("tool_use".to_string()),
+                stop_sequence: None,
+                usage: Usage {
+                    input_tokens: 1,
+                    output_tokens: 1,
+                    cache_creation_input_tokens: 0,
+                    cache_read_input_tokens: 0,
+                },
+                request_id: None,
+            },
+            &mut out,
+        )
+        .expect("response conversion should succeed");
+
+        assert!(matches!(
+            &events[0],
+            AssistantEvent::ToolUse { name, input, .. }
+                if name == "read_file" && input == "{\"path\":\"rust/Cargo.toml\"}"
+        ));
+    }
+
+    #[test]
+    fn response_to_events_ignores_thinking_blocks() {
+        let mut out = Vec::new();
+        let events = response_to_events(
+            MessageResponse {
+                id: "msg-3".to_string(),
+                kind: "message".to_string(),
+                model: "claude-opus-4-6".to_string(),
+                role: "assistant".to_string(),
+                content: vec![
+                    OutputContentBlock::Thinking {
+                        thinking: "step 1".to_string(),
+                        signature: Some("sig_123".to_string()),
+                    },
+                    OutputContentBlock::Text {
+                        text: "Final answer".to_string(),
+                    },
+                ],
+                stop_reason: Some("end_turn".to_string()),
+                stop_sequence: None,
+                usage: Usage {
+                    input_tokens: 1,
+                    output_tokens: 1,
+                    cache_creation_input_tokens: 0,
+                    cache_read_input_tokens: 0,
+                },
+                request_id: None,
+            },
+            &mut out,
+        )
+        .expect("response conversion should succeed");
+
+        assert!(matches!(
+            &events[0],
+            AssistantEvent::TextDelta(text) if text == "Final answer"
+        ));
+        assert!(!String::from_utf8(out).expect("utf8").contains("step 1"));
+    }
+}

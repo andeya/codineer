@@ -305,7 +305,8 @@ mod tests {
 
     #[test]
     fn unwrap_ccr_proxy_url_handles_ccr_sessions_marker() {
-        let url = "https://api.anthropic.com/v2/ccr-sessions/abc?mcp_url=https%3A%2F%2Fexample.com%2Fmcp";
+        let url =
+            "https://api.anthropic.com/v2/ccr-sessions/abc?mcp_url=https%3A%2F%2Fexample.com%2Fmcp";
         assert_eq!(unwrap_ccr_proxy_url(url), "https://example.com/mcp");
     }
 

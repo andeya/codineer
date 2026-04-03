@@ -433,3 +433,75 @@ mod tests {
     }
 
     #[test]
+    fn rejects_invalid_literal() {
+        assert!(JsonValue::parse("nul").is_err());
+        assert!(JsonValue::parse("tru").is_err());
+        assert!(JsonValue::parse("fals").is_err());
+    }
+
+    #[test]
+    fn rejects_unexpected_character() {
+        let err = JsonValue::parse("@").unwrap_err();
+        assert!(err.to_string().contains("unexpected character"));
+    }
+
+    #[test]
+    fn rejects_empty_input() {
+        let err = JsonValue::parse("").unwrap_err();
+        assert!(err.to_string().contains("end of input"));
+    }
+
+    #[test]
+    fn rejects_unterminated_string() {
+        let err = JsonValue::parse(r#""no end"#).unwrap_err();
+        assert!(err.to_string().contains("unterminated"));
+    }
+
+    #[test]
+    fn rejects_invalid_escape() {
+        let err = JsonValue::parse(r#""\x""#).unwrap_err();
+        assert!(err.to_string().contains("invalid escape"));
+    }
+
+    #[test]
+    fn rejects_truncated_unicode_escape() {
+        let err = JsonValue::parse(r#""\u00""#).unwrap_err();
+        assert!(err.to_string().contains("unicode escape"));
+    }
+
+    #[test]
+    fn rejects_bad_unicode_hex() {
+        let err = JsonValue::parse(r#""\u00GG""#).unwrap_err();
+        assert!(err.to_string().contains("unicode"));
+    }
+
+    #[test]
+    fn rejects_bare_minus() {
+        let err = JsonValue::parse("-").unwrap_err();
+        assert!(err.to_string().contains("invalid number"));
+    }
+
+    #[test]
+    fn rejects_number_overflow() {
+        let err = JsonValue::parse("99999999999999999999").unwrap_err();
+        assert!(err.to_string().contains("out of range"));
+    }
+
+    #[test]
+    fn rejects_bad_array_separator() {
+        let err = JsonValue::parse("[1 2]").unwrap_err();
+        assert!(err.to_string().contains("expected"));
+    }
+
+    #[test]
+    fn rejects_bad_object_separator() {
+        let err = JsonValue::parse(r#"{"a":1 "b":2}"#).unwrap_err();
+        assert!(err.to_string().contains("expected"));
+    }
+
+    #[test]
+    fn json_error_display() {
+        let err = super::JsonError::new("test error");
+        assert_eq!(err.to_string(), "test error");
+    }
+}

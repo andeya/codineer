@@ -1291,11 +1291,7 @@ fn push_unique_root(
     }
 }
 
-fn push_unique_skill_root(
-    roots: &mut Vec<SkillRoot>,
-    source: DefinitionSource,
-    path: PathBuf,
-) {
+fn push_unique_skill_root(roots: &mut Vec<SkillRoot>, source: DefinitionSource, path: PathBuf) {
     if path.is_dir() && !roots.iter().any(|existing| existing.path == path) {
         roots.push(SkillRoot { source, path });
     }
@@ -1362,8 +1358,7 @@ fn load_skills_from_roots(roots: &[SkillRoot]) -> std::io::Result<Vec<SkillSumma
             let contents = fs::read_to_string(skill_path)?;
             let (name, description) = parse_skill_frontmatter(&contents);
             root_skills.push(SkillSummary {
-                name: name
-                    .unwrap_or_else(|| entry.file_name().to_string_lossy().to_string()),
+                name: name.unwrap_or_else(|| entry.file_name().to_string_lossy().to_string()),
                 description,
                 source: root.source,
                 shadowed_by: None,

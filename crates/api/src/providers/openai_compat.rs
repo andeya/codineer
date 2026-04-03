@@ -993,3 +993,61 @@ mod tests {
         assert_eq!(
             openai_tool_choice(&ToolChoice::Tool {
                 name: "weather".to_string(),
+            }),
+            json!({"type": "function", "function": {"name": "weather"}})
+        );
+    }
+
+    #[test]
+    fn parses_tool_arguments_fallback() {
+        assert_eq!(
+            parse_tool_arguments("{\"city\":\"Paris\"}"),
+            json!({"city": "Paris"})
+        );
+        assert_eq!(parse_tool_arguments("not-json"), json!({"raw": "not-json"}));
+    }
+
+    #[test]
+    fn missing_xai_api_key_is_provider_specific() {
+        let _lock = env_lock();
+        std::env::remove_var("XAI_API_KEY");
+        let error = OpenAiCompatClient::from_env(OpenAiCompatConfig::xai())
+            .expect_err("missing key should error");
+        assert!(matches!(
+            error,
+            ApiError::MissingCredentials {
+                provider: "xAI",
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn endpoint_builder_accepts_base_urls_and_full_endpoints() {
+        assert_eq!(
+            chat_completions_endpoint("https://api.x.ai/v1"),
+            "https://api.x.ai/v1/chat/completions"
+        );
+        assert_eq!(
+            chat_completions_endpoint("https://api.x.ai/v1/"),
+            "https://api.x.ai/v1/chat/completions"
+        );
+        assert_eq!(
+            chat_completions_endpoint("https://api.x.ai/v1/chat/completions"),
+            "https://api.x.ai/v1/chat/completions"
+        );
+    }
+
+    fn env_lock() -> std::sync::MutexGuard<'static, ()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+            .lock()
+            .expect("env lock")
+    }
+
+    #[test]
+    fn normalizes_stop_reasons() {
+        assert_eq!(normalize_finish_reason("stop"), "end_turn");
+        assert_eq!(normalize_finish_reason("tool_calls"), "tool_use");
+    }
+}

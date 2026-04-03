@@ -312,10 +312,7 @@ mod tests {
                 (".py".to_string(), "python".to_string()),
             ]),
         };
-        assert_eq!(
-            config.language_id_for(Path::new("main.rs")),
-            Some("rust")
-        );
+        assert_eq!(config.language_id_for(Path::new("main.rs")), Some("rust"));
         assert_eq!(
             config.language_id_for(Path::new("script.py")),
             Some("python")

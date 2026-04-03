@@ -494,8 +494,7 @@ impl McpServerConfig {
 fn read_optional_json_object(
     path: &Path,
 ) -> Result<Option<BTreeMap<String, JsonValue>>, ConfigError> {
-    let is_flat_config =
-        path.file_name().and_then(|name| name.to_str()) == Some(".codineer.json");
+    let is_flat_config = path.file_name().and_then(|name| name.to_str()) == Some(".codineer.json");
     let contents = match fs::read_to_string(path) {
         Ok(contents) => contents,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
@@ -1326,8 +1325,14 @@ mod tests {
         let servers = loaded.mcp().servers();
         assert_eq!(servers.len(), 3);
         assert!(matches!(&servers["events"].config, McpServerConfig::Sse(_)));
-        assert!(matches!(&servers["built-in"].config, McpServerConfig::Sdk(_)));
-        assert!(matches!(&servers["proxy"].config, McpServerConfig::ManagedProxy(_)));
+        assert!(matches!(
+            &servers["built-in"].config,
+            McpServerConfig::Sdk(_)
+        ));
+        assert!(matches!(
+            &servers["proxy"].config,
+            McpServerConfig::ManagedProxy(_)
+        ));
 
         fs::remove_dir_all(root).expect("cleanup");
     }
@@ -1363,7 +1368,9 @@ mod tests {
         fs::create_dir_all(&cwd).expect("project dir");
         fs::write(home.join(".codineer.json"), "[1,2,3]").expect("write flat config");
 
-        let loaded = ConfigLoader::new(&cwd, &config_home).load().expect("load config");
+        let loaded = ConfigLoader::new(&cwd, &config_home)
+            .load()
+            .expect("load config");
         assert!(loaded.model().is_none());
 
         fs::remove_dir_all(root).expect("cleanup");
@@ -1383,9 +1390,15 @@ mod tests {
         .expect("write settings");
 
         let loaded = ConfigLoader::new(&cwd, &home).load().expect("load");
-        assert!(matches!(loaded.permission_mode(), Some(ResolvedPermissionMode::ReadOnly)));
+        assert!(matches!(
+            loaded.permission_mode(),
+            Some(ResolvedPermissionMode::ReadOnly)
+        ));
         let sandbox = loaded.sandbox();
-        assert_eq!(sandbox.filesystem_mode, Some(crate::sandbox::FilesystemIsolationMode::Off));
+        assert_eq!(
+            sandbox.filesystem_mode,
+            Some(crate::sandbox::FilesystemIsolationMode::Off)
+        );
 
         fs::remove_dir_all(root).expect("cleanup");
     }
