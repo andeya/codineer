@@ -1,19 +1,28 @@
 [package]
 name = "runtime"
+description = "Core runtime engine for Codineer: session, config, MCP, prompt, sandbox"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
-publish.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+publish = false
 
 [dependencies]
+futures-util = { version = "0.3", default-features = false, features = ["sink"] }
 glob = "0.3"
 keyring = { version = "3", features = ["apple-native", "linux-native", "windows-native"] }
 lsp = { path = "../lsp" }
 regex = "1"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 sha2 = "0.10"
-serde = { version = "1", features = ["derive"] }
+serde.workspace = true
 serde_json.workspace = true
 tokio = { version = "1", features = ["io-util", "macros", "process", "rt", "rt-multi-thread", "time"] }
+tokio-tungstenite = { version = "0.26", features = ["rustls-tls-webpki-roots"] }
 walkdir = "2"
 
 [lints]
