@@ -95,6 +95,7 @@ fn write_broken_plugin(root: &Path, name: &str) {
     );
 }
 
+#[cfg(unix)]
 fn write_lifecycle_plugin(root: &Path, name: &str, version: &str) -> PathBuf {
     let log_path = root.join("lifecycle.log");
     write_file(
@@ -115,10 +116,12 @@ fn write_lifecycle_plugin(root: &Path, name: &str, version: &str) -> PathBuf {
     log_path
 }
 
+#[cfg(unix)]
 fn write_tool_plugin(root: &Path, name: &str, version: &str) {
     write_tool_plugin_with_name(root, name, version, "plugin_echo");
 }
 
+#[cfg(unix)]
 fn write_tool_plugin_with_name(root: &Path, name: &str, version: &str, tool_name: &str) {
     let script_path = root.join("tools").join("echo-json.sh");
     write_file(

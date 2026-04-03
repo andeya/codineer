@@ -1,4 +1,5 @@
 use std::ffi::OsStr;
+use std::path::Path;
 use std::process::Command;
 
 use serde_json::json;
@@ -12,7 +13,7 @@ pub enum HookEvent {
 }
 
 impl HookEvent {
-    fn as_str(self) -> &'static str {
+    pub fn as_str(self) -> &'static str {
         match self {
             Self::PreToolUse => "PreToolUse",
             Self::PostToolUse => "PostToolUse",
@@ -46,37 +47,37 @@ impl HookRunResult {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct HookRunner {
-    config: RuntimeHookConfig,
+pub trait HookCommandSource {
+    fn pre_tool_use_commands(&self) -> &[String];
+    fn post_tool_use_commands(&self) -> &[String];
 }
 
-#[derive(Debug, Clone, Copy)]
-struct HookCommandRequest<'a> {
-    event: HookEvent,
-    tool_name: &'a str,
-    tool_input: &'a str,
-    tool_output: Option<&'a str>,
-    is_error: bool,
-    payload: &'a str,
-}
-
-impl HookRunner {
-    #[must_use]
-    pub fn new(config: RuntimeHookConfig) -> Self {
-        Self { config }
+impl HookCommandSource for RuntimeHookConfig {
+    fn pre_tool_use_commands(&self) -> &[String] {
+        self.pre_tool_use()
     }
 
+    fn post_tool_use_commands(&self) -> &[String] {
+        self.post_tool_use()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HookRunner<S: HookCommandSource> {
+    source: S,
+}
+
+impl<S: HookCommandSource> HookRunner<S> {
     #[must_use]
-    pub fn from_feature_config(feature_config: &RuntimeFeatureConfig) -> Self {
-        Self::new(feature_config.hooks().clone())
+    pub fn new(source: S) -> Self {
+        Self { source }
     }
 
     #[must_use]
     pub fn run_pre_tool_use(&self, tool_name: &str, tool_input: &str) -> HookRunResult {
-        Self::run_commands(
+        run_hook_commands(
             HookEvent::PreToolUse,
-            self.config.pre_tool_use(),
+            self.source.pre_tool_use_commands(),
             tool_name,
             tool_input,
             None,
@@ -92,123 +93,141 @@ impl HookRunner {
         tool_output: &str,
         is_error: bool,
     ) -> HookRunResult {
-        Self::run_commands(
+        run_hook_commands(
             HookEvent::PostToolUse,
-            self.config.post_tool_use(),
+            self.source.post_tool_use_commands(),
             tool_name,
             tool_input,
             Some(tool_output),
             is_error,
         )
     }
+}
 
-    fn run_commands(
-        event: HookEvent,
-        commands: &[String],
-        tool_name: &str,
-        tool_input: &str,
-        tool_output: Option<&str>,
-        is_error: bool,
-    ) -> HookRunResult {
-        if commands.is_empty() {
-            return HookRunResult::allow(Vec::new());
-        }
+impl HookRunner<RuntimeHookConfig> {
+    #[must_use]
+    pub fn from_feature_config(feature_config: &RuntimeFeatureConfig) -> Self {
+        Self::new(feature_config.hooks().clone())
+    }
+}
 
-        let payload = json!({
-            "hook_event_name": event.as_str(),
-            "tool_name": tool_name,
-            "tool_input": parse_tool_input(tool_input),
-            "tool_input_json": tool_input,
-            "tool_output": tool_output,
-            "tool_result_is_error": is_error,
-        })
-        .to_string();
+impl<S: HookCommandSource + Default> Default for HookRunner<S> {
+    fn default() -> Self {
+        Self::new(S::default())
+    }
+}
 
-        let mut messages = Vec::new();
+#[derive(Debug, Clone, Copy)]
+struct HookContext<'a> {
+    event: HookEvent,
+    tool_name: &'a str,
+    tool_input: &'a str,
+    tool_output: Option<&'a str>,
+    is_error: bool,
+    payload: &'a str,
+}
 
-        for command in commands {
-            match Self::run_command(
-                command,
-                HookCommandRequest {
-                    event,
-                    tool_name,
-                    tool_input,
-                    tool_output,
-                    is_error,
-                    payload: &payload,
-                },
-            ) {
-                HookCommandOutcome::Allow { message } => {
-                    if let Some(message) = message {
-                        messages.push(message);
-                    }
-                }
-                HookCommandOutcome::Deny { message } => {
-                    let message = message.unwrap_or_else(|| {
-                        format!("{} hook denied tool `{tool_name}`", event.as_str())
-                    });
-                    messages.push(message);
-                    return HookRunResult {
-                        denied: true,
-                        messages,
-                    };
-                }
-                HookCommandOutcome::Warn { message } => messages.push(message),
-            }
-        }
-
-        HookRunResult::allow(messages)
+pub fn run_hook_commands(
+    event: HookEvent,
+    commands: &[String],
+    tool_name: &str,
+    tool_input: &str,
+    tool_output: Option<&str>,
+    is_error: bool,
+) -> HookRunResult {
+    if commands.is_empty() {
+        return HookRunResult::allow(Vec::new());
     }
 
-    fn run_command(command: &str, request: HookCommandRequest<'_>) -> HookCommandOutcome {
-        let mut child = shell_command(command);
-        child.stdin(std::process::Stdio::piped());
-        child.stdout(std::process::Stdio::piped());
-        child.stderr(std::process::Stdio::piped());
-        child.env("HOOK_EVENT", request.event.as_str());
-        child.env("HOOK_TOOL_NAME", request.tool_name);
-        child.env("HOOK_TOOL_INPUT", request.tool_input);
-        child.env(
-            "HOOK_TOOL_IS_ERROR",
-            if request.is_error { "1" } else { "0" },
-        );
-        if let Some(tool_output) = request.tool_output {
-            child.env("HOOK_TOOL_OUTPUT", tool_output);
-        }
+    let payload = json!({
+        "hook_event_name": event.as_str(),
+        "tool_name": tool_name,
+        "tool_input": parse_tool_input(tool_input),
+        "tool_input_json": tool_input,
+        "tool_output": tool_output,
+        "tool_result_is_error": is_error,
+    })
+    .to_string();
 
-        match child.output_with_stdin(request.payload.as_bytes()) {
-            Ok(output) => {
-                let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-                let message = (!stdout.is_empty()).then_some(stdout);
-                match output.status.code() {
-                    Some(0) => HookCommandOutcome::Allow { message },
-                    Some(2) => HookCommandOutcome::Deny { message },
-                    Some(code) => HookCommandOutcome::Warn {
-                        message: format_hook_warning(
-                            command,
-                            code,
-                            message.as_deref(),
-                            stderr.as_str(),
-                        ),
-                    },
-                    None => HookCommandOutcome::Warn {
-                        message: format!(
-                            "{} hook `{command}` terminated by signal while handling `{}`",
-                            request.event.as_str(),
-                            request.tool_name
-                        ),
-                    },
+    let ctx = HookContext {
+        event,
+        tool_name,
+        tool_input,
+        tool_output,
+        is_error,
+        payload: &payload,
+    };
+
+    let mut messages = Vec::new();
+
+    for command in commands {
+        match run_hook_command(command, &ctx) {
+            HookCommandOutcome::Allow { message } => {
+                if let Some(message) = message {
+                    messages.push(message);
                 }
             }
-            Err(error) => HookCommandOutcome::Warn {
-                message: format!(
-                    "{} hook `{command}` failed to start for `{}`: {error}",
-                    request.event.as_str(),
-                    request.tool_name
-                ),
-            },
+            HookCommandOutcome::Deny { message } => {
+                messages.push(message.unwrap_or_else(|| {
+                    format!("{} hook denied tool `{tool_name}`", event.as_str())
+                }));
+                return HookRunResult {
+                    denied: true,
+                    messages,
+                };
+            }
+            HookCommandOutcome::Warn { message } => messages.push(message),
         }
+    }
+
+    HookRunResult::allow(messages)
+}
+
+fn run_hook_command(command: &str, ctx: &HookContext<'_>) -> HookCommandOutcome {
+    let mut child = shell_command(command);
+    child.stdin(std::process::Stdio::piped());
+    child.stdout(std::process::Stdio::piped());
+    child.stderr(std::process::Stdio::piped());
+    child.env("HOOK_EVENT", ctx.event.as_str());
+    child.env("HOOK_TOOL_NAME", ctx.tool_name);
+    child.env("HOOK_TOOL_INPUT", ctx.tool_input);
+    child.env("HOOK_TOOL_IS_ERROR", if ctx.is_error { "1" } else { "0" });
+    if let Some(tool_output) = ctx.tool_output {
+        child.env("HOOK_TOOL_OUTPUT", tool_output);
+    }
+
+    match child.output_with_stdin(ctx.payload.as_bytes()) {
+        Ok(output) => {
+            let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            let message = (!stdout.is_empty()).then_some(stdout);
+            match output.status.code() {
+                Some(0) => HookCommandOutcome::Allow { message },
+                Some(2) => HookCommandOutcome::Deny { message },
+                Some(code) => HookCommandOutcome::Warn {
+                    message: format_hook_warning(
+                        command,
+                        code,
+                        message.as_deref(),
+                        stderr.as_str(),
+                    ),
+                },
+                None => HookCommandOutcome::Warn {
+                    message: format!(
+                        "{} hook `{command}` terminated by signal while handling `{}`",
+                        ctx.event.as_str(),
+                        ctx.tool_name,
+                    ),
+                },
+            }
+        }
+        Err(error) => HookCommandOutcome::Warn {
+            message: format!(
+                "{} hook `{command}` failed to start for `{}`: {error}",
+                ctx.event.as_str(),
+                ctx.tool_name,
+            ),
+        },
     }
 }
 
@@ -238,16 +257,20 @@ fn format_hook_warning(command: &str, code: i32, stdout: Option<&str>, stderr: &
 fn shell_command(command: &str) -> CommandWithStdin {
     #[cfg(windows)]
     let command_builder = {
-        let mut command_builder = Command::new("cmd");
-        command_builder.arg("/C").arg(command);
-        CommandWithStdin::new(command_builder)
+        let mut cmd = Command::new("cmd");
+        cmd.arg("/C").arg(command);
+        CommandWithStdin::new(cmd)
     };
 
     #[cfg(not(windows))]
-    let command_builder = {
-        let mut command_builder = Command::new("sh");
-        command_builder.arg("-lc").arg(command);
-        CommandWithStdin::new(command_builder)
+    let command_builder = if Path::new(command).exists() {
+        let mut cmd = Command::new("sh");
+        cmd.arg(command);
+        CommandWithStdin::new(cmd)
+    } else {
+        let mut cmd = Command::new("sh");
+        cmd.arg("-lc").arg(command);
+        CommandWithStdin::new(cmd)
     };
 
     command_builder
@@ -289,7 +312,7 @@ impl CommandWithStdin {
     fn output_with_stdin(&mut self, stdin: &[u8]) -> std::io::Result<std::process::Output> {
         let mut child = self.command.spawn()?;
         if let Some(mut child_stdin) = child.stdin.take() {
-            use std::io::Write;
+            use std::io::Write as _;
             child_stdin.write_all(stdin)?;
         }
         child.wait_with_output()
@@ -305,7 +328,7 @@ mod tests {
     #[test]
     fn allows_exit_code_zero_and_captures_stdout() {
         let runner = HookRunner::new(RuntimeHookConfig::new(
-            vec![shell_snippet("printf 'pre ok'")],
+            vec!["printf 'pre ok'".to_string()],
             Vec::new(),
         ));
 
@@ -317,7 +340,7 @@ mod tests {
     #[test]
     fn denies_exit_code_two() {
         let runner = HookRunner::new(RuntimeHookConfig::new(
-            vec![shell_snippet("printf 'blocked by hook'; exit 2")],
+            vec!["printf 'blocked by hook'; exit 2".to_string()],
             Vec::new(),
         ));
 
@@ -331,7 +354,7 @@ mod tests {
     fn warns_for_other_non_zero_statuses() {
         let runner = HookRunner::from_feature_config(&RuntimeFeatureConfig::default().with_hooks(
             RuntimeHookConfig::new(
-                vec![shell_snippet("printf 'warning hook'; exit 1")],
+                vec!["printf 'warning hook'; exit 1".to_string()],
                 Vec::new(),
             ),
         ));
@@ -343,9 +366,5 @@ mod tests {
             .messages()
             .iter()
             .any(|message| message.contains("allowing tool execution to continue")));
-    }
-
-    fn shell_snippet(script: &str) -> String {
-        script.to_string()
     }
 }

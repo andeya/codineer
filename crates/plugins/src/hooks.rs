@@ -1,77 +1,37 @@
-use std::ffi::OsStr;
-use std::path::Path;
-use std::process::Command;
-
-use serde_json::json;
+use runtime::{HookCommandSource, HookRunResult, HookRunner};
 
 use crate::{PluginError, PluginHooks, PluginRegistry};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum HookEvent {
-    PreToolUse,
-    PostToolUse,
-}
+impl HookCommandSource for PluginHooks {
+    fn pre_tool_use_commands(&self) -> &[String] {
+        &self.pre_tool_use
+    }
 
-impl HookEvent {
-    fn as_str(self) -> &'static str {
-        match self {
-            Self::PreToolUse => "PreToolUse",
-            Self::PostToolUse => "PostToolUse",
-        }
+    fn post_tool_use_commands(&self) -> &[String] {
+        &self.post_tool_use
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct HookRunResult {
-    denied: bool,
-    messages: Vec<String>,
+pub struct PluginHookRunner {
+    inner: HookRunner<PluginHooks>,
 }
 
-impl HookRunResult {
+impl PluginHookRunner {
     #[must_use]
-    pub fn allow(messages: Vec<String>) -> Self {
+    pub fn new(source: PluginHooks) -> Self {
         Self {
-            denied: false,
-            messages,
+            inner: HookRunner::new(source),
         }
     }
 
-    #[must_use]
-    pub fn is_denied(&self) -> bool {
-        self.denied
-    }
-
-    #[must_use]
-    pub fn messages(&self) -> &[String] {
-        &self.messages
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct HookRunner {
-    hooks: PluginHooks,
-}
-
-impl HookRunner {
-    #[must_use]
-    pub fn new(hooks: PluginHooks) -> Self {
-        Self { hooks }
-    }
-
-    pub fn from_registry(plugin_registry: &PluginRegistry) -> Result<Self, PluginError> {
-        Ok(Self::new(plugin_registry.aggregated_hooks()?))
+    pub fn from_registry(registry: &PluginRegistry) -> Result<Self, PluginError> {
+        Ok(Self::new(registry.aggregated_hooks()?))
     }
 
     #[must_use]
     pub fn run_pre_tool_use(&self, tool_name: &str, tool_input: &str) -> HookRunResult {
-        run_hook_commands(
-            HookEvent::PreToolUse,
-            &self.hooks.pre_tool_use,
-            tool_name,
-            tool_input,
-            None,
-            false,
-        )
+        self.inner.run_pre_tool_use(tool_name, tool_input)
     }
 
     #[must_use]
@@ -82,223 +42,17 @@ impl HookRunner {
         tool_output: &str,
         is_error: bool,
     ) -> HookRunResult {
-        run_hook_commands(
-            HookEvent::PostToolUse,
-            &self.hooks.post_tool_use,
-            tool_name,
-            tool_input,
-            Some(tool_output),
-            is_error,
-        )
-    }
-}
-
-fn run_hook_commands(
-    event: HookEvent,
-    commands: &[String],
-    tool_name: &str,
-    tool_input: &str,
-    tool_output: Option<&str>,
-    is_error: bool,
-) -> HookRunResult {
-    if commands.is_empty() {
-        return HookRunResult::allow(Vec::new());
-    }
-
-    let payload = json!({
-        "hook_event_name": event.as_str(),
-        "tool_name": tool_name,
-        "tool_input": parse_tool_input(tool_input),
-        "tool_input_json": tool_input,
-        "tool_output": tool_output,
-        "tool_result_is_error": is_error,
-    })
-    .to_string();
-
-    let mut messages = Vec::new();
-
-    let context = HookContext {
-        event,
-        tool_name,
-        tool_input,
-        tool_output,
-        is_error,
-        payload: &payload,
-    };
-
-    for command in commands {
-        match run_hook_command(command, &context) {
-            HookCommandOutcome::Allow { message } => {
-                if let Some(message) = message {
-                    messages.push(message);
-                }
-            }
-            HookCommandOutcome::Deny { message } => {
-                messages.push(message.unwrap_or_else(|| {
-                    format!("{} hook denied tool `{tool_name}`", event.as_str())
-                }));
-                return HookRunResult {
-                    denied: true,
-                    messages,
-                };
-            }
-            HookCommandOutcome::Warn { message } => messages.push(message),
-        }
-    }
-
-    HookRunResult::allow(messages)
-}
-
-struct HookContext<'a> {
-    event: HookEvent,
-    tool_name: &'a str,
-    tool_input: &'a str,
-    tool_output: Option<&'a str>,
-    is_error: bool,
-    payload: &'a str,
-}
-
-fn run_hook_command(command: &str, ctx: &HookContext<'_>) -> HookCommandOutcome {
-    let mut child = shell_command(command);
-    child.stdin(std::process::Stdio::piped());
-    child.stdout(std::process::Stdio::piped());
-    child.stderr(std::process::Stdio::piped());
-    child.env("HOOK_EVENT", ctx.event.as_str());
-    child.env("HOOK_TOOL_NAME", ctx.tool_name);
-    child.env("HOOK_TOOL_INPUT", ctx.tool_input);
-    child.env("HOOK_TOOL_IS_ERROR", if ctx.is_error { "1" } else { "0" });
-    if let Some(tool_output) = ctx.tool_output {
-        child.env("HOOK_TOOL_OUTPUT", tool_output);
-    }
-
-    match child.output_with_stdin(ctx.payload.as_bytes()) {
-        Ok(output) => {
-            let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-            let message = (!stdout.is_empty()).then_some(stdout);
-            match output.status.code() {
-                Some(0) => HookCommandOutcome::Allow { message },
-                Some(2) => HookCommandOutcome::Deny { message },
-                Some(code) => HookCommandOutcome::Warn {
-                    message: format_hook_warning(
-                        command,
-                        code,
-                        message.as_deref(),
-                        stderr.as_str(),
-                    ),
-                },
-                None => HookCommandOutcome::Warn {
-                    message: format!(
-                        "{} hook `{command}` terminated by signal while handling `{}`",
-                        ctx.event.as_str(),
-                        ctx.tool_name,
-                    ),
-                },
-            }
-        }
-        Err(error) => HookCommandOutcome::Warn {
-            message: format!(
-                "{} hook `{command}` failed to start for `{}`: {error}",
-                ctx.event.as_str(),
-                ctx.tool_name,
-            ),
-        },
-    }
-}
-
-enum HookCommandOutcome {
-    Allow { message: Option<String> },
-    Deny { message: Option<String> },
-    Warn { message: String },
-}
-
-fn parse_tool_input(tool_input: &str) -> serde_json::Value {
-    serde_json::from_str(tool_input).unwrap_or_else(|_| json!({ "raw": tool_input }))
-}
-
-fn format_hook_warning(command: &str, code: i32, stdout: Option<&str>, stderr: &str) -> String {
-    let mut message =
-        format!("Hook `{command}` exited with status {code}; allowing tool execution to continue");
-    if let Some(stdout) = stdout.filter(|stdout| !stdout.is_empty()) {
-        message.push_str(": ");
-        message.push_str(stdout);
-    } else if !stderr.is_empty() {
-        message.push_str(": ");
-        message.push_str(stderr);
-    }
-    message
-}
-
-fn shell_command(command: &str) -> CommandWithStdin {
-    #[cfg(windows)]
-    let command_builder = {
-        let mut command_builder = Command::new("cmd");
-        command_builder.arg("/C").arg(command);
-        CommandWithStdin::new(command_builder)
-    };
-
-    #[cfg(not(windows))]
-    let command_builder = if Path::new(command).exists() {
-        let mut command_builder = Command::new("sh");
-        command_builder.arg(command);
-        CommandWithStdin::new(command_builder)
-    } else {
-        let mut command_builder = Command::new("sh");
-        command_builder.arg("-lc").arg(command);
-        CommandWithStdin::new(command_builder)
-    };
-
-    command_builder
-}
-
-struct CommandWithStdin {
-    command: Command,
-}
-
-impl CommandWithStdin {
-    fn new(command: Command) -> Self {
-        Self { command }
-    }
-
-    fn stdin(&mut self, cfg: std::process::Stdio) -> &mut Self {
-        self.command.stdin(cfg);
-        self
-    }
-
-    fn stdout(&mut self, cfg: std::process::Stdio) -> &mut Self {
-        self.command.stdout(cfg);
-        self
-    }
-
-    fn stderr(&mut self, cfg: std::process::Stdio) -> &mut Self {
-        self.command.stderr(cfg);
-        self
-    }
-
-    fn env<K, V>(&mut self, key: K, value: V) -> &mut Self
-    where
-        K: AsRef<OsStr>,
-        V: AsRef<OsStr>,
-    {
-        self.command.env(key, value);
-        self
-    }
-
-    fn output_with_stdin(&mut self, stdin: &[u8]) -> std::io::Result<std::process::Output> {
-        let mut child = self.command.spawn()?;
-        if let Some(mut child_stdin) = child.stdin.take() {
-            use std::io::Write as _;
-            child_stdin.write_all(stdin)?;
-        }
-        child.wait_with_output()
+        self.inner
+            .run_post_tool_use(tool_name, tool_input, tool_output, is_error)
     }
 }
 
 #[cfg(test)]
 #[cfg(unix)]
 mod tests {
-    use super::{HookRunResult, HookRunner};
+    use super::PluginHookRunner;
     use crate::{PluginManager, PluginManagerConfig};
+    use runtime::HookRunResult;
     use std::fs;
     use std::path::{Path, PathBuf};
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -360,7 +114,7 @@ mod tests {
             .expect("second plugin install should succeed");
         let registry = manager.plugin_registry().expect("registry should build");
 
-        let runner = HookRunner::from_registry(&registry).expect("plugin hooks should load");
+        let runner = PluginHookRunner::from_registry(&registry).expect("plugin hooks should load");
 
         assert_eq!(
             runner.run_pre_tool_use("Read", r#"{"path":"README.md"}"#),
@@ -384,7 +138,7 @@ mod tests {
 
     #[test]
     fn pre_tool_use_denies_when_plugin_hook_exits_two() {
-        let runner = HookRunner::new(crate::PluginHooks {
+        let runner = PluginHookRunner::new(crate::PluginHooks {
             pre_tool_use: vec!["printf 'blocked by plugin'; exit 2".to_string()],
             post_tool_use: Vec::new(),
         });

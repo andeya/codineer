@@ -13,7 +13,8 @@ mod types;
 #[cfg(test)]
 mod tests;
 
-pub use hooks::{HookEvent, HookRunResult, HookRunner};
+pub use hooks::PluginHookRunner;
+pub use runtime::{HookEvent, HookRunResult};
 
 pub use definition::builtin_plugins;
 pub use error::{PluginError, PluginManifestValidationError};
