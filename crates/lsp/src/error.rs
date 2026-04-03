@@ -17,6 +17,10 @@ pub enum LspError {
     },
     PathToUrl(PathBuf),
     Protocol(String),
+    PayloadTooLarge {
+        content_length: usize,
+        limit: usize,
+    },
 }
 
 impl Display for LspError {
@@ -43,6 +47,13 @@ impl Display for LspError {
             ),
             Self::PathToUrl(path) => write!(f, "failed to convert path to file URL: {}", path.display()),
             Self::Protocol(message) => write!(f, "LSP protocol error: {message}"),
+            Self::PayloadTooLarge {
+                content_length,
+                limit,
+            } => write!(
+                f,
+                "LSP payload too large: Content-Length {content_length} exceeds {limit} byte limit"
+            ),
         }
     }
 }
@@ -108,6 +119,12 @@ mod tests {
             LspError::Protocol("timeout".into()).to_string(),
             "LSP protocol error: timeout"
         );
+        assert!(LspError::PayloadTooLarge {
+            content_length: 100_000_000,
+            limit: 8_000_000,
+        }
+        .to_string()
+        .contains("100000000"));
     }
 
     #[test]

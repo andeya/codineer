@@ -305,8 +305,13 @@ impl LspClient {
     {
         tokio::spawn(async move {
             let mut reader = BufReader::new(stderr);
-            let mut sink = Vec::new();
-            let _ = reader.read_to_end(&mut sink).await;
+            let mut buf = [0_u8; 4096];
+            loop {
+                match reader.read(&mut buf).await {
+                    Ok(0) | Err(_) => break,
+                    Ok(_) => {}
+                }
+            }
         });
     }
 
@@ -430,6 +435,13 @@ where
     }
 
     let content_length = content_length.ok_or(LspError::MissingContentLength)?;
+    const MAX_BODY_SIZE: usize = 8 * 1024 * 1024;
+    if content_length > MAX_BODY_SIZE {
+        return Err(LspError::PayloadTooLarge {
+            content_length,
+            limit: MAX_BODY_SIZE,
+        });
+    }
     let mut body = vec![0_u8; content_length];
     reader.read_exact(&mut body).await?;
     Ok(Some(serde_json::from_slice(&body)?))
