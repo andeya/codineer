@@ -1,3 +1,6 @@
+# Template only — the published formula lives in
+# https://github.com/andeya/homebrew-codineer
+# and is auto-updated by release CI.
 class Codineer < Formula
   desc "Local coding-agent CLI implemented in safe Rust"
   homepage "https://github.com/andeya/codineer"
