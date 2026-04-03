@@ -365,7 +365,8 @@ fn describe_instruction_file(file: &ContextFile, files: &[ContextFile]) -> Strin
     let scope = files
         .iter()
         .filter_map(|candidate| candidate.path.parent())
-        .find(|parent| file.path.starts_with(parent))
+        .filter(|parent| file.path.starts_with(parent))
+        .max_by_key(|parent| parent.components().count())
         .map_or_else(
             || "workspace".to_string(),
             |parent| parent.display().to_string(),

@@ -222,7 +222,9 @@ pub fn detect_provider_kind(model: &str) -> ProviderKind {
     if let Some(metadata) = metadata_for_model(model) {
         return metadata.provider;
     }
-    detect_available_provider().unwrap_or(ProviderKind::CodineerApi)
+    let fallback = detect_available_provider().unwrap_or(ProviderKind::CodineerApi);
+    eprintln!("[warn] unknown model \"{model}\", falling back to {fallback:?} provider");
+    fallback
 }
 
 fn detect_available_provider() -> Option<ProviderKind> {

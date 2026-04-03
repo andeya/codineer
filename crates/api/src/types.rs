@@ -159,7 +159,10 @@ pub struct Usage {
 impl Usage {
     #[must_use]
     pub const fn total_tokens(&self) -> u32 {
-        self.input_tokens + self.output_tokens
+        self.input_tokens
+            + self.output_tokens
+            + self.cache_creation_input_tokens
+            + self.cache_read_input_tokens
     }
 }
 
@@ -360,7 +363,7 @@ mod tests {
             cache_read_input_tokens: 20,
             cache_creation_input_tokens: 10,
         };
-        assert_eq!(usage.total_tokens(), 150);
+        assert_eq!(usage.total_tokens(), 180);
     }
 
     #[test]
