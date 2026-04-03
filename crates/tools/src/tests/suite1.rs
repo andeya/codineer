@@ -117,6 +117,9 @@ fn web_fetch_supports_plain_text_and_rejects_invalid_url() {
 
 #[test]
 fn web_search_extracts_and_filters_results() {
+    let _guard = env_lock()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let server = TestServer::spawn(Arc::new(|request_line: &str| {
         assert!(request_line.contains("GET /search?q=rust+web+search "));
         HttpResponse::html(

@@ -430,6 +430,7 @@ fn glob_and_grep_tools_cover_success_and_errors() {
     assert!(globbed_output["filenames"][0]
         .as_str()
         .expect("filename")
+        .replace('\\', "/")
         .ends_with("nested/lib.rs"));
 
     let glob_error = execute_tool("glob_search", &json!({ "pattern": "[" }))

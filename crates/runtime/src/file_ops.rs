@@ -539,13 +539,36 @@ fn normalize_path_allow_missing(path: &str) -> io::Result<PathBuf> {
         return Ok(canonical);
     }
 
-    if let Some(parent) = candidate.parent() {
-        let canonical_parent = parent
-            .canonicalize()
-            .unwrap_or_else(|_| parent.to_path_buf());
-        enforce_workspace_boundary(&canonical_parent)?;
-        if let Some(name) = candidate.file_name() {
-            return Ok(canonical_parent.join(name));
+    // Walk up the path to find the deepest existing ancestor, canonicalize it
+    // (which resolves UNC prefixes and 8.3 short names on Windows), then
+    // re-attach the remaining suffix so the boundary check operates on fully
+    // resolved paths and avoids false positives from RUNNER~1 vs runneradmin.
+    let mut ancestor = candidate.clone();
+    let mut suffix = PathBuf::new();
+    loop {
+        if let Ok(canonical_ancestor) = ancestor.canonicalize() {
+            enforce_workspace_boundary(&canonical_ancestor)?;
+            return Ok(if suffix.as_os_str().is_empty() {
+                canonical_ancestor
+            } else {
+                canonical_ancestor.join(&suffix)
+            });
+        }
+        match ancestor.file_name() {
+            Some(name) => {
+                suffix = if suffix.as_os_str().is_empty() {
+                    PathBuf::from(name)
+                } else {
+                    PathBuf::from(name).join(&suffix)
+                };
+            }
+            None => break,
+        }
+        match ancestor.parent() {
+            Some(parent) if !parent.as_os_str().is_empty() => {
+                ancestor = parent.to_path_buf();
+            }
+            _ => break,
         }
     }
 
