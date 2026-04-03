@@ -82,9 +82,22 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 const BUILD_TARGET: Option<&str> = option_env!("TARGET");
 const GIT_SHA: Option<&str> = option_env!("GIT_SHA");
 
+fn logo_ascii(color: bool) -> String {
+    if color {
+        [
+            "\x1b[38;5;33m   ⬡⬡⬡\x1b[0m",
+            "\x1b[38;5;33m  ⬡\x1b[0m \x1b[38;5;34m>\x1b[0m \x1b[38;5;33m⬡\x1b[0m  \x1b[1;38;5;45mCodineer\x1b[0m",
+            "\x1b[38;5;33m   ⬡⬡⬡\x1b[0m",
+        ]
+        .join("\n")
+    } else {
+        ["   ⬡⬡⬡", "  ⬡ > ⬡  Codineer", "   ⬡⬡⬡"].join("\n")
+    }
+}
+
 fn logo_line(color: bool) -> String {
     if color {
-        "\x1b[38;5;33m ⬡\x1b[0m \x1b[1;38;5;45mCodineer\x1b[0m".to_string()
+        "\x1b[38;5;33m⬡\x1b[0m \x1b[1;38;5;45mCodineer\x1b[0m".to_string()
     } else {
         "⬡ Codineer".to_string()
     }
@@ -4244,11 +4257,8 @@ fn print_help_section(out: &mut impl Write, title: &str, entries: &[&str]) -> io
 
 fn print_help_to(out: &mut impl Write) -> io::Result<()> {
     let color = io::stdout().is_terminal();
-    writeln!(out, "{} v{VERSION}", logo_line(color))?;
-    writeln!(
-        out,
-        "  Your local AI coding agent."
-    )?;
+    writeln!(out, "{}", logo_ascii(color))?;
+    writeln!(out, "  v{VERSION} — Your local AI coding agent.")?;
     writeln!(out)?;
     print_help_section(
         out,
