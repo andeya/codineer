@@ -4,10 +4,33 @@
 # Codineer local artifacts
 .codineer/settings.local.json
 .codineer/sessions/
+.codineer/cache/
 .codineer-agents/
+
+# Environment
+.env
+.env.local
+.env.*.local
 
 # IDE
 .idea/
 .vscode/
 *.swp
 *.swo
+*.orig
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Rust
+**/*.rs.bk
+
+# Logs
+*.log
+codineer.log
+
+# Keys / secrets
+*.pem
+*.key
