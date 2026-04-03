@@ -4,22 +4,26 @@ use crate::discovery::{
 };
 use crate::slash_spec::SlashCommand;
 use crate::{
-    handle_branch_slash_command, handle_commit_push_pr_slash_command, handle_commit_slash_command,
-    handle_plugins_slash_command, handle_slash_command, handle_worktree_slash_command,
-    render_plugins_report, render_slash_command_help, resume_supported_slash_commands,
-    slash_command_specs, suggest_slash_commands, CommitPushPrRequest, PluginEffect,
+    handle_branch_slash_command, handle_commit_slash_command, handle_plugins_slash_command,
+    handle_slash_command, handle_worktree_slash_command, render_plugins_report,
+    render_slash_command_help, resume_supported_slash_commands, slash_command_specs,
+    suggest_slash_commands, PluginEffect,
 };
 use plugins::{PluginKind, PluginManager, PluginManagerConfig, PluginMetadata, PluginSummary};
 use runtime::{CompactionConfig, ContentBlock, ConversationMessage, MessageRole, Session};
-use std::env;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::Command;
-use std::sync::{Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[cfg(unix)]
-use std::os::unix::fs::PermissionsExt;
+use {
+    crate::{handle_commit_push_pr_slash_command, CommitPushPrRequest},
+    std::env,
+    std::os::unix::fs::PermissionsExt,
+    std::path::Path,
+    std::sync::{Mutex, OnceLock},
+};
 
 fn temp_dir(label: &str) -> PathBuf {
     let nanos = SystemTime::now()
@@ -29,6 +33,7 @@ fn temp_dir(label: &str) -> PathBuf {
     std::env::temp_dir().join(format!("commands-plugin-{label}-{nanos}"))
 }
 
+#[cfg(unix)]
 fn env_lock() -> std::sync::MutexGuard<'static, ()> {
     static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
     LOCK.get_or_init(|| Mutex::new(()))
@@ -91,6 +96,7 @@ fn init_git_repo(label: &str) -> PathBuf {
     root
 }
 
+#[cfg(unix)]
 fn init_bare_repo(label: &str) -> PathBuf {
     let root = temp_dir(label);
     let output = Command::new("git")
