@@ -1,9 +1,7 @@
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="assets/logo-dark.svg">
-    <source media="(prefers-color-scheme: light)" srcset="assets/logo-light.svg">
-    <img alt="Codineer" src="assets/logo-light.svg" width="340">
-  </picture>
+  <img src="assets/logo.svg" width="80" alt="">
+  <br><br>
+  <strong>C O D I N E E R</strong>
   <br>
   <em>Your local AI coding agent — one binary, zero cloud lock-in.</em>
 </p>
@@ -12,7 +10,6 @@
   <a href="https://github.com/andeya/codineer/actions"><img src="https://github.com/andeya/codineer/workflows/CI/badge.svg" alt="CI"></a>
   <a href="https://github.com/andeya/codineer/releases"><img src="https://img.shields.io/github/v/release/andeya/codineer" alt="Release"></a>
   <a href="https://crates.io/crates/codineer-cli"><img src="https://img.shields.io/crates/v/codineer-cli.svg" alt="crates.io"></a>
-  <br>
   <img src="assets/badge-platforms.svg" alt="macOS | Linux | Windows">
   <br>
   <a href="README_CN.md">中文文档</a>
