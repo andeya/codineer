@@ -24,6 +24,16 @@ impl ModelPricing {
             cache_read_cost_per_million: DEFAULT_CACHE_READ_COST_PER_MILLION,
         }
     }
+
+    #[must_use]
+    pub const fn no_cache(input_cost_per_million: f64, output_cost_per_million: f64) -> Self {
+        Self {
+            input_cost_per_million,
+            output_cost_per_million,
+            cache_creation_cost_per_million: 0.0,
+            cache_read_cost_per_million: 0.0,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, PartialEq, Eq)]
@@ -55,6 +65,7 @@ impl UsageCostEstimate {
 #[must_use]
 pub fn pricing_for_model(model: &str) -> Option<ModelPricing> {
     let normalized = model.to_ascii_lowercase();
+
     if normalized.contains("haiku") {
         return Some(ModelPricing {
             input_cost_per_million: 1.0,
@@ -74,6 +85,30 @@ pub fn pricing_for_model(model: &str) -> Option<ModelPricing> {
     if normalized.contains("sonnet") {
         return Some(ModelPricing::default_sonnet_tier());
     }
+
+    if normalized.starts_with("gpt-4o-mini") {
+        return Some(ModelPricing::no_cache(0.15, 0.60));
+    }
+    if normalized.starts_with("gpt-4o") || normalized.starts_with("chatgpt-4o") {
+        return Some(ModelPricing::no_cache(2.5, 10.0));
+    }
+    if normalized.starts_with("gpt-4.1") {
+        return Some(ModelPricing::no_cache(2.0, 8.0));
+    }
+    if normalized.starts_with("o3-mini") || normalized.starts_with("o4-mini") {
+        return Some(ModelPricing::no_cache(1.1, 4.4));
+    }
+    if normalized.starts_with("o3") {
+        return Some(ModelPricing::no_cache(10.0, 40.0));
+    }
+
+    if normalized.starts_with("grok-3-mini") {
+        return Some(ModelPricing::no_cache(0.30, 0.50));
+    }
+    if normalized.starts_with("grok-3") {
+        return Some(ModelPricing::no_cache(3.0, 15.0));
+    }
+
     None
 }
 
@@ -271,6 +306,22 @@ mod tests {
         let opus_cost = usage.estimate_cost_usd_with_pricing(opus);
         assert_eq!(format_usd(haiku_cost.total_cost_usd()), "$3.5000");
         assert_eq!(format_usd(opus_cost.total_cost_usd()), "$52.5000");
+    }
+
+    #[test]
+    fn supports_openai_and_xai_pricing() {
+        assert!(pricing_for_model("gpt-4o").is_some());
+        assert!(pricing_for_model("gpt-4o-mini").is_some());
+        assert!(pricing_for_model("gpt-4.1-nano").is_some());
+        assert!(pricing_for_model("o3-mini").is_some());
+        assert!(pricing_for_model("o3").is_some());
+        assert!(pricing_for_model("grok-3").is_some());
+        assert!(pricing_for_model("grok-3-mini-fast").is_some());
+
+        let gpt4o = pricing_for_model("gpt-4o").unwrap();
+        assert!((gpt4o.input_cost_per_million - 2.5).abs() < f64::EPSILON);
+        let grok3 = pricing_for_model("grok-3").unwrap();
+        assert!((grok3.input_cost_per_million - 3.0).abs() < f64::EPSILON);
     }
 
     #[test]
