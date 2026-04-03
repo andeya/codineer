@@ -16,17 +16,17 @@ name = "codineer"
 path = "src/main.rs"
 
 [dependencies]
-api = { path = "../api" }
-commands = { path = "../commands" }
+api.workspace = true
+commands.workspace = true
 crossterm = "0.28"
 pulldown-cmark = "0.13"
 rustyline = "15"
-runtime = { path = "../runtime" }
-plugins = { path = "../plugins" }
+runtime.workspace = true
+plugins.workspace = true
 serde_json.workspace = true
 syntect = "5"
 tokio = { version = "1", features = ["rt-multi-thread", "time"] }
-tools = { path = "../tools" }
+tools.workspace = true
 
 [lints]
 workspace = true

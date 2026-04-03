@@ -3,7 +3,7 @@ use std::ffi::OsString;
 use std::sync::Arc;
 use std::sync::OnceLock;
 
-use api::{
+use codineer_api::{
     ContentBlockDelta, ContentBlockDeltaEvent, ContentBlockStartEvent, ContentBlockStopEvent,
     InputContentBlock, InputMessage, MessageRequest, OpenAiCompatClient, OpenAiCompatConfig,
     OutputContentBlock, ProviderClient, StreamEvent, ToolChoice, ToolDefinition,

@@ -1,7 +1,7 @@
 use std::ffi::OsString;
 use std::sync::{Mutex, OnceLock};
 
-use api::{read_xai_base_url, ApiError, AuthSource, ProviderClient, ProviderKind};
+use codineer_api::{read_xai_base_url, ApiError, AuthSource, ProviderClient, ProviderKind};
 
 #[test]
 fn provider_client_routes_grok_aliases_through_xai() {

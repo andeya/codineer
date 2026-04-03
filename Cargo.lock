@@ -18,17 +18,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "api"
-version = "0.5.0"
-dependencies = [
- "reqwest",
- "runtime",
- "serde",
- "serde_json",
- "tokio",
-]
-
-[[package]]
 name = "atomic-waker"
 version = "1.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -120,29 +109,93 @@ dependencies = [
 ]
 
 [[package]]
+name = "codineer-api"
+version = "0.5.0"
+dependencies = [
+ "codineer-runtime",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "codineer-cli"
 version = "0.5.0"
 dependencies = [
- "api",
- "commands",
+ "codineer-api",
+ "codineer-commands",
+ "codineer-plugins",
+ "codineer-runtime",
+ "codineer-tools",
  "crossterm",
- "plugins",
  "pulldown-cmark",
- "runtime",
  "rustyline",
  "serde_json",
  "syntect",
  "tokio",
- "tools",
 ]
 
 [[package]]
-name = "commands"
+name = "codineer-commands"
 version = "0.5.0"
 dependencies = [
- "plugins",
- "runtime",
+ "codineer-plugins",
+ "codineer-runtime",
  "serde_json",
+]
+
+[[package]]
+name = "codineer-lsp"
+version = "0.5.0"
+dependencies = [
+ "lsp-types",
+ "serde",
+ "serde_json",
+ "tokio",
+ "url",
+]
+
+[[package]]
+name = "codineer-plugins"
+version = "0.5.0"
+dependencies = [
+ "codineer-runtime",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "codineer-runtime"
+version = "0.5.0"
+dependencies = [
+ "codineer-lsp",
+ "dunce",
+ "futures-util",
+ "getrandom 0.2.17",
+ "glob",
+ "keyring",
+ "regex",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tokio",
+ "tokio-tungstenite",
+ "walkdir",
+]
+
+[[package]]
+name = "codineer-tools"
+version = "0.5.0"
+dependencies = [
+ "codineer-api",
+ "codineer-plugins",
+ "codineer-runtime",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]
@@ -783,17 +836,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "112b39cec0b298b6c1999fee3e31427f74f676e4cb9879ed1a121b43661a4154"
 
 [[package]]
-name = "lsp"
-version = "0.5.0"
-dependencies = [
- "lsp-types",
- "serde",
- "serde_json",
- "tokio",
- "url",
-]
-
-[[package]]
 name = "lsp-types"
 version = "0.97.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -941,15 +983,6 @@ dependencies = [
  "quick-xml",
  "serde",
  "time",
-]
-
-[[package]]
-name = "plugins"
-version = "0.5.0"
-dependencies = [
- "runtime",
- "serde",
- "serde_json",
 ]
 
 [[package]]
@@ -1212,26 +1245,6 @@ dependencies = [
  "libc",
  "untrusted",
  "windows-sys 0.52.0",
-]
-
-[[package]]
-name = "runtime"
-version = "0.5.0"
-dependencies = [
- "dunce",
- "futures-util",
- "getrandom 0.2.17",
- "glob",
- "keyring",
- "lsp",
- "regex",
- "reqwest",
- "serde",
- "serde_json",
- "sha2",
- "tokio",
- "tokio-tungstenite",
- "walkdir",
 ]
 
 [[package]]
@@ -1730,19 +1743,6 @@ dependencies = [
  "tokio-rustls",
  "tungstenite",
  "webpki-roots 0.26.11",
-]
-
-[[package]]
-name = "tools"
-version = "0.5.0"
-dependencies = [
- "api",
- "plugins",
- "reqwest",
- "runtime",
- "serde",
- "serde_json",
- "tokio",
 ]
 
 [[package]]

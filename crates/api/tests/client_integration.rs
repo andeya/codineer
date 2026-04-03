@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-use api::{
+use codineer_api::{
     ApiError, AuthSource, CodineerApiClient, ContentBlockDelta, ContentBlockDeltaEvent,
     ContentBlockStartEvent, InputContentBlock, InputMessage, MessageDeltaEvent, MessageRequest,
     OutputContentBlock, ProviderClient, RetryPolicy, StreamEvent, ToolChoice, ToolDefinition,
@@ -469,7 +469,7 @@ fn sample_request(stream: bool) -> MessageRequest {
                 },
                 InputContentBlock::ToolResult {
                     tool_use_id: "toolu_prev".to_string(),
-                    content: vec![api::ToolResultContentBlock::Json {
+                    content: vec![codineer_api::ToolResultContentBlock::Json {
                         value: json!({"forecast": "sunny"}),
                     }],
                     is_error: false,
