@@ -30,6 +30,9 @@ pub enum ApiError {
         attempt: u32,
         base_delay: Duration,
     },
+    ResponsePayloadTooLarge {
+        limit: usize,
+    },
 }
 
 impl ApiError {
@@ -54,7 +57,8 @@ impl ApiError {
             | Self::Io(_)
             | Self::Json(_)
             | Self::InvalidSseFrame(_)
-            | Self::BackoffOverflow { .. } => false,
+            | Self::BackoffOverflow { .. }
+            | Self::ResponsePayloadTooLarge { .. } => false,
         }
     }
 }
@@ -104,6 +108,9 @@ impl Display for ApiError {
                 f,
                 "retry backoff overflowed on attempt {attempt} with base delay {base_delay:?}"
             ),
+            Self::ResponsePayloadTooLarge { limit } => {
+                write!(f, "response payload exceeded {limit} byte limit")
+            }
         }
     }
 }

@@ -12,7 +12,15 @@ impl SseParser {
         Self::default()
     }
 
+    const MAX_BUFFER_SIZE: usize = 16 * 1024 * 1024;
+
     pub fn push(&mut self, chunk: &[u8]) -> Result<Vec<StreamEvent>, ApiError> {
+        if self.buffer.len() + chunk.len() > Self::MAX_BUFFER_SIZE {
+            self.buffer.clear();
+            return Err(ApiError::ResponsePayloadTooLarge {
+                limit: Self::MAX_BUFFER_SIZE,
+            });
+        }
         self.buffer.extend_from_slice(chunk);
         let mut events = Vec::new();
 
@@ -275,5 +283,13 @@ mod tests {
                 }
             ))
         );
+    }
+
+    #[test]
+    fn rejects_oversized_buffer() {
+        let mut parser = SseParser::new();
+        let big_chunk = vec![b'x'; SseParser::MAX_BUFFER_SIZE + 1];
+        let err = parser.push(&big_chunk).unwrap_err();
+        assert!(err.to_string().contains("limit"));
     }
 }
