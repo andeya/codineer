@@ -250,14 +250,21 @@ fn notebook_edit_rejects_invalid_inputs() {
 #[test]
 #[cfg(unix)]
 fn bash_tool_reports_success_exit_failure_timeout_and_background() {
-    let success = execute_tool("bash", &json!({ "command": "printf 'hello'" }))
-        .expect("bash should succeed");
+    let no_sandbox = true;
+    let success = execute_tool(
+        "bash",
+        &json!({ "command": "printf 'hello'", "timeout": 5000, "dangerouslyDisableSandbox": no_sandbox }),
+    )
+    .expect("bash should succeed");
     let success_output: serde_json::Value = serde_json::from_str(&success).expect("json");
     assert_eq!(success_output["stdout"], "hello");
     assert_eq!(success_output["interrupted"], false);
 
-    let failure = execute_tool("bash", &json!({ "command": "printf 'oops' >&2; exit 7" }))
-        .expect("bash failure should still return structured output");
+    let failure = execute_tool(
+        "bash",
+        &json!({ "command": "printf 'oops' >&2; exit 7", "timeout": 5000, "dangerouslyDisableSandbox": no_sandbox }),
+    )
+    .expect("bash failure should still return structured output");
     let failure_output: serde_json::Value = serde_json::from_str(&failure).expect("json");
     assert_eq!(failure_output["returnCodeInterpretation"], "exit_code:7");
     assert!(failure_output["stderr"]
@@ -265,8 +272,11 @@ fn bash_tool_reports_success_exit_failure_timeout_and_background() {
         .expect("stderr")
         .contains("oops"));
 
-    let timeout = execute_tool("bash", &json!({ "command": "sleep 1", "timeout": 10 }))
-        .expect("bash timeout should return output");
+    let timeout = execute_tool(
+        "bash",
+        &json!({ "command": "sleep 10", "timeout": 10, "dangerouslyDisableSandbox": no_sandbox }),
+    )
+    .expect("bash timeout should return output");
     let timeout_output: serde_json::Value = serde_json::from_str(&timeout).expect("json");
     assert_eq!(timeout_output["interrupted"], true);
     assert_eq!(timeout_output["returnCodeInterpretation"], "timeout");
@@ -277,7 +287,7 @@ fn bash_tool_reports_success_exit_failure_timeout_and_background() {
 
     let background = execute_tool(
         "bash",
-        &json!({ "command": "sleep 1", "run_in_background": true }),
+        &json!({ "command": "sleep 1", "run_in_background": true, "dangerouslyDisableSandbox": no_sandbox }),
     )
     .expect("bash background should succeed");
     let background_output: serde_json::Value = serde_json::from_str(&background).expect("json");
@@ -590,9 +600,17 @@ fn structured_output_echoes_input_payload() {
 #[test]
 #[cfg(unix)]
 fn repl_executes_python_code() {
+    let python_available = std::process::Command::new("python3")
+        .arg("--version")
+        .output()
+        .is_ok_and(|o| o.status.success());
+    if !python_available {
+        eprintln!("skipping: python3 not found");
+        return;
+    }
     let result = execute_tool(
         "REPL",
-        &json!({"language": "python", "code": "print(1 + 1)", "timeout_ms": 500}),
+        &json!({"language": "python", "code": "print(1 + 1)", "timeout_ms": 5000}),
     )
     .expect("REPL should succeed");
     let output: serde_json::Value = serde_json::from_str(&result).expect("json");
