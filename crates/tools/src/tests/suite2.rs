@@ -601,6 +601,9 @@ fn structured_output_echoes_input_payload() {
 #[test]
 #[cfg(unix)]
 fn repl_executes_python_code() {
+    let _guard = env_lock()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     use crate::powershell::command_exists;
     if !command_exists("python3") && !command_exists("python") {
         eprintln!("skipping: python3/python not found via command_exists");
