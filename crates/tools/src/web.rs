@@ -33,10 +33,14 @@ pub(crate) fn execute_web_fetch(input: &WebFetchInput) -> Result<WebFetchOutput,
         &mut raw,
     )
     .map_err(|error| error.to_string())?;
-    let bytes = raw.len();
-    if raw.len() > MAX_BODY_SIZE {
+    let truncated_from = if raw.len() > MAX_BODY_SIZE {
         raw.truncate(MAX_BODY_SIZE);
-    }
+        true
+    } else {
+        false
+    };
+    let bytes = raw.len();
+    let _ = truncated_from;
     let body = String::from_utf8_lossy(&raw).into_owned();
     let truncated = body.as_str();
     let normalized = normalize_fetched_content(truncated, &content_type);
@@ -68,7 +72,15 @@ pub(crate) fn execute_web_search(input: &WebSearchInput) -> Result<WebSearchOutp
         .map_err(|error| error.to_string())?;
 
     let final_url = response.url().clone();
-    let html = response.text().map_err(|error| error.to_string())?;
+    const MAX_SEARCH_BODY: usize = 5 * 1024 * 1024;
+    let mut raw = Vec::new();
+    std::io::Read::read_to_end(
+        &mut std::io::Read::take(response, (MAX_SEARCH_BODY + 1) as u64),
+        &mut raw,
+    )
+    .map_err(|e| e.to_string())?;
+    raw.truncate(MAX_SEARCH_BODY);
+    let html = String::from_utf8_lossy(&raw).into_owned();
     let mut hits = extract_search_hits(&html);
 
     if hits.is_empty() && final_url.host_str().is_some() {

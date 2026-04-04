@@ -53,7 +53,7 @@ pub(crate) fn execute_shell_command(
     run_in_background: Option<bool>,
 ) -> std::io::Result<runtime::BashCommandOutput> {
     if run_in_background.unwrap_or(false) {
-        let child = std::process::Command::new(shell)
+        let mut child = std::process::Command::new(shell)
             .arg("-NoProfile")
             .arg("-NonInteractive")
             .arg("-Command")
@@ -62,13 +62,17 @@ pub(crate) fn execute_shell_command(
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
             .spawn()?;
+        let pid = child.id();
+        std::thread::spawn(move || {
+            let _ = child.wait();
+        });
         return Ok(runtime::BashCommandOutput {
             stdout: String::new(),
             stderr: String::new(),
             raw_output_path: None,
             interrupted: false,
             is_image: None,
-            background_task_id: Some(child.id().to_string()),
+            background_task_id: Some(pid.to_string()),
             backgrounded_by_user: Some(true),
             assistant_auto_backgrounded: Some(false),
             dangerously_disable_sandbox: None,

@@ -76,7 +76,12 @@ pub(crate) fn write_temp_text_file(
     filename: &str,
     contents: &str,
 ) -> Result<PathBuf, Box<dyn std::error::Error>> {
-    let path = env::temp_dir().join(filename);
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let unique_name = format!("{nanos}-{filename}");
+    let path = env::temp_dir().join(unique_name);
     fs::write(&path, contents)?;
     Ok(path)
 }
