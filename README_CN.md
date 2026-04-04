@@ -123,10 +123,13 @@ codineer
 
 在 REPL 内可使用**斜杠命令**（支持 Tab 自动补全）：
 
+**会话与信息**
+
 | 命令 | 说明 |
 |---|---|
 | `/help` | 显示所有可用命令 |
 | `/status` | 查看会话信息：模型、token 数、Git 分支、配置 |
+| `/version` | 显示 Codineer 版本 |
 | `/model [名称]` | 查看或切换当前模型 |
 | `/permissions [模式]` | 查看或切换权限模式 |
 | `/cost` | 显示 token 用量和费用估算 |
@@ -135,13 +138,39 @@ codineer
 | `/session [list\|switch <id>]` | 列出或切换已命名会话 |
 | `/resume <文件>` | 恢复已保存的会话文件 |
 | `/export [文件]` | 将对话导出为 Markdown |
-| `/diff` | 显示工作区 git diff |
 | `/memory` | 查看已加载的 CODINEER.md 记忆文件 |
 | `/config [env\|hooks\|model\|plugins]` | 查看合并后的配置 |
 | `/init` | 为当前项目重新生成 CODINEER.md |
+
+**Git 与工作流**
+
+| 命令 | 说明 |
+|---|---|
+| `/diff` | 显示工作区 git diff |
+| `/branch` | 查看或管理 git 分支 |
+| `/commit` | 创建 git 提交 |
+| `/commit-push-pr` | 提交、推送并创建 Pull Request |
+| `/pr` | 创建或管理 Pull Request |
+| `/issue` | 创建或浏览 GitHub Issue |
+| `/worktree` | 管理 git worktree |
+
+**Agent 与插件**
+
+| 命令 | 说明 |
+|---|---|
 | `/plugin list\|install\|enable\|...` | 管理插件 |
 | `/agents` | 列出已配置的子 Agent |
 | `/skills` | 列出可用的 Skill |
+
+**高级**
+
+| 命令 | 说明 |
+|---|---|
+| `/ultraplan` | 生成详细的实现计划 |
+| `/bughunter` | 系统化 Bug 搜寻模式 |
+| `/teleport` | 跳转到指定文件或符号 |
+| `/debug-tool-call` | 调试上一次工具调用 |
+| `/vim` | 切换 Vim 风格模态编辑 |
 | `/exit` 或 `/quit` | 退出 REPL |
 
 **键盘快捷键：**
@@ -189,13 +218,15 @@ codineer --resume session.json /status /compact /cost
 
 Codineer 为常用模型提供短别名：
 
-| 别名 | 实际模型 |
-|---|---|
-| `opus` | `claude-opus-4-6` |
-| `sonnet` | `claude-sonnet-4-6` |
-| `haiku` | `claude-haiku-4-5-20251213` |
-| `grok` | `grok-3` |
-| `grok-mini` | `grok-3-mini` |
+| 别名 | 实际模型 | 供应商 |
+|---|---|---|
+| `opus` | `claude-opus-4-6` | Anthropic |
+| `sonnet` | `claude-sonnet-4-6` | Anthropic |
+| `haiku` | `claude-haiku-4-5-20251213` | Anthropic |
+| `grok` | `grok-3` | xAI |
+| `grok-mini` | `grok-3-mini` | xAI |
+| `gpt-4o` | `gpt-4o` | OpenAI |
+| `o3` | `o3` | OpenAI |
 
 ```bash
 codineer --model opus "帮我 review 这次改动"
@@ -265,7 +296,14 @@ codineer init
 - 使用 conventional commits 格式
 ```
 
-支持多个记忆文件——Codineer 会从工作区根目录向上逐级查找所有 `CODINEER.md`。
+Codineer 会从工作区根目录向上逐级查找匹配的指令文件：
+
+| 文件 | 用途 |
+|---|---|
+| `CODINEER.md` | 主要项目上下文（建议提交） |
+| `CODINEER.local.md` | 个人本地覆盖（加入 gitignore） |
+| `.codineer/CODINEER.md` | `.codineer/` 目录内的替代位置 |
+| `.codineer/instructions.md` | 附加指令 |
 
 ---
 
@@ -275,7 +313,9 @@ codineer init
 
 1. `.codineer/settings.local.json` — 本地覆盖（已 gitignore，不提交）
 2. `.codineer/settings.json` — 项目级配置（建议提交）
-3. `~/.codineer/settings.json` — 用户全局配置
+3. `.codineer.json` — 项目级扁平配置
+4. `~/.codineer/settings.json` — 用户全局配置
+5. `~/.codineer.json` — 用户全局扁平配置
 
 随时查看合并后的配置：
 
@@ -295,6 +335,8 @@ codineer init
 | `XAI_API_KEY` | xAI / Grok API Key |
 | `OPENAI_API_KEY` | OpenAI API Key |
 | `CODINEER_WORKSPACE_ROOT` | 覆盖工作区根路径 |
+| `CODINEER_CONFIG_HOME` | 覆盖配置目录（默认 `~/.codineer`） |
+| `CODINEER_PERMISSION_MODE` | 默认权限模式 |
 | `NO_COLOR` | 禁用 ANSI 颜色输出 |
 
 ---
@@ -311,13 +353,13 @@ Codineer 支持 [Model Context Protocol](https://modelcontextprotocol.io) 来接
     "my-server": {
       "command": "node",
       "args": ["path/to/mcp-server.js"],
-      "transport": "stdio"
+      "type": "stdio"
     }
   }
 }
 ```
 
-支持的传输协议：`stdio`、`sse`、`http`、`websocket`。
+支持的传输类型：`stdio`（默认）、`sse`、`http`、`ws`。
 
 ### 插件
 
@@ -342,7 +384,7 @@ codineer agents --help   # 查看 Agent 帮助
 /agents                  # 在 REPL 内同效
 ```
 
-**Skill** 是存放在 `~/.codineer/skills/` 下的可复用提示模板：
+**Skill** 是可复用提示模板。Codineer 会在 `.codineer/skills/`、`$CODINEER_CONFIG_HOME/skills/` 和 `~/.codineer/skills/` 中搜索：
 
 ```bash
 codineer skills          # 列出可用 Skill
@@ -382,26 +424,24 @@ Codineer 自带一套丰富的工具供 AI 调用：
 
 ## 发布到 crates.io
 
-各库 crate（`api`、`runtime`、`tools`、`plugins`、`commands`、`lsp`）独立发布到 crates.io。发布流程通过 GitHub Actions 自动化——打标签即可触发：
+所有 crate 使用 `codineer-` 前缀发布到 crates.io。发布流程通过 GitHub Actions 自动化——打标签即可触发：
 
 ```bash
 git tag v0.6.0
 git push origin v0.6.0
 ```
 
-在自己的 Rust 项目中使用这些库：
+| Crate | 说明 |
+|---|---|
+| `codineer-cli` | CLI 二进制 — **安装这个** |
+| `codineer-runtime` | 核心运行时引擎 |
+| `codineer-api` | AI 供应商 API 客户端 |
+| `codineer-tools` | 内置工具定义与执行 |
+| `codineer-plugins` | 插件系统和 Hook |
+| `codineer-commands` | 斜杠命令和发现 |
+| `codineer-lsp` | LSP 客户端集成 |
 
-```toml
-[dependencies]
-# 高级工具执行
-tools = { version = "0.5" }
-
-# 运行时与会话管理
-runtime = { version = "0.5" }
-
-# API 供应商抽象（Anthropic、OpenAI、xAI）
-api = { version = "0.5" }
-```
+> **注意：** 库 crate 是 `codineer-cli` 的内部实现细节。它们发布到 crates.io 是为了满足依赖要求，其 API 不保证对外稳定。
 
 ---
 

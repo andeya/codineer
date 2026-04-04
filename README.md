@@ -123,35 +123,64 @@ codineer
 
 Inside the REPL you can use **slash commands** (Tab-autocomplete supported):
 
-| Command | Description |
-|---|---|
-| `/help` | Show all available commands |
-| `/status` | Session info: model, tokens, git branch, config |
-| `/model [name]` | View or switch the active model |
-| `/permissions [mode]` | View or change permission mode |
-| `/cost` | Show token usage and estimated cost |
-| `/compact` | Compress conversation history to save tokens |
-| `/clear [--confirm]` | Reset conversation (requires `--confirm` to execute) |
-| `/session [list\|switch <id>]` | List or switch named sessions |
-| `/resume <file>` | Resume a saved session file |
-| `/export [file]` | Export conversation to Markdown |
-| `/diff` | Show workspace git diff |
-| `/memory` | Inspect loaded CODINEER.md memory files |
-| `/config [env\|hooks\|model\|plugins]` | Inspect merged configuration |
-| `/init` | Re-generate CODINEER.md for current project |
-| `/plugin list\|install\|enable\|...` | Manage plugins |
-| `/agents` | List configured sub-agents |
-| `/skills` | List available skills |
-| `/exit` or `/quit` | Exit the REPL |
+**Session & info**
+
+| Command                                | Description                                          |
+| -------------------------------------- | ---------------------------------------------------- |
+| `/help`                                | Show all available commands                          |
+| `/status`                              | Session info: model, tokens, git branch, config      |
+| `/version`                             | Print Codineer version                               |
+| `/model [name]`                        | View or switch the active model                      |
+| `/permissions [mode]`                  | View or change permission mode                       |
+| `/cost`                                | Show token usage and estimated cost                  |
+| `/compact`                             | Compress conversation history to save tokens         |
+| `/clear [--confirm]`                   | Reset conversation (requires `--confirm` to execute) |
+| `/session [list\|switch <id>]`         | List or switch named sessions                        |
+| `/resume <file>`                       | Resume a saved session file                          |
+| `/export [file]`                       | Export conversation to Markdown                      |
+| `/memory`                              | Inspect loaded CODINEER.md memory files              |
+| `/config [env\|hooks\|model\|plugins]` | Inspect merged configuration                         |
+| `/init`                                | Re-generate CODINEER.md for current project          |
+
+**Git & workflow**
+
+| Command              | Description                                    |
+| -------------------- | ---------------------------------------------- |
+| `/diff`              | Show workspace git diff                        |
+| `/branch`            | Show or manage git branches                    |
+| `/commit`            | Create a git commit                            |
+| `/commit-push-pr`    | Commit, push, and create a pull request        |
+| `/pr`                | Create or manage pull requests                 |
+| `/issue`             | Create or browse GitHub issues                 |
+| `/worktree`          | Manage git worktrees                           |
+
+**Agents & plugins**
+
+| Command                              | Description                              |
+| ------------------------------------ | ---------------------------------------- |
+| `/plugin list\|install\|enable\|...` | Manage plugins                           |
+| `/agents`                            | List configured sub-agents               |
+| `/skills`                            | List available skills                    |
+
+**Advanced**
+
+| Command              | Description                                    |
+| -------------------- | ---------------------------------------------- |
+| `/ultraplan`         | Generate a detailed implementation plan        |
+| `/bughunter`         | Systematic bug hunting mode                    |
+| `/teleport`          | Jump to a specific file or symbol              |
+| `/debug-tool-call`   | Debug the last tool call                       |
+| `/vim`               | Toggle Vim-style modal editing                 |
+| `/exit` or `/quit`   | Exit the REPL                                  |
 
 **Keyboard shortcuts:**
 
-| Key | Action |
-|---|---|
-| `Up` / `Down` | Browse input history |
-| `Tab` | Cycle slash command completions |
-| `Shift+Enter` or `Ctrl+J` | Insert newline (multi-line input) |
-| `Ctrl+C` | Cancel current input or interrupt running tool |
+| Key                       | Action                                         |
+| ------------------------- | ---------------------------------------------- |
+| `Up` / `Down`             | Browse input history                           |
+| `Tab`                     | Cycle slash command completions                |
+| `Shift+Enter` or `Ctrl+J` | Insert newline (multi-line input)              |
+| `Ctrl+C`                  | Cancel current input or interrupt running tool |
 
 ### One-shot Prompts
 
@@ -165,12 +194,12 @@ codineer -p "summarize Cargo.toml" --model sonnet
 
 Flags available in prompt mode:
 
-| Flag | Description |
-|---|---|
-| `--model <name>` | Choose model (see [Model Selection](#model-selection)) |
-| `--output-format text\|json` | Output format (default: `text`) |
-| `--allowedTools <list>` | Comma-separated tool allowlist |
-| `--permission-mode <mode>` | Permission level (see [Permission Modes](#permission-modes)) |
+| Flag                         | Description                                                  |
+| ---------------------------- | ------------------------------------------------------------ |
+| `--model <name>`             | Choose model (see [Model Selection](#model-selection))       |
+| `--output-format text\|json` | Output format (default: `text`)                              |
+| `--allowedTools <list>`      | Comma-separated tool allowlist                               |
+| `--permission-mode <mode>`   | Permission level (see [Permission Modes](#permission-modes)) |
 
 ### Session Management
 
@@ -189,13 +218,15 @@ codineer --resume session.json /status /compact /cost
 
 Codineer supports short aliases for popular models:
 
-| Alias | Resolves to |
-|---|---|
-| `opus` | `claude-opus-4-6` |
-| `sonnet` | `claude-sonnet-4-6` |
-| `haiku` | `claude-haiku-4-5-20251213` |
-| `grok` | `grok-3` |
-| `grok-mini` | `grok-3-mini` |
+| Alias       | Resolves to                   | Provider  |
+| ----------- | ----------------------------- | --------- |
+| `opus`      | `claude-opus-4-6`             | Anthropic |
+| `sonnet`    | `claude-sonnet-4-6`           | Anthropic |
+| `haiku`     | `claude-haiku-4-5-20251213`   | Anthropic |
+| `grok`      | `grok-3`                      | xAI       |
+| `grok-mini` | `grok-3-mini`                 | xAI       |
+| `gpt-4o`    | `gpt-4o`                      | OpenAI    |
+| `o3`        | `o3`                          | OpenAI    |
 
 ```bash
 codineer --model opus "review my changes"
@@ -208,10 +239,10 @@ Switch model mid-session with `/model <name>`.
 
 Control what tools the agent can use:
 
-| Mode | What it allows |
-|---|---|
-| `read-only` | Read and search tools only — no writes |
-| `workspace-write` | Edit files inside the workspace (default) |
+| Mode                 | What it allows                                     |
+| -------------------- | -------------------------------------------------- |
+| `read-only`          | Read and search tools only — no writes             |
+| `workspace-write`    | Edit files inside the workspace (default)          |
 | `danger-full-access` | Unrestricted tool access including system commands |
 
 ```bash
@@ -254,18 +285,28 @@ Example `CODINEER.md`:
 # CODINEER.md
 
 ## Detected stack
+
 - Languages: Rust, TypeScript
 
 ## Verification
+
 - `cargo test --workspace`
 - `npm test`
 
 ## Working agreement
+
 - All PRs require passing CI
 - Use conventional commits
 ```
 
-You can have multiple memory files — Codineer loads all `CODINEER.md` files it finds walking up from the workspace root.
+Codineer walks up the directory tree from your workspace root and loads all matching instruction files:
+
+| File                        | Purpose                                       |
+| --------------------------- | --------------------------------------------- |
+| `CODINEER.md`               | Primary project context (commit this)         |
+| `CODINEER.local.md`         | Personal overrides (gitignore this)           |
+| `.codineer/CODINEER.md`     | Alternative location inside `.codineer/` dir  |
+| `.codineer/instructions.md` | Additional instructions                       |
 
 ---
 
@@ -275,7 +316,9 @@ Codineer loads settings from (highest to lowest precedence):
 
 1. `.codineer/settings.local.json` — local overrides (gitignored)
 2. `.codineer/settings.json` — project settings (commit this)
-3. `~/.codineer/settings.json` — global user settings
+3. `.codineer.json` — project-level flat config
+4. `~/.codineer/settings.json` — global user settings
+5. `~/.codineer.json` — global flat config
 
 Inspect the merged configuration at any time:
 
@@ -289,13 +332,15 @@ Inspect the merged configuration at any time:
 
 **Useful environment variables:**
 
-| Variable | Purpose |
-|---|---|
-| `ANTHROPIC_API_KEY` | Claude API key |
-| `XAI_API_KEY` | xAI / Grok API key |
-| `OPENAI_API_KEY` | OpenAI API key |
-| `CODINEER_WORKSPACE_ROOT` | Override workspace root path |
-| `NO_COLOR` | Disable ANSI color output |
+| Variable                    | Purpose                              |
+| --------------------------- | ------------------------------------ |
+| `ANTHROPIC_API_KEY`         | Claude API key                       |
+| `XAI_API_KEY`               | xAI / Grok API key                   |
+| `OPENAI_API_KEY`            | OpenAI API key                       |
+| `CODINEER_WORKSPACE_ROOT`   | Override workspace root path         |
+| `CODINEER_CONFIG_HOME`      | Override config directory (`~/.codineer`) |
+| `CODINEER_PERMISSION_MODE`  | Default permission mode              |
+| `NO_COLOR`                  | Disable ANSI color output            |
 
 ---
 
@@ -311,13 +356,13 @@ Codineer supports the [Model Context Protocol](https://modelcontextprotocol.io) 
     "my-server": {
       "command": "node",
       "args": ["path/to/mcp-server.js"],
-      "transport": "stdio"
+      "type": "stdio"
     }
   }
 }
 ```
 
-Supported transports: `stdio`, `sse`, `http`, `websocket`.
+Supported transport types: `stdio` (default), `sse`, `http`, `ws`.
 
 ### Plugins
 
@@ -342,7 +387,7 @@ codineer agents --help   # show agent options
 /agents                  # same, inside the REPL
 ```
 
-**Skills** are reusable prompt templates loaded from `~/.codineer/skills/`:
+**Skills** are reusable prompt templates. Codineer searches for skills in `.codineer/skills/`, `$CODINEER_CONFIG_HOME/skills/`, and `~/.codineer/skills/`:
 
 ```bash
 codineer skills          # list available skills
@@ -356,52 +401,50 @@ codineer /skills help    # show skill details
 
 Codineer ships with a rich set of tools the AI can invoke:
 
-| Tool | Description |
-|---|---|
-| `bash` | Execute shell commands |
-| `PowerShell` | Execute PowerShell commands (Windows) |
-| `read_file` | Read file contents with optional offset/limit |
-| `write_file` | Create or overwrite files |
-| `edit_file` | Targeted string replacement in files |
-| `glob_search` | Find files matching a glob pattern |
-| `grep_search` | Search file contents with regex |
-| `WebFetch` | Fetch and summarize a web page |
-| `WebSearch` | Search the web via DuckDuckGo |
-| `NotebookEdit` | Edit Jupyter notebook cells |
-| `TodoWrite` | Manage a structured task list |
-| `Agent` | Launch a sub-agent for complex tasks |
-| `Skill` | Load and execute a skill prompt |
-| `ToolSearch` | Search available tools by keyword |
-| `REPL` | Run a persistent language REPL (Python, Node, etc.) |
-| `Sleep` | Pause execution for a given duration |
-| `SendUserMessage` | Send a message to the user |
-| `Config` | Read or write configuration values |
-| `StructuredOutput` | Return structured JSON output |
+| Tool               | Description                                         |
+| ------------------ | --------------------------------------------------- |
+| `bash`             | Execute shell commands                              |
+| `PowerShell`       | Execute PowerShell commands (Windows)               |
+| `read_file`        | Read file contents with optional offset/limit       |
+| `write_file`       | Create or overwrite files                           |
+| `edit_file`        | Targeted string replacement in files                |
+| `glob_search`      | Find files matching a glob pattern                  |
+| `grep_search`      | Search file contents with regex                     |
+| `WebFetch`         | Fetch and summarize a web page                      |
+| `WebSearch`        | Search the web via DuckDuckGo                       |
+| `NotebookEdit`     | Edit Jupyter notebook cells                         |
+| `TodoWrite`        | Manage a structured task list                       |
+| `Agent`            | Launch a sub-agent for complex tasks                |
+| `Skill`            | Load and execute a skill prompt                     |
+| `ToolSearch`       | Search available tools by keyword                   |
+| `REPL`             | Run a persistent language REPL (Python, Node, etc.) |
+| `Sleep`            | Pause execution for a given duration                |
+| `SendUserMessage`  | Send a message to the user                          |
+| `Config`           | Read or write configuration values                  |
+| `StructuredOutput` | Return structured JSON output                       |
 
 ---
 
 ## Publishing to crates.io
 
-The library crates (`api`, `runtime`, `tools`, `plugins`, `commands`, `lsp`) are published independently to crates.io. Releases are automated via GitHub Actions — tag a version to trigger the release pipeline:
+All crates are published to crates.io with a `codineer-` prefix. Releases are automated via GitHub Actions — tag a version to trigger the release pipeline:
 
 ```bash
 git tag v0.6.0
 git push origin v0.6.0
 ```
 
-To use the library crates in your own Rust project:
+| Crate               | Description                            |
+| -------------------- | -------------------------------------- |
+| `codineer-cli`       | CLI binary — **install this one**      |
+| `codineer-runtime`   | Core runtime engine                    |
+| `codineer-api`       | AI provider API clients                |
+| `codineer-tools`     | Built-in tool definitions & execution  |
+| `codineer-plugins`   | Plugin system and hooks                |
+| `codineer-commands`  | Slash commands and discovery           |
+| `codineer-lsp`       | LSP client integration                 |
 
-```toml
-[dependencies]
-# High-level tool execution
-tools = { version = "0.5" }
-
-# Runtime and session management
-runtime = { version = "0.5" }
-
-# API provider abstraction (Anthropic, OpenAI, xAI)
-api = { version = "0.5" }
-```
+> **Note:** The library crates are internal implementation details of `codineer-cli`. They are published to satisfy crates.io dependency requirements but their APIs are not guaranteed stable for external use.
 
 ---
 

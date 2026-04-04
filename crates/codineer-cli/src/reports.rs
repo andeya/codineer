@@ -41,7 +41,7 @@ pub(crate) fn format_model_report(model: &str, message_count: usize, turns: u32)
 Aliases
   opus             claude-opus-4-6      (Anthropic)
   sonnet           claude-sonnet-4-6    (Anthropic)
-  haiku            claude-haiku-4-5     (Anthropic)
+  haiku            claude-haiku-4-5-20251213 (Anthropic)
   grok             grok-3               (xAI)
   grok-mini        grok-3-mini          (xAI)
   gpt-4o           gpt-4o               (OpenAI)
