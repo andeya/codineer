@@ -20,9 +20,9 @@ pub use error::ApiError;
 pub use providers::codineer_provider::{AuthSource, CodineerApiClient};
 pub use providers::openai_compat::{OpenAiCompatClient, OpenAiCompatConfig};
 pub use providers::{
-    auto_detect_default_model, builtin_preset, detect_provider_kind, max_tokens_for_model,
-    parse_custom_provider_prefix, resolve_model_alias, BuiltinProviderPreset, ProviderKind,
-    RetryPolicy, BUILTIN_PROVIDER_PRESETS,
+    auto_detect_default_model, builtin_preset, detect_provider_kind, list_builtin_models,
+    max_tokens_for_model, parse_custom_provider_prefix, provider_kind_by_name, resolve_model_alias,
+    BuiltinProviderPreset, ModelAliasEntry, ProviderKind, RetryPolicy, BUILTIN_PROVIDER_PRESETS,
 };
 pub use sse::{parse_frame, SseParser};
 pub use types::{

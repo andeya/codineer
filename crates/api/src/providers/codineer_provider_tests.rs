@@ -439,3 +439,34 @@ fn auth_source_debug_redacts_secrets() {
         "Debug must not leak tokens: {debug}"
     );
 }
+
+// -----------------------------------------------------------------------
+// From<ResolvedCredential> for AuthSource
+// -----------------------------------------------------------------------
+
+#[test]
+fn resolved_credential_api_key_maps_to_auth_source_api_key() {
+    let cred = runtime::ResolvedCredential::ApiKey("sk-key".into());
+    let auth = AuthSource::from(cred);
+    assert_eq!(auth.api_key(), Some("sk-key"));
+    assert_eq!(auth.bearer_token(), None);
+}
+
+#[test]
+fn resolved_credential_bearer_maps_to_auth_source_bearer() {
+    let cred = runtime::ResolvedCredential::BearerToken("tok-123".into());
+    let auth = AuthSource::from(cred);
+    assert_eq!(auth.bearer_token(), Some("tok-123"));
+    assert_eq!(auth.api_key(), None);
+}
+
+#[test]
+fn resolved_credential_both_maps_to_auth_source_both() {
+    let cred = runtime::ResolvedCredential::ApiKeyAndBearer {
+        api_key: "key".into(),
+        bearer_token: "tok".into(),
+    };
+    let auth = AuthSource::from(cred);
+    assert_eq!(auth.api_key(), Some("key"));
+    assert_eq!(auth.bearer_token(), Some("tok"));
+}

@@ -364,11 +364,56 @@ pub fn max_tokens_for_model(model: &str) -> u32 {
     }
 }
 
+/// A model alias entry for listing.
+#[derive(Debug, Clone)]
+pub struct ModelAliasEntry {
+    pub alias: &'static str,
+    pub canonical: String,
+    pub provider: ProviderKind,
+}
+
+/// Return all built-in model aliases, optionally filtered by provider kind.
+#[must_use]
+pub fn list_builtin_models(filter_provider: Option<ProviderKind>) -> Vec<ModelAliasEntry> {
+    MODEL_REGISTRY
+        .iter()
+        .filter(|(_, meta)| filter_provider.is_none_or(|p| meta.provider == p))
+        .map(|(alias, meta)| ModelAliasEntry {
+            alias,
+            canonical: resolve_model_alias(alias),
+            provider: meta.provider,
+        })
+        .collect()
+}
+
+/// Resolve a provider name to `ProviderKind` from known aliases.
+#[must_use]
+pub fn provider_kind_by_name(name: &str) -> Option<ProviderKind> {
+    let lower = name.to_ascii_lowercase();
+    match lower.as_str() {
+        "anthropic" | "claude" => Some(ProviderKind::CodineerApi),
+        "xai" | "grok" => Some(ProviderKind::Xai),
+        "openai" | "gpt" => Some(ProviderKind::OpenAi),
+        _ => None,
+    }
+}
+
+impl ProviderKind {
+    pub const fn display_name(self) -> &'static str {
+        match self {
+            Self::CodineerApi => "Anthropic",
+            Self::Xai => "xAI",
+            Self::OpenAi => "OpenAI",
+            Self::Custom => "Custom",
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        builtin_preset, detect_provider_kind, max_tokens_for_model, parse_custom_provider_prefix,
-        resolve_model_alias, ProviderKind,
+        builtin_preset, detect_provider_kind, list_builtin_models, max_tokens_for_model,
+        parse_custom_provider_prefix, provider_kind_by_name, resolve_model_alias, ProviderKind,
     };
 
     #[test]
@@ -448,5 +493,72 @@ mod tests {
         assert_eq!(groq.api_key_env, "GROQ_API_KEY");
 
         assert!(builtin_preset("nonexistent").is_none());
+    }
+
+    #[test]
+    fn list_builtin_models_returns_all_when_unfiltered() {
+        let all = list_builtin_models(None);
+        assert!(!all.is_empty());
+        assert!(all.iter().any(|e| e.provider == ProviderKind::CodineerApi));
+        assert!(all.iter().any(|e| e.provider == ProviderKind::Xai));
+    }
+
+    #[test]
+    fn list_builtin_models_filters_by_provider() {
+        let xai = list_builtin_models(Some(ProviderKind::Xai));
+        assert!(!xai.is_empty());
+        assert!(xai.iter().all(|e| e.provider == ProviderKind::Xai));
+
+        let anthropic = list_builtin_models(Some(ProviderKind::CodineerApi));
+        assert!(!anthropic.is_empty());
+        assert!(anthropic
+            .iter()
+            .all(|e| e.provider == ProviderKind::CodineerApi));
+    }
+
+    #[test]
+    fn list_builtin_models_custom_filter_returns_empty() {
+        let custom = list_builtin_models(Some(ProviderKind::Custom));
+        assert!(custom.is_empty());
+    }
+
+    #[test]
+    fn provider_kind_by_name_resolves_known() {
+        assert_eq!(
+            provider_kind_by_name("anthropic"),
+            Some(ProviderKind::CodineerApi)
+        );
+        assert_eq!(
+            provider_kind_by_name("claude"),
+            Some(ProviderKind::CodineerApi)
+        );
+        assert_eq!(provider_kind_by_name("xai"), Some(ProviderKind::Xai));
+        assert_eq!(provider_kind_by_name("grok"), Some(ProviderKind::Xai));
+        assert_eq!(provider_kind_by_name("openai"), Some(ProviderKind::OpenAi));
+        assert_eq!(provider_kind_by_name("gpt"), Some(ProviderKind::OpenAi));
+    }
+
+    #[test]
+    fn provider_kind_by_name_case_insensitive() {
+        assert_eq!(
+            provider_kind_by_name("Anthropic"),
+            Some(ProviderKind::CodineerApi)
+        );
+        assert_eq!(provider_kind_by_name("XAI"), Some(ProviderKind::Xai));
+    }
+
+    #[test]
+    fn provider_kind_by_name_returns_none_for_unknown() {
+        assert_eq!(provider_kind_by_name("ollama"), None);
+        assert_eq!(provider_kind_by_name("unknown"), None);
+        assert_eq!(provider_kind_by_name(""), None);
+    }
+
+    #[test]
+    fn provider_kind_display_name_covers_all_variants() {
+        assert_eq!(ProviderKind::CodineerApi.display_name(), "Anthropic");
+        assert_eq!(ProviderKind::Xai.display_name(), "xAI");
+        assert_eq!(ProviderKind::OpenAi.display_name(), "OpenAI");
+        assert_eq!(ProviderKind::Custom.display_name(), "Custom");
     }
 }

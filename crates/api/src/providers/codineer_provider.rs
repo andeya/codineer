@@ -112,6 +112,22 @@ impl From<OAuthTokenSet> for AuthSource {
     }
 }
 
+impl From<runtime::ResolvedCredential> for AuthSource {
+    fn from(value: runtime::ResolvedCredential) -> Self {
+        match value {
+            runtime::ResolvedCredential::ApiKey(key) => Self::ApiKey(key),
+            runtime::ResolvedCredential::BearerToken(token) => Self::BearerToken(token),
+            runtime::ResolvedCredential::ApiKeyAndBearer {
+                api_key,
+                bearer_token,
+            } => Self::ApiKeyAndBearer {
+                api_key,
+                bearer_token,
+            },
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct CodineerApiClient {
     http: reqwest::Client,

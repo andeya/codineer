@@ -39,6 +39,38 @@ impl ProviderClient {
         }
     }
 
+    /// Build a provider client using a pre-resolved credential from a `CredentialChain`.
+    pub fn from_model_with_credential(
+        model: &str,
+        credential: runtime::ResolvedCredential,
+    ) -> Result<Self, ApiError> {
+        let resolved_model = providers::resolve_model_alias(model);
+        let auth = AuthSource::from(credential);
+        match providers::detect_provider_kind(&resolved_model) {
+            ProviderKind::CodineerApi => Ok(Self::CodineerApi(
+                CodineerApiClient::from_auth(auth)
+                    .with_base_url(codineer_provider::read_base_url()),
+            )),
+            ProviderKind::Xai => {
+                let config = OpenAiCompatConfig::xai();
+                Ok(Self::Xai(
+                    OpenAiCompatClient::new(auth.api_key().unwrap_or_default(), config)
+                        .with_base_url(openai_compat::read_base_url(config)),
+                ))
+            }
+            ProviderKind::OpenAi => {
+                let config = OpenAiCompatConfig::openai();
+                Ok(Self::OpenAi(
+                    OpenAiCompatClient::new(auth.api_key().unwrap_or_default(), config)
+                        .with_base_url(openai_compat::read_base_url(config)),
+                ))
+            }
+            ProviderKind::Custom => Err(ApiError::Auth(
+                "custom provider models must be resolved via from_custom()".to_string(),
+            )),
+        }
+    }
+
     /// Construct a `Custom` provider client from a pre-configured `OpenAiCompatClient`.
     #[must_use]
     pub fn from_custom(client: OpenAiCompatClient) -> Self {
