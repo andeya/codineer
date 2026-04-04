@@ -244,6 +244,8 @@ Codineer 从多个 JSON 文件合并设置（优先级从高到低）：
 
 ### 配置参考
 
+> **完整字段示例：** [`settings.example.json`](https://github.com/andeya/codineer/blob/main/settings.example.json)
+
 ```json
 {
   "model": "sonnet",
@@ -262,15 +264,17 @@ Codineer 从多个 JSON 文件合并设置（优先级从高到低）：
 }
 ```
 
-| 字段             | 类型   | 说明                                                         |
-| ---------------- | ------ | ------------------------------------------------------------ |
-| `model`          | string | 默认模型（如 `"sonnet"`、`"ollama/qwen3-coder"`）            |
-| `permissionMode` | string | `"read-only"`、`"workspace-write"` 或 `"danger-full-access"` |
-| `env`            | object | 启动时注入的环境变量。Shell export 优先。                    |
-| `providers`      | object | 自定义 OpenAI 兼容 Provider 端点                             |
-| `mcpServers`     | object | MCP 服务器定义（stdio、sse、http、ws）                       |
-| `plugins`        | array  | 要加载的插件名称                                             |
-| `hooks`          | object | `PreToolUse` / `PostToolUse` Hook 的 Shell 命令              |
+| 字段             | 类型   | 说明                                                                           |
+| ---------------- | ------ | ------------------------------------------------------------------------------ |
+| `model`          | string | 默认模型（如 `"sonnet"`、`"ollama/qwen3-coder"`）                              |
+| `permissionMode` | string | `"read-only"`、`"workspace-write"` 或 `"danger-full-access"`                   |
+| `env`            | object | 启动时注入的环境变量。Shell export 优先。                                      |
+| `providers`      | object | 自定义 OpenAI 兼容 Provider 端点（见[示例](https://github.com/andeya/codineer/blob/main/settings.example.json)） |
+| `oauth`          | object | 自定义 OAuth 配置（clientId、authorizeUrl、tokenUrl、scopes 等）               |
+| `mcpServers`     | object | MCP 服务器定义（stdio、sse、http、ws）                                         |
+| `sandbox`        | object | 沙箱安全设置（enabled、filesystemMode、allowedMounts）                         |
+| `plugins`        | object | 插件管理（enabled、externalDirectories、installRoot）                          |
+| `hooks`          | object | `PreToolUse` / `PostToolUse` Hook 的 Shell 命令                                |
 
 运行时查看合并配置：`/config`、`/config env`、`/config model`
 

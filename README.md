@@ -243,6 +243,8 @@ All files use the same schema. Objects like `env`, `providers`, and `mcpServers`
 
 ### Settings reference
 
+> **Full example with all fields:** [`settings.example.json`](https://github.com/andeya/codineer/blob/main/settings.example.json)
+
 ```json
 {
   "model": "sonnet",
@@ -266,9 +268,11 @@ All files use the same schema. Objects like `env`, `providers`, and `mcpServers`
 | `model` | string | Default model (e.g. `"sonnet"`, `"ollama/qwen3-coder"`) |
 | `permissionMode` | string | `"read-only"`, `"workspace-write"`, or `"danger-full-access"` |
 | `env` | object | Environment variables injected at startup. Shell exports take precedence. |
-| `providers` | object | Custom OpenAI-compatible provider endpoints |
+| `providers` | object | Custom OpenAI-compatible provider endpoints (see [example](https://github.com/andeya/codineer/blob/main/settings.example.json)) |
+| `oauth` | object | Custom OAuth config (clientId, authorizeUrl, tokenUrl, scopes, etc.) |
 | `mcpServers` | object | MCP server definitions (stdio, sse, http, ws) |
-| `plugins` | array | Plugin names to load |
+| `sandbox` | object | Sandbox security settings (enabled, filesystemMode, allowedMounts) |
+| `plugins` | object | Plugin management (enabled, externalDirectories, installRoot) |
 | `hooks` | object | Shell commands for `PreToolUse` / `PostToolUse` hooks |
 
 Inspect merged config at runtime: `/config`, `/config env`, `/config model`
