@@ -10,6 +10,7 @@ mod reports;
 mod resume;
 mod runtime_client;
 mod session_store;
+mod style;
 mod tool_display;
 mod workspace;
 
@@ -72,20 +73,21 @@ pub(crate) const BUILD_TARGET: Option<&str> = option_env!("TARGET");
 pub(crate) const GIT_SHA: Option<&str> = option_env!("GIT_SHA");
 
 pub(crate) fn logo_ascii(color: bool) -> String {
+    let p = style::Palette::new(color);
     if color {
-        let v = "\x1b[38;5;99m";
-        let c = "\x1b[38;5;81m";
-        let a = "\x1b[38;5;214m";
-        let t = "\x1b[1;97m";
-        let d = "\x1b[2m";
-        let r = "\x1b[0m";
         [
-            format!("{v}          ▄██▄{r}"),
-            format!("{v}       ▄██▀  ▀██▄{r}"),
-            format!("{v}      ██  {c}❯{v}     ██{r}     {t}C O D I N E E R{r}"),
-            format!("{v}      ██     {a}▍{v}  ██{r}     {d}Your local AI coding agent{r}"),
-            format!("{v}       ▀██▄  ▄██▀{r}"),
-            format!("{v}          ▀██▀{r}"),
+            format!("{}          ▄██▄{}", p.violet, p.r),
+            format!("{}       ▄██▀  ▀██▄{}", p.violet, p.r),
+            format!(
+                "{}      ██  {}❯{}     ██{}     {}C O D I N E E R{}",
+                p.violet, p.cyan_fg, p.violet, p.r, p.bold_white, p.r,
+            ),
+            format!(
+                "{}      ██     {}▍{}  ██{}     {}Your local AI coding agent{}",
+                p.violet, p.amber, p.violet, p.r, p.dim, p.r,
+            ),
+            format!("{}       ▀██▄  ▄██▀{}", p.violet, p.r),
+            format!("{}          ▀██▀{}", p.violet, p.r),
         ]
         .join("\n")
     } else {
@@ -102,13 +104,12 @@ pub(crate) fn logo_ascii(color: bool) -> String {
 }
 
 pub(crate) fn logo_line(color: bool) -> String {
+    let p = style::Palette::new(color);
     if color {
-        let v = "\x1b[38;5;99m";
-        let c = "\x1b[38;5;81m";
-        let a = "\x1b[38;5;214m";
-        let t = "\x1b[1;97m";
-        let r = "\x1b[0m";
-        format!("{v}◆{r} {c}❯{a}▍{r} {t}Codineer{r}")
+        format!(
+            "{}◆{} {}❯{}▍{} {}Codineer{}",
+            p.violet, p.r, p.cyan_fg, p.amber, p.r, p.bold_white, p.r,
+        )
     } else {
         "◆ ❯▍ Codineer".to_string()
     }
@@ -122,7 +123,8 @@ fn main() {
 }
 
 fn render_cli_error(problem: &str) -> String {
-    let mut lines = vec!["Error".to_string()];
+    let p = style::Palette::for_stderr();
+    let mut lines = vec![format!("{}Error{}", p.bold_red, p.r)];
     for (index, line) in problem.lines().enumerate() {
         let label = if index == 0 {
             "  Problem          "
@@ -131,7 +133,10 @@ fn render_cli_error(problem: &str) -> String {
         };
         lines.push(format!("{label}{line}"));
     }
-    lines.push("  Help             codineer --help".to_string());
+    lines.push(format!(
+        "  {}Help             codineer --help{}",
+        p.dim, p.r
+    ));
     lines.join("\n")
 }
 
@@ -140,7 +145,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     match parse_args(&args)? {
         CliAction::Agents { args } => LiveCli::print_agents(args.as_deref())?,
         CliAction::Skills { args } => LiveCli::print_skills(args.as_deref())?,
-        CliAction::PrintSystemPrompt { cwd, date } => print_system_prompt(cwd, date),
+        CliAction::PrintSystemPrompt { cwd, date } => print_system_prompt(cwd, date)?,
         CliAction::Version => print_version(),
         CliAction::ResumeSession {
             session_path,
@@ -174,14 +179,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn print_system_prompt(cwd: PathBuf, date: String) {
-    match load_system_prompt_with_lsp(cwd, date, env::consts::OS, "unknown", None) {
-        Ok(sections) => println!("{}", sections.join("\n\n")),
-        Err(error) => {
-            eprintln!("failed to build system prompt: {error}");
-            std::process::exit(1);
-        }
-    }
+fn print_system_prompt(cwd: PathBuf, date: String) -> Result<(), Box<dyn std::error::Error>> {
+    let sections = load_system_prompt_with_lsp(cwd, date, env::consts::OS, "unknown", None)?;
+    println!("{}", sections.join("\n\n"));
+    Ok(())
 }
 
 fn print_version() {
