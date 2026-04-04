@@ -291,6 +291,7 @@ Codineer 从多个 JSON 文件合并设置（优先级从高到低）：
 | `CODINEER_CONFIG_HOME`     | 覆盖配置目录（`~/.codineer`）                  |
 | `CODINEER_PERMISSION_MODE` | 默认权限模式                                   |
 | `NO_COLOR`                 | 禁用 ANSI 颜色                                 |
+| `CLICOLOR=0`               | 禁用 ANSI 颜色（替代方式）                     |
 
 **凭据优先级：** Shell 环境变量 → settings.json `"env"` → OAuth（`codineer login`）
 

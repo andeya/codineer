@@ -290,6 +290,7 @@ Set via shell export **or** the `"env"` section in settings.json (shell exports 
 | `CODINEER_CONFIG_HOME` | Override config dir (`~/.codineer`) |
 | `CODINEER_PERMISSION_MODE` | Default permission mode |
 | `NO_COLOR` | Disable ANSI colors |
+| `CLICOLOR=0` | Disable ANSI colors (alternative) |
 
 **Credential precedence:** shell environment → settings.json `"env"` → OAuth (`codineer login`)
 
