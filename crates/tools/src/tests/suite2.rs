@@ -710,6 +710,9 @@ impl TestServer {
 
             match listener.accept() {
                 Ok((mut stream, _)) => {
+                    stream
+                        .set_nonblocking(false)
+                        .expect("set stream blocking");
                     let mut buffer = [0_u8; 4096];
                     let size = stream.read(&mut buffer).expect("read request");
                     let request = String::from_utf8_lossy(&buffer[..size]).into_owned();
@@ -744,7 +747,7 @@ impl Drop for TestServer {
             let _ = tx.send(());
         }
         if let Some(handle) = self.handle.take() {
-            handle.join().expect("join test server");
+            let _ = handle.join();
         }
     }
 }
