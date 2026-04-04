@@ -40,8 +40,28 @@ pub(crate) enum CliAction {
         allowed_tools: Option<AllowedToolSet>,
         permission_mode: PermissionMode,
     },
-    Login,
-    Logout,
+    Login {
+        provider: Option<String>,
+        source: Option<String>,
+    },
+    Logout {
+        provider: Option<String>,
+        source: Option<String>,
+    },
+    Status {
+        provider: Option<String>,
+    },
+    Models {
+        provider: Option<String>,
+    },
+    ConfigSet {
+        key: String,
+        value: String,
+    },
+    ConfigGet {
+        key: Option<String>,
+    },
+    ConfigList,
     Init,
     Repl {
         model: String,
@@ -172,6 +192,65 @@ pub(crate) fn parse_flags(args: &[String]) -> Result<ParsedFlags, String> {
     Ok(flags)
 }
 
+const SUBCOMMAND_HELP: &[(&str, &str, &str)] = &[
+    (
+        "agents",
+        "List configured agents. Pass an optional query to filter.",
+        "codineer agents [query]",
+    ),
+    (
+        "skills",
+        "List available skills. Pass an optional query to filter.",
+        "codineer skills [query]",
+    ),
+    (
+        "system-prompt",
+        "Print the system prompt that would be sent to the model.",
+        "codineer system-prompt [--cwd PATH] [--date YYYY-MM-DD]",
+    ),
+    (
+        "login",
+        "Start the login flow for a provider.",
+        "codineer login [<provider>] [--source <id>]",
+    ),
+    (
+        "logout",
+        "Clear saved credentials for a provider.",
+        "codineer logout [<provider>] [--source <id>]",
+    ),
+    (
+        "status",
+        "Show authentication status.",
+        "codineer status [<provider>]",
+    ),
+    (
+        "models",
+        "List available models across providers.",
+        "codineer models [<provider>]",
+    ),
+    (
+        "config",
+        "Manage settings (set, get, list).",
+        "codineer config <set|get|list> [<key>] [<value>]",
+    ),
+    (
+        "init",
+        "Scaffold a CODINEER.md project context file in the current directory.",
+        "codineer init",
+    ),
+];
+
+/// All known CLI subcommand names (single source of truth for suggestion matching).
+pub(crate) fn subcommand_names() -> Vec<String> {
+    let mut names: Vec<String> = SUBCOMMAND_HELP
+        .iter()
+        .map(|(name, _, _)| (*name).to_string())
+        .collect();
+    names.push("help".to_string());
+    names.push("prompt".to_string());
+    names
+}
+
 pub(crate) fn parse_args(args: &[String]) -> Result<CliAction, String> {
     let flags = parse_flags(args)?;
     if flags.wants_version {
@@ -201,53 +280,18 @@ pub(crate) fn parse_args(args: &[String]) -> Result<CliAction, String> {
             permission_mode,
         });
     }
-    if matches!(rest.first().map(String::as_str), Some("--help" | "-h")) {
+    if is_help_flag(rest.first()) {
         return Ok(CliAction::Help);
     }
     if rest.first().map(String::as_str) == Some("--resume") {
         return parse_resume_args(&rest[1..]);
     }
 
-    const SUBCOMMAND_HELP: &[(&str, &str, &str)] = &[
-        (
-            "agents",
-            "List configured agents. Pass an optional query to filter.",
-            "codineer agents [query]",
-        ),
-        (
-            "skills",
-            "List available skills. Pass an optional query to filter.",
-            "codineer skills [query]",
-        ),
-        (
-            "system-prompt",
-            "Print the system prompt that would be sent to the model.",
-            "codineer system-prompt [--cwd PATH] [--date YYYY-MM-DD]",
-        ),
-        (
-            "login",
-            "Start the OAuth login flow and save credentials.",
-            "codineer login",
-        ),
-        (
-            "logout",
-            "Clear saved OAuth credentials.",
-            "codineer logout",
-        ),
-        (
-            "init",
-            "Scaffold a CODINEER.md project context file in the current directory.",
-            "codineer init",
-        ),
-    ];
-
-    let has_help_flag = |args: &[String]| args.iter().any(|a| a == "--help" || a == "-h");
-
     if let Some(&(name, summary, usage)) = SUBCOMMAND_HELP
         .iter()
         .find(|(n, _, _)| *n == rest[0].as_str())
     {
-        if has_help_flag(&rest[1..]) {
+        if rest[1..].iter().any(|a| is_help_flag(Some(a))) {
             return Ok(CliAction::SubcommandHelp {
                 name,
                 summary,
@@ -265,8 +309,21 @@ pub(crate) fn parse_args(args: &[String]) -> Result<CliAction, String> {
             args: join_optional_args(&rest[1..]),
         }),
         "system-prompt" => parse_system_prompt_args(&rest[1..]),
-        "login" => Ok(CliAction::Login),
-        "logout" => Ok(CliAction::Logout),
+        "login" => parse_auth_args(&rest[1..], |provider, source| CliAction::Login {
+            provider,
+            source,
+        }),
+        "logout" => parse_auth_args(&rest[1..], |provider, source| CliAction::Logout {
+            provider,
+            source,
+        }),
+        "status" => Ok(CliAction::Status {
+            provider: parse_positional_arg(&rest[1..]),
+        }),
+        "models" => Ok(CliAction::Models {
+            provider: parse_positional_arg(&rest[1..]),
+        }),
+        "config" => parse_config_args(&rest[1..]),
         "init" => Ok(CliAction::Init),
         "prompt" => {
             let prompt = rest[1..].join(" ");
@@ -282,17 +339,26 @@ pub(crate) fn parse_args(args: &[String]) -> Result<CliAction, String> {
             })
         }
         other if other.starts_with('/') => parse_direct_slash_cli_action(&rest),
-        _other => Ok(CliAction::Prompt {
-            prompt: rest.join(" "),
-            model,
-            output_format,
-            allowed_tools,
-            permission_mode,
-        }),
+        other => {
+            if let Some(suggestion) = crate::help::suggest_subcommand(other) {
+                if suggestion != other {
+                    eprintln!(
+                        "\x1b[33mhint\x1b[0m: unknown command '{other}'. Did you mean '{suggestion}'?"
+                    );
+                }
+            }
+            Ok(CliAction::Prompt {
+                prompt: rest.join(" "),
+                model,
+                output_format,
+                allowed_tools,
+                permission_mode,
+            })
+        }
     }
 }
 
-pub(crate) fn join_optional_args(args: &[String]) -> Option<String> {
+fn join_optional_args(args: &[String]) -> Option<String> {
     let joined = args.join(" ");
     let trimmed = joined.trim();
     (!trimmed.is_empty()).then(|| trimmed.to_string())
@@ -453,6 +519,67 @@ pub(crate) fn parse_system_prompt_args(args: &[String]) -> Result<CliAction, Str
     }
 
     Ok(CliAction::PrintSystemPrompt { cwd, date })
+}
+
+/// Parse `[<provider>] [--source <id>]` from auth command args.
+fn parse_auth_args(
+    args: &[String],
+    build: impl FnOnce(Option<String>, Option<String>) -> CliAction,
+) -> Result<CliAction, String> {
+    let mut provider = None;
+    let mut source = None;
+    let mut index = 0;
+    while index < args.len() {
+        if args[index] == "--source" {
+            source = args.get(index + 1).cloned();
+            index += 2;
+        } else if is_help_flag(Some(&args[index])) {
+            provider = None;
+            source = None;
+            break;
+        } else if args[index].starts_with('-') {
+            return Err(format!("unknown flag: {}", args[index]));
+        } else if provider.is_none() {
+            provider = Some(args[index].clone());
+            index += 1;
+        } else {
+            return Err(format!("unexpected argument: {}", args[index]));
+        }
+    }
+    Ok(build(provider, source))
+}
+
+fn parse_positional_arg(args: &[String]) -> Option<String> {
+    args.first().filter(|s| !s.starts_with('-')).cloned()
+}
+
+fn parse_config_args(args: &[String]) -> Result<CliAction, String> {
+    let subcmd = args.first().map(String::as_str).unwrap_or("list");
+    match subcmd {
+        "set" => {
+            let key = args
+                .get(1)
+                .ok_or("usage: codineer config set <key> <value>")?;
+            let value = args
+                .get(2)
+                .ok_or("usage: codineer config set <key> <value>")?;
+            Ok(CliAction::ConfigSet {
+                key: key.clone(),
+                value: value.clone(),
+            })
+        }
+        "get" => Ok(CliAction::ConfigGet {
+            key: args.get(1).cloned(),
+        }),
+        "list" => Ok(CliAction::ConfigList),
+        other => Err(format!(
+            "unknown config subcommand: {other}\nusage: codineer config <set|get|list>"
+        )),
+    }
+}
+
+fn is_help_flag(arg: Option<&String>) -> bool {
+    matches!(arg.map(String::as_str), Some("--help" | "-h"))
 }
 
 pub(crate) fn parse_resume_args(args: &[String]) -> Result<CliAction, String> {

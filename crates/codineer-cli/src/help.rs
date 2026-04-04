@@ -59,8 +59,13 @@ pub(crate) fn print_help_to(out: &mut impl io::Write) -> io::Result<()> {
             "  codineer agents                           List configured agents",
             "  codineer skills                           List installed skills",
             "  codineer system-prompt [--cwd PATH] [--date YYYY-MM-DD]",
-            "  codineer login                            Start the OAuth login flow",
-            "  codineer logout                           Clear saved OAuth credentials",
+            "  codineer login [<provider>] [--source <id>] Start the login flow",
+            "  codineer logout [<provider>] [--source <id>] Clear saved credentials",
+            "  codineer status [<provider>]              Show authentication status",
+            "  codineer models [<provider>]              List available models",
+            "  codineer config set <key> <value>         Set a configuration value",
+            "  codineer config get [<key>]               Show a configuration value",
+            "  codineer config list                      List all configuration",
             "  codineer init                             Scaffold CODINEER.md + local files",
         ],
     )?;
@@ -97,6 +102,20 @@ pub(crate) fn print_help_to(out: &mut impl io::Write) -> io::Result<()> {
     )?;
     print_help_section(
         out,
+        "Authentication sources (per-provider credential chain)",
+        &[
+            "  Anthropic (Claude):  env vars → Codineer OAuth → Claude Code auto-discover",
+            "  xAI (Grok):          XAI_API_KEY env var",
+            "  OpenAI:              OPENAI_API_KEY env var",
+            "  Custom providers:    inline apiKey → apiKeyEnv",
+            "",
+            "  Claude Code auto-discovery: install Claude Code and `claude login`.",
+            "  Codineer auto-detects saved Claude Code credentials (~/.claude/.credentials.json).",
+            "  Configure in settings.json:  {\"credentials\": {\"claudeCode\": {\"enabled\": true}}}",
+        ],
+    )?;
+    print_help_section(
+        out,
         "Configuration files (highest to lowest precedence)",
         &[
             "  .codineer/settings.local.json         Local overrides (gitignored)",
@@ -106,9 +125,9 @@ pub(crate) fn print_help_to(out: &mut impl io::Write) -> io::Result<()> {
             "  ~/.codineer.json                      Global flat config",
             "  CODINEER.md                           Project context and instructions",
             "",
-            "  Supported keys: model, env, hooks, plugins, mcpServers, permissionMode, providers",
-            "  Example: {\"model\": \"sonnet\", \"env\": {\"ANTHROPIC_API_KEY\": \"sk-…\"}}",
-            "  Tip: all env vars above can go in the \"env\" section (shell exports take precedence).",
+            "  Supported keys: model, fallbackModels, env, hooks, enabledPlugins, plugins, mcpServers, permissionMode, providers, credentials",
+            "  Example: {\"model\": \"sonnet\", \"fallbackModels\": [\"ollama/qwen3-coder\"]}",
+            "  Tip: use `codineer config set <key> <value>` instead of editing JSON manually.",
         ],
     )?;
     print_help_section(
@@ -145,6 +164,11 @@ pub(crate) fn print_help_to(out: &mut impl io::Write) -> io::Result<()> {
             "  codineer agents",
             "  codineer /skills",
             "  codineer login",
+            "  codineer login anthropic --source claude-code",
+            "  codineer status",
+            "  codineer models anthropic",
+            "  codineer config set model sonnet",
+            "  codineer config set fallbackModels '[\"ollama/qwen3-coder\"]'",
             "  codineer init",
         ],
     )
@@ -257,6 +281,21 @@ fn suggest_repl_commands(name: &str) -> Vec<String> {
         .map(|(_, candidate)| candidate)
         .take(3)
         .collect()
+}
+
+/// Suggest the closest CLI subcommand for a typo'd input.
+pub fn suggest_subcommand(input: &str) -> Option<String> {
+    use crate::cli::subcommand_names;
+    let names = subcommand_names();
+    let normalized = input.to_ascii_lowercase();
+    let mut best: Option<(usize, String)> = None;
+    for cmd in &names {
+        let d = edit_distance(&normalized, cmd);
+        if d <= 2 && (best.is_none() || d < best.as_ref().unwrap().0) {
+            best = Some((d, cmd.clone()));
+        }
+    }
+    best.map(|(_, cmd)| cmd)
 }
 
 fn edit_distance(left: &str, right: &str) -> usize {

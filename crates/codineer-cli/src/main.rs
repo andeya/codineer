@@ -1,9 +1,11 @@
 mod auth;
 mod cli;
+mod config_cmd;
 mod help;
 mod init;
 mod input;
 mod live_cli;
+mod models_cmd;
 mod progress;
 mod render;
 mod reports;
@@ -22,7 +24,8 @@ use plugins::{PluginManager, PluginManagerConfig};
 use runtime::{load_system_prompt_with_lsp, ConfigLoader, LspContextEnrichment};
 use tools::GlobalToolRegistry;
 
-use auth::{run_login, run_logout};
+use auth::{run_login, run_logout, run_status};
+use config_cmd::{run_config_get, run_config_list, run_config_set};
 
 use cli::{parse_args, CliAction};
 use help::print_help;
@@ -176,8 +179,17 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             permission_mode,
         } => LiveCli::new(model, true, allowed_tools, permission_mode)?
             .run_turn_with_output(&prompt, output_format)?,
-        CliAction::Login => run_login()?,
-        CliAction::Logout => run_logout()?,
+        CliAction::Login { provider, source } => {
+            run_login(provider.as_deref(), source.as_deref())?;
+        }
+        CliAction::Logout { provider, source } => {
+            run_logout(provider.as_deref(), source.as_deref())?;
+        }
+        CliAction::Status { provider } => run_status(provider.as_deref())?,
+        CliAction::Models { provider } => models_cmd::run_models(provider.as_deref())?,
+        CliAction::ConfigSet { key, value } => run_config_set(&key, &value)?,
+        CliAction::ConfigGet { key } => run_config_get(key.as_deref())?,
+        CliAction::ConfigList => run_config_list()?,
         CliAction::Init => run_init()?,
         CliAction::Repl {
             model,
@@ -233,14 +245,14 @@ fn build_system_prompt_with_lsp(
 }
 
 pub(crate) fn build_runtime_plugin_state(
-) -> Result<(runtime::RuntimeFeatureConfig, GlobalToolRegistry), Box<dyn std::error::Error>> {
+) -> Result<(runtime::RuntimeConfig, GlobalToolRegistry), Box<dyn std::error::Error>> {
     let cwd = env::current_dir()?;
     let loader = ConfigLoader::default_for(&cwd);
     let runtime_config = loader.load()?;
     apply_config_env(&runtime_config);
     let plugin_manager = build_plugin_manager(&cwd, &loader, &runtime_config);
     let tool_registry = GlobalToolRegistry::with_plugin_tools(plugin_manager.aggregated_tools()?)?;
-    Ok((runtime_config.feature_config().clone(), tool_registry))
+    Ok((runtime_config, tool_registry))
 }
 
 /// Apply the `"env"` section from config to process environment variables.
@@ -571,17 +583,83 @@ mod tests {
         assert!(text.contains("NO_COLOR"));
         assert!(text.contains("Configuration files"));
         assert!(text.contains("codineer help"));
+        assert!(text.contains("Authentication sources"));
+        assert!(text.contains("codineer status"));
+        assert!(text.contains("Claude Code"));
+        assert!(text.contains("credentials"));
     }
 
     #[test]
     fn parses_login_and_logout_subcommands() {
         assert_eq!(
             parse_args(&["login".to_string()]).expect("login should parse"),
-            CliAction::Login
+            CliAction::Login {
+                provider: None,
+                source: None
+            }
         );
         assert_eq!(
             parse_args(&["logout".to_string()]).expect("logout should parse"),
-            CliAction::Logout
+            CliAction::Logout {
+                provider: None,
+                source: None
+            }
+        );
+        assert_eq!(
+            parse_args(&["login".to_string(), "anthropic".to_string()])
+                .expect("login <provider> should parse"),
+            CliAction::Login {
+                provider: Some("anthropic".to_string()),
+                source: None,
+            }
+        );
+        assert_eq!(
+            parse_args(&[
+                "login".to_string(),
+                "--source".to_string(),
+                "claude-code".to_string()
+            ])
+            .expect("login --source should parse"),
+            CliAction::Login {
+                provider: None,
+                source: Some("claude-code".to_string()),
+            }
+        );
+        assert_eq!(
+            parse_args(&[
+                "login".to_string(),
+                "anthropic".to_string(),
+                "--source".to_string(),
+                "claude-code".to_string()
+            ])
+            .expect("login <provider> --source should parse"),
+            CliAction::Login {
+                provider: Some("anthropic".to_string()),
+                source: Some("claude-code".to_string()),
+            }
+        );
+        assert_eq!(
+            parse_args(&[
+                "logout".to_string(),
+                "--source".to_string(),
+                "codineer-oauth".to_string()
+            ])
+            .expect("logout --source should parse"),
+            CliAction::Logout {
+                provider: None,
+                source: Some("codineer-oauth".to_string()),
+            }
+        );
+        assert_eq!(
+            parse_args(&["status".to_string()]).expect("status should parse"),
+            CliAction::Status { provider: None }
+        );
+        assert_eq!(
+            parse_args(&["status".to_string(), "anthropic".to_string()])
+                .expect("status <provider> should parse"),
+            CliAction::Status {
+                provider: Some("anthropic".to_string())
+            }
         );
         assert_eq!(
             parse_args(&["init".to_string()]).expect("init should parse"),
@@ -602,6 +680,81 @@ mod tests {
                 name: "agents",
                 summary: "List configured agents. Pass an optional query to filter.",
                 usage: "codineer agents [query]",
+            }
+        );
+    }
+
+    #[test]
+    fn parses_config_subcommands() {
+        assert_eq!(
+            parse_args(&[
+                "config".to_string(),
+                "set".to_string(),
+                "defaultModel".to_string(),
+                "opus".to_string()
+            ])
+            .expect("config set should parse"),
+            CliAction::ConfigSet {
+                key: "defaultModel".to_string(),
+                value: "opus".to_string(),
+            }
+        );
+        assert_eq!(
+            parse_args(&[
+                "config".to_string(),
+                "get".to_string(),
+                "defaultModel".to_string()
+            ])
+            .expect("config get should parse"),
+            CliAction::ConfigGet {
+                key: Some("defaultModel".to_string()),
+            }
+        );
+        assert_eq!(
+            parse_args(&["config".to_string(), "get".to_string()])
+                .expect("config get (no key) should parse"),
+            CliAction::ConfigGet { key: None }
+        );
+        assert_eq!(
+            parse_args(&["config".to_string(), "list".to_string()])
+                .expect("config list should parse"),
+            CliAction::ConfigList
+        );
+        assert_eq!(
+            parse_args(&["config".to_string()]).expect("config (bare) should default to list"),
+            CliAction::ConfigList
+        );
+    }
+
+    #[test]
+    fn help_output_includes_config_section() {
+        let mut output = Vec::new();
+        print_help_to(&mut output).expect("help should write");
+        let text = String::from_utf8(output).expect("valid utf-8");
+        assert!(text.contains("codineer config set"));
+        assert!(text.contains("codineer config get"));
+        assert!(text.contains("codineer config list"));
+    }
+
+    #[test]
+    fn help_output_includes_models_command() {
+        let mut output = Vec::new();
+        print_help_to(&mut output).expect("help should write");
+        let text = String::from_utf8(output).expect("valid utf-8");
+        assert!(text.contains("codineer models"));
+        assert!(text.contains("fallbackModels"));
+    }
+
+    #[test]
+    fn parses_models_subcommand() {
+        assert_eq!(
+            parse_args(&["models".into()]).unwrap(),
+            CliAction::Models { provider: None }
+        );
+        assert_eq!(
+            parse_args(&["models".into(), "anthropic".into()]).unwrap(),
+            CliAction::Models {
+                provider: Some("anthropic".into())
             }
         );
     }
@@ -1385,5 +1538,169 @@ mod tests {
             .to_str()
             .unwrap()
             .ends_with("my-export.txt"));
+    }
+
+    // -----------------------------------------------------------------------
+    // parse_auth_args validation
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn login_rejects_unknown_flag() {
+        let err = parse_args(&["login".into(), "--unknown".into()])
+            .expect_err("should reject unknown flag");
+        assert!(err.contains("unknown flag: --unknown"));
+    }
+
+    #[test]
+    fn login_rejects_extra_positional_arg() {
+        let err = parse_args(&["login".into(), "anthropic".into(), "extra".into()])
+            .expect_err("should reject extra arg");
+        assert!(err.contains("unexpected argument: extra"));
+    }
+
+    #[test]
+    fn logout_rejects_unknown_flag() {
+        let err = parse_args(&["logout".into(), "--bad-flag".into()])
+            .expect_err("should reject unknown flag");
+        assert!(err.contains("unknown flag: --bad-flag"));
+    }
+
+    #[test]
+    fn login_help_flag_returns_subcommand_help() {
+        let action = parse_args(&["login".into(), "--help".into()]).unwrap();
+        assert!(matches!(
+            action,
+            CliAction::SubcommandHelp { name: "login", .. }
+        ));
+    }
+
+    #[test]
+    fn logout_help_flag_returns_subcommand_help() {
+        let action = parse_args(&["logout".into(), "-h".into()]).unwrap();
+        assert!(matches!(
+            action,
+            CliAction::SubcommandHelp { name: "logout", .. }
+        ));
+    }
+
+    // -----------------------------------------------------------------------
+    // subcommand_names
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn subcommand_names_includes_all_commands() {
+        use crate::cli::subcommand_names;
+        let names = subcommand_names();
+        assert!(names.contains(&"login".to_string()));
+        assert!(names.contains(&"logout".to_string()));
+        assert!(names.contains(&"status".to_string()));
+        assert!(names.contains(&"models".to_string()));
+        assert!(names.contains(&"config".to_string()));
+        assert!(names.contains(&"init".to_string()));
+        assert!(names.contains(&"help".to_string()));
+        assert!(names.contains(&"agents".to_string()));
+        assert!(names.contains(&"skills".to_string()));
+    }
+
+    // -----------------------------------------------------------------------
+    // suggest_subcommand
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn suggest_subcommand_finds_typos() {
+        use crate::help::suggest_subcommand;
+        assert_eq!(suggest_subcommand("logi"), Some("login".to_string()));
+        assert_eq!(suggest_subcommand("logut"), Some("logout".to_string()));
+        assert_eq!(suggest_subcommand("statu"), Some("status".to_string()));
+        assert_eq!(suggest_subcommand("modles"), Some("models".to_string()));
+        assert_eq!(suggest_subcommand("confg"), Some("config".to_string()));
+    }
+
+    #[test]
+    fn suggest_subcommand_returns_none_for_distant_input() {
+        use crate::help::suggest_subcommand;
+        assert_eq!(suggest_subcommand("xyzzy"), None);
+        assert_eq!(suggest_subcommand("abcdefgh"), None);
+    }
+
+    #[test]
+    fn suggest_subcommand_exact_match() {
+        use crate::help::suggest_subcommand;
+        assert_eq!(suggest_subcommand("login"), Some("login".to_string()));
+        assert_eq!(suggest_subcommand("models"), Some("models".to_string()));
+    }
+
+    // -----------------------------------------------------------------------
+    // config subcommand edge cases
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn config_set_missing_value_returns_error() {
+        let err = parse_args(&["config".into(), "set".into(), "key".into()])
+            .expect_err("should need value");
+        assert!(err.contains("usage"));
+    }
+
+    #[test]
+    fn config_set_missing_key_returns_error() {
+        let err = parse_args(&["config".into(), "set".into()]).expect_err("should need key");
+        assert!(err.contains("usage"));
+    }
+
+    #[test]
+    fn config_unknown_subcommand_returns_error() {
+        let err = parse_args(&["config".into(), "unknown".into()])
+            .expect_err("should reject unknown subcommand");
+        assert!(err.contains("unknown config subcommand"));
+    }
+
+    // -----------------------------------------------------------------------
+    // models subcommand with help flag
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn models_help_returns_subcommand_help() {
+        let action = parse_args(&["models".into(), "--help".into()]).unwrap();
+        assert!(matches!(
+            action,
+            CliAction::SubcommandHelp { name: "models", .. }
+        ));
+    }
+
+    // -----------------------------------------------------------------------
+    // help output comprehensive checks
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn help_output_includes_auth_sources() {
+        let mut output = Vec::new();
+        print_help_to(&mut output).expect("help should write");
+        let text = String::from_utf8(output).expect("valid utf-8");
+        assert!(text.contains("Authentication sources"));
+        assert!(text.contains("Claude Code auto-discover"));
+        assert!(text.contains("OLLAMA_HOST"));
+    }
+
+    #[test]
+    fn help_output_includes_provider_section() {
+        let mut output = Vec::new();
+        print_help_to(&mut output).expect("help should write");
+        let text = String::from_utf8(output).expect("valid utf-8");
+        assert!(text.contains("Custom providers (OpenAI-compatible)"));
+        assert!(text.contains("ollama"));
+        assert!(text.contains("lmstudio"));
+        assert!(text.contains("openrouter"));
+        assert!(text.contains("groq"));
+    }
+
+    #[test]
+    fn help_output_includes_config_files_section() {
+        let mut output = Vec::new();
+        print_help_to(&mut output).expect("help should write");
+        let text = String::from_utf8(output).expect("valid utf-8");
+        assert!(text.contains("Configuration files"));
+        assert!(text.contains("settings.local.json"));
+        assert!(text.contains("settings.json"));
+        assert!(text.contains("CODINEER.md"));
     }
 }

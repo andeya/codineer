@@ -14,7 +14,7 @@ use runtime::{
 };
 use tools::GlobalToolRegistry;
 
-use crate::auth::{no_credentials_error, provider_hint, resolve_cli_auth_source};
+use crate::auth::{build_credential_chain, no_credentials_error, provider_hint};
 use crate::cli::{discover_mcp_tools, filter_tool_specs, AllowedToolSet, SharedMcpManager};
 use crate::progress::InternalPromptProgressReporter;
 use crate::render::{MarkdownStreamState, TerminalRenderer};
@@ -48,16 +48,16 @@ pub(crate) fn build_runtime(
         progress_reporter,
         mcp_manager,
     } = params;
-    let (feature_config, tool_registry) = build_runtime_plugin_state()?;
+    let (runtime_config, tool_registry) = build_runtime_plugin_state()?;
     let model = if model == "auto" {
-        feature_config
+        runtime_config
             .model()
             .map(api::resolve_model_alias)
             .unwrap_or(model)
     } else {
         model
     };
-    let resolver = ModelResolver::new(feature_config.providers());
+    let resolver = ModelResolver::new(&runtime_config);
     let resolved = resolver.resolve(&model)?;
     Ok(ConversationRuntime::new_with_features(
         session,
@@ -81,7 +81,7 @@ pub(crate) fn build_runtime(
         ),
         permission_policy(permission_mode, &tool_registry),
         system_prompt,
-        &feature_config,
+        runtime_config.feature_config(),
     ))
 }
 
@@ -100,17 +100,47 @@ pub(crate) struct ResolvedModel {
 /// Pipeline:  input → expand_shorthand → resolve_alias → build_client
 pub(crate) struct ModelResolver<'a> {
     providers: &'a BTreeMap<String, CustomProviderConfig>,
+    config: &'a runtime::RuntimeConfig,
 }
 
 impl<'a> ModelResolver<'a> {
-    pub fn new(providers: &'a BTreeMap<String, CustomProviderConfig>) -> Self {
-        Self { providers }
+    pub fn new(config: &'a runtime::RuntimeConfig) -> Self {
+        Self {
+            providers: config.providers(),
+            config,
+        }
     }
 
     pub fn resolve(&self, input: &str) -> Result<ResolvedModel, Box<dyn std::error::Error>> {
         let expanded = self.expand_shorthand(input)?;
         let canonical = api::resolve_model_alias(&expanded);
-        self.build_client(&canonical)
+        match self.build_client(&canonical) {
+            Ok(resolved) => Ok(resolved),
+            Err(primary_err) => self.try_fallback(&canonical, primary_err),
+        }
+    }
+
+    fn try_fallback(
+        &self,
+        primary_model: &str,
+        primary_err: Box<dyn std::error::Error>,
+    ) -> Result<ResolvedModel, Box<dyn std::error::Error>> {
+        let fallbacks = self.config.fallback_models();
+        if fallbacks.is_empty() {
+            return Err(primary_err);
+        }
+        for fallback in fallbacks {
+            let expanded = match self.expand_shorthand(fallback) {
+                Ok(m) => m,
+                Err(_) => continue,
+            };
+            let canonical = api::resolve_model_alias(&expanded);
+            if let Ok(resolved) = self.build_client(&canonical) {
+                eprintln!("[info] {primary_model} unavailable, falling back to {canonical}");
+                return Ok(resolved);
+            }
+        }
+        Err(primary_err)
     }
 
     /// Expand bare provider names ("ollama") and "auto" into full model specs.
@@ -193,12 +223,9 @@ impl<'a> ModelResolver<'a> {
         model: &str,
     ) -> Result<ResolvedModel, Box<dyn std::error::Error>> {
         let kind = api::detect_provider_kind(model);
-        let auth = if kind == ProviderKind::CodineerApi {
-            Some(resolve_cli_auth_source().map_err(|err| provider_hint(model, &err))?)
-        } else {
-            None
-        };
-        let client = ProviderClient::from_model_with_default_auth(model, auth)
+        let chain = build_credential_chain(kind, self.config);
+        let credential = chain.resolve().map_err(|err| provider_hint(model, &err))?;
+        let client = ProviderClient::from_model_with_credential(model, credential)
             .map_err(|err| provider_hint(model, &err))?;
         Ok(ResolvedModel {
             model: model.to_string(),
@@ -340,32 +367,48 @@ impl DefaultRuntimeClient {
 ///   2. `OLLAMA_HOST` environment variable
 ///   3. `http://localhost:11434` (default)
 fn detect_ollama_model(providers: &BTreeMap<String, CustomProviderConfig>) -> Option<String> {
-    let base = resolve_ollama_base_url(providers);
-
-    let tags_url = format!("{}/api/tags", base.trim_end_matches('/'));
-    let client = reqwest::blocking::Client::builder()
-        .timeout(std::time::Duration::from_millis(800))
-        .build()
-        .ok()?;
-    let response = client.get(&tags_url).send().ok()?;
-    if !response.status().is_success() {
-        return None;
-    }
-    let body: serde_json::Value = response.json().ok()?;
-    let models = body.get("models")?.as_array()?;
-    let names: Vec<&str> = models
-        .iter()
-        .filter_map(|m| m.get("name")?.as_str())
-        .collect();
+    let names = query_ollama_tags(providers);
     if names.is_empty() {
         return None;
     }
-    let best = pick_best_coding_model(&names);
+    let refs: Vec<&str> = names.iter().map(String::as_str).collect();
+    let best = pick_best_coding_model(&refs);
     Some(format!("ollama/{best}"))
 }
 
+/// Query Ollama `/api/tags` and return the list of model names.
+pub(crate) fn query_ollama_tags(providers: &BTreeMap<String, CustomProviderConfig>) -> Vec<String> {
+    let base = resolve_ollama_base_url(providers);
+    let tags_url = format!("{}/api/tags", base.trim_end_matches('/'));
+    let client = match reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_millis(2000))
+        .build()
+    {
+        Ok(c) => c,
+        Err(_) => return Vec::new(),
+    };
+    let response = match client.get(&tags_url).send() {
+        Ok(r) if r.status().is_success() => r,
+        _ => return Vec::new(),
+    };
+    let body: serde_json::Value = match response.json() {
+        Ok(v) => v,
+        Err(_) => return Vec::new(),
+    };
+    body.get("models")
+        .and_then(|m| m.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|m| m.get("name")?.as_str().map(String::from))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 /// Resolve Ollama base URL from config, env, or default.
-fn resolve_ollama_base_url(providers: &BTreeMap<String, CustomProviderConfig>) -> String {
+pub(crate) fn resolve_ollama_base_url(
+    providers: &BTreeMap<String, CustomProviderConfig>,
+) -> String {
     if let Some(config) = providers.get("ollama") {
         return config.base_url.trim_end_matches("/v1").to_string();
     }
@@ -890,6 +933,14 @@ mod tests {
         }
     }
 
+    fn config_with_providers(
+        providers: BTreeMap<String, CustomProviderConfig>,
+    ) -> runtime::RuntimeConfig {
+        let mut feature = runtime::RuntimeFeatureConfig::default();
+        feature.set_providers(providers);
+        runtime::RuntimeConfig::new(BTreeMap::new(), Vec::new(), feature)
+    }
+
     // -----------------------------------------------------------------------
     // pick_best_coding_model
     // -----------------------------------------------------------------------
@@ -990,8 +1041,8 @@ mod tests {
 
     #[test]
     fn resolver_resolves_alias_before_building_client() {
-        let providers = empty_providers();
-        let resolver = ModelResolver::new(&providers);
+        let config = config_with_providers(empty_providers());
+        let resolver = ModelResolver::new(&config);
         // "sonnet" alias → "claude-sonnet-4-6"; will fail auth in test env but
         // the error message confirms the canonical model name was resolved.
         let err = resolver.resolve("sonnet").unwrap_err();
@@ -1008,7 +1059,8 @@ mod tests {
             "ollama".to_string(),
             make_provider("http://localhost:11434/v1", None),
         );
-        let resolver = ModelResolver::new(&providers);
+        let config = config_with_providers(providers);
+        let resolver = ModelResolver::new(&config);
         let result = resolver.resolve("ollama/qwen3-coder:30b").unwrap();
         assert_eq!(result.model, "ollama/qwen3-coder:30b");
     }
@@ -1023,31 +1075,32 @@ mod tests {
                 Some("llama-3.3-70b-versatile"),
             ),
         );
-        let resolver = ModelResolver::new(&providers);
+        let config = config_with_providers(providers);
+        let resolver = ModelResolver::new(&config);
         let result = resolver.resolve("groq").unwrap();
         assert_eq!(result.model, "groq/llama-3.3-70b-versatile");
     }
 
     #[test]
     fn resolver_errors_on_bare_provider_without_default() {
-        let providers = empty_providers();
-        let resolver = ModelResolver::new(&providers);
+        let config = config_with_providers(empty_providers());
+        let resolver = ModelResolver::new(&config);
         let err = resolver.resolve("groq").unwrap_err();
         assert!(err.to_string().contains("requires a model name"));
     }
 
     #[test]
     fn resolver_errors_on_unknown_provider_prefix() {
-        let providers = empty_providers();
-        let resolver = ModelResolver::new(&providers);
+        let config = config_with_providers(empty_providers());
+        let resolver = ModelResolver::new(&config);
         let err = resolver.resolve("unknown-provider/some-model").unwrap_err();
         assert!(err.to_string().contains("unknown provider"));
     }
 
     #[test]
     fn resolver_ollama_shorthand_errors_when_not_running() {
-        let providers = empty_providers();
-        let resolver = ModelResolver::new(&providers);
+        let config = config_with_providers(empty_providers());
+        let resolver = ModelResolver::new(&config);
         let err = resolver.resolve("ollama").unwrap_err();
         assert!(err.to_string().contains("Ollama is not running"));
     }
@@ -1065,7 +1118,8 @@ mod tests {
                 default_model: None,
             },
         );
-        let resolver = ModelResolver::new(&providers);
+        let config = config_with_providers(providers);
+        let resolver = ModelResolver::new(&config);
         let result = resolver.resolve("ollama/llama3:8b").unwrap();
         assert_eq!(result.model, "ollama/llama3:8b");
     }
@@ -1107,8 +1161,8 @@ mod tests {
 
     #[test]
     fn resolver_uses_builtin_preset_for_lmstudio() {
-        let providers = empty_providers();
-        let resolver = ModelResolver::new(&providers);
+        let config = config_with_providers(empty_providers());
+        let resolver = ModelResolver::new(&config);
         let result = resolver.resolve("lmstudio/my-model").unwrap();
         assert_eq!(result.model, "lmstudio/my-model");
     }
@@ -1180,5 +1234,109 @@ mod tests {
         let url = resolve_ollama_base_url(&providers);
         std::env::remove_var("OLLAMA_HOST");
         assert_eq!(url, "http://my-server:11434");
+    }
+
+    // -----------------------------------------------------------------------
+    // try_fallback
+    // -----------------------------------------------------------------------
+
+    fn config_with_fallback(
+        providers: BTreeMap<String, CustomProviderConfig>,
+        fallback_models: Vec<String>,
+    ) -> runtime::RuntimeConfig {
+        let mut feature = runtime::RuntimeFeatureConfig::default();
+        feature.set_providers(providers);
+        feature.set_fallback_models(fallback_models);
+        runtime::RuntimeConfig::new(BTreeMap::new(), Vec::new(), feature)
+    }
+
+    #[test]
+    fn try_fallback_returns_primary_error_when_no_fallbacks() {
+        let config = config_with_fallback(empty_providers(), vec![]);
+        let resolver = ModelResolver::new(&config);
+        let err: Box<dyn std::error::Error> = "primary failure".into();
+        let result = resolver.try_fallback("sonnet", err);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("primary failure"));
+    }
+
+    #[test]
+    fn try_fallback_skips_unavailable_and_returns_primary_error() {
+        let config = config_with_fallback(
+            empty_providers(),
+            vec!["unknown-provider/model".to_string()],
+        );
+        let resolver = ModelResolver::new(&config);
+        let err: Box<dyn std::error::Error> = "primary failure".into();
+        let result = resolver.try_fallback("sonnet", err);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn try_fallback_succeeds_with_available_provider() {
+        let mut providers = BTreeMap::new();
+        providers.insert(
+            "ollama".to_string(),
+            make_provider("http://localhost:11434/v1", None),
+        );
+        let config = config_with_fallback(providers, vec!["ollama/qwen3-coder:30b".to_string()]);
+        let resolver = ModelResolver::new(&config);
+        let err: Box<dyn std::error::Error> = "primary failure".into();
+        let result = resolver.try_fallback("sonnet", err);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().model, "ollama/qwen3-coder:30b");
+    }
+
+    #[test]
+    fn try_fallback_tries_multiple_entries() {
+        let mut providers = BTreeMap::new();
+        providers.insert(
+            "ollama".to_string(),
+            make_provider("http://localhost:11434/v1", None),
+        );
+        let config = config_with_fallback(
+            providers,
+            vec!["unknown/model".to_string(), "ollama/llama3:8b".to_string()],
+        );
+        let resolver = ModelResolver::new(&config);
+        let err: Box<dyn std::error::Error> = "primary failure".into();
+        let result = resolver.try_fallback("sonnet", err);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().model, "ollama/llama3:8b");
+    }
+
+    // -----------------------------------------------------------------------
+    // expand_shorthand
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn expand_shorthand_passes_through_model_name() {
+        let config = config_with_providers(empty_providers());
+        let resolver = ModelResolver::new(&config);
+        let expanded = resolver.expand_shorthand("claude-sonnet-4-6").unwrap();
+        assert_eq!(expanded, "claude-sonnet-4-6");
+    }
+
+    #[test]
+    fn expand_shorthand_ollama_fails_gracefully() {
+        let config = config_with_providers(empty_providers());
+        let resolver = ModelResolver::new(&config);
+        let err = resolver.expand_shorthand("ollama").unwrap_err();
+        assert!(err.to_string().contains("Ollama is not running"));
+    }
+
+    // -----------------------------------------------------------------------
+    // query_ollama_tags with unreachable server
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn query_ollama_tags_returns_empty_on_unreachable() {
+        let mut providers = BTreeMap::new();
+        providers.insert(
+            "ollama".to_string(),
+            make_provider("http://127.0.0.1:1/v1", None),
+        );
+        let result = query_ollama_tags(&providers);
+        assert!(result.is_empty());
     }
 }
