@@ -10,4 +10,4 @@ This is an internal crate of the Codineer project. It is published to crates.io 
 
 ## License
 
-MIT — see [LICENSE](../../LICENSE) for details.
+MIT — see [LICENSE](https://github.com/andeya/codineer/blob/main/LICENSE) for details.
