@@ -60,6 +60,9 @@ Most AI coding CLIs lock you into a single provider. Claude Code requires Anthro
   - [Scripting & Automation](#scripting--automation)
 - [Project Setup](#project-setup)
 - [Configuration](#configuration)
+  - [Config file hierarchy](#config-file-hierarchy)
+  - [Settings reference](#settings-reference)
+  - [Environment variables](#environment-variables)
 - [Extending Codineer](#extending-codineer)
   - [MCP Servers](#mcp-servers)
   - [Plugins](#plugins)
@@ -123,11 +126,10 @@ export GROQ_API_KEY="..."               # Groq Cloud (generous free tier)
 # Local models (no API key needed)
 ollama serve                            # Start Ollama, then run codineer
 codineer --model ollama/qwen3-coder     # Specify model explicitly
-export OLLAMA_HOST=http://192.168.1.100:11434  # Remote/custom-port Ollama
 
-# Or via settings.json (persistent, no export needed)
+# Or configure everything in settings.json (see Configuration section)
 # ~/.codineer/settings.json:
-#   { "env": { "ANTHROPIC_API_KEY": "sk-ant-..." } }
+#   { "model": "sonnet", "env": { "ANTHROPIC_API_KEY": "sk-ant-..." } }
 
 # OAuth login (stored in keyring)
 codineer login
@@ -403,15 +405,59 @@ Codineer walks up the directory tree from your workspace root and loads all matc
 
 ## Configuration
 
-Codineer loads settings from (highest to lowest precedence):
+### Config file hierarchy
 
-1. `.codineer/settings.local.json` — local overrides (gitignored)
-2. `.codineer/settings.json` — project settings (commit this)
-3. `.codineer.json` — project-level flat config
-4. `~/.codineer/settings.json` — global user settings
-5. `~/.codineer.json` — global flat config
+Codineer merges settings from multiple files (highest to lowest precedence):
 
-Inspect the merged configuration at any time:
+| File | Scope | Committed? |
+| ---- | ----- | ---------- |
+| `.codineer/settings.local.json` | Project — local overrides | No (gitignored) |
+| `.codineer/settings.json` | Project — shared team settings | Yes |
+| `.codineer.json` | Project — flat config (alternative) | Yes |
+| `~/.codineer/settings.json` | User — global settings | — |
+| `~/.codineer.json` | User — global flat config (alternative) | — |
+
+All files share the same JSON schema. Values in higher-priority files override lower ones; objects like `env`, `providers`, and `mcpServers` are deep-merged.
+
+### Settings reference
+
+A settings file is a JSON object with the following optional keys:
+
+```json
+{
+  "model": "sonnet",
+  "permissionMode": "workspace-write",
+  "env": {
+    "ANTHROPIC_API_KEY": "sk-ant-...",
+    "GROQ_API_KEY": "gsk_...",
+    "OLLAMA_HOST": "http://192.168.1.100:11434"
+  },
+  "providers": {
+    "ollama": { "baseUrl": "http://my-server:11434/v1" },
+    "my-api": { "baseUrl": "https://api.example.com/v1", "apiKeyEnv": "MY_KEY" }
+  },
+  "mcpServers": {
+    "my-server": { "command": "node", "args": ["server.js"] }
+  },
+  "plugins": ["my-plugin"],
+  "hooks": {
+    "PreToolUse": ["lint-check"],
+    "PostToolUse": ["notify"]
+  }
+}
+```
+
+| Key | Type | Description |
+| --- | ---- | ----------- |
+| `model` | string | Default model (e.g. `"sonnet"`, `"ollama/qwen3-coder"`) |
+| `permissionMode` | string | `"read-only"`, `"workspace-write"`, or `"danger-full-access"` |
+| `env` | object | Key-value pairs injected as environment variables at startup. Shell exports take precedence over values here. Accepts any variable: API keys, `OLLAMA_HOST`, `NO_COLOR`, etc. |
+| `providers` | object | Custom OpenAI-compatible providers (see [Custom Providers](#custom-providers-openai-compatible)) |
+| `mcpServers` | object | MCP server definitions (see [MCP Servers](#mcp-servers)) |
+| `plugins` | array | Plugin names to load (see [Plugins](#plugins)) |
+| `hooks` | object | Shell commands for `PreToolUse` / `PostToolUse` lifecycle hooks |
+
+### Inspecting merged config
 
 ```bash
 /config          # full merged config
@@ -421,7 +467,9 @@ Inspect the merged configuration at any time:
 /config hooks    # hook configuration
 ```
 
-**Useful environment variables:**
+### Environment variables
+
+These variables can be set via shell export **or** the `"env"` section of settings.json (shell exports always take precedence):
 
 | Variable                    | Purpose                                    |
 | --------------------------- | ------------------------------------------ |
@@ -431,12 +479,16 @@ Inspect the merged configuration at any time:
 | `OPENAI_API_KEY`            | OpenAI API key                             |
 | `OPENROUTER_API_KEY`        | OpenRouter API key (free models available) |
 | `GROQ_API_KEY`              | Groq Cloud API key (free tier available)   |
+| `OLLAMA_HOST`               | Ollama endpoint (e.g. `http://192.168.1.100:11434`) |
 | `CODINEER_WORKSPACE_ROOT`   | Override workspace root path               |
 | `CODINEER_CONFIG_HOME`      | Override config directory (`~/.codineer`)  |
 | `CODINEER_PERMISSION_MODE`  | Default permission mode                    |
 | `NO_COLOR`                  | Disable ANSI color output                  |
 
-> **Note:** API keys can be configured via environment variables, the `"env"` section of `settings.json`, or OAuth (`codineer login`). Explicit environment variables always take precedence over config file values.
+Three ways to provide API credentials (in order of precedence):
+1. **Shell environment** — `export ANTHROPIC_API_KEY=sk-ant-...`
+2. **Settings file** — `{"env": {"ANTHROPIC_API_KEY": "sk-ant-..."}}`
+3. **OAuth** — `codineer login` (stored in system keyring)
 
 ---
 

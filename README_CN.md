@@ -60,6 +60,9 @@
   - [脚本与自动化](#脚本与自动化)
 - [项目初始化](#项目初始化)
 - [配置](#配置)
+  - [配置文件层级](#配置文件层级)
+  - [配置参考](#配置参考)
+  - [环境变量](#环境变量)
 - [扩展 Codineer](#扩展-codineer)
   - [MCP 服务器](#mcp-服务器)
   - [插件](#插件)
@@ -123,11 +126,10 @@ export GROQ_API_KEY="..."               # Groq Cloud（慷慨的免费额度）
 # 本地模型（无需 API Key）
 ollama serve                            # 启动 Ollama 后运行 codineer
 codineer --model ollama/qwen3-coder     # 明确指定模型
-export OLLAMA_HOST=http://192.168.1.100:11434  # 远程/非默认端口 Ollama
 
-# 或通过配置文件（持久化，无需每次 export）
+# 或通过配置文件统一管理（详见「配置」章节）
 # ~/.codineer/settings.json:
-#   { "env": { "ANTHROPIC_API_KEY": "sk-ant-..." } }
+#   { "model": "sonnet", "env": { "ANTHROPIC_API_KEY": "sk-ant-..." } }
 
 # OAuth 登录（凭证存储在系统密钥链）
 codineer login
@@ -403,15 +405,59 @@ Codineer 会从工作区根目录向上逐级查找匹配的指令文件：
 
 ## 配置
 
-按优先级从高到低加载：
+### 配置文件层级
 
-1. `.codineer/settings.local.json` — 本地覆盖（已 gitignore，不提交）
-2. `.codineer/settings.json` — 项目级配置（建议提交）
-3. `.codineer.json` — 项目级扁平配置
-4. `~/.codineer/settings.json` — 用户全局配置
-5. `~/.codineer.json` — 用户全局扁平配置
+Codineer 从多个文件中合并配置（优先级从高到低）：
 
-随时查看合并后的配置：
+| 文件 | 作用域 | 是否提交 |
+| ---- | ------ | -------- |
+| `.codineer/settings.local.json` | 项目 — 本地覆盖 | 否（已 gitignore） |
+| `.codineer/settings.json` | 项目 — 团队共享配置 | 是 |
+| `.codineer.json` | 项目 — 扁平配置（替代格式） | 是 |
+| `~/.codineer/settings.json` | 用户 — 全局配置 | — |
+| `~/.codineer.json` | 用户 — 全局扁平配置（替代格式） | — |
+
+所有文件使用相同的 JSON 结构。高优先级文件中的值会覆盖低优先级的值；`env`、`providers`、`mcpServers` 等对象会深度合并。
+
+### 配置参考
+
+配置文件是一个 JSON 对象，包含以下可选字段：
+
+```json
+{
+  "model": "sonnet",
+  "permissionMode": "workspace-write",
+  "env": {
+    "ANTHROPIC_API_KEY": "sk-ant-...",
+    "GROQ_API_KEY": "gsk_...",
+    "OLLAMA_HOST": "http://192.168.1.100:11434"
+  },
+  "providers": {
+    "ollama": { "baseUrl": "http://my-server:11434/v1" },
+    "my-api": { "baseUrl": "https://api.example.com/v1", "apiKeyEnv": "MY_KEY" }
+  },
+  "mcpServers": {
+    "my-server": { "command": "node", "args": ["server.js"] }
+  },
+  "plugins": ["my-plugin"],
+  "hooks": {
+    "PreToolUse": ["lint-check"],
+    "PostToolUse": ["notify"]
+  }
+}
+```
+
+| 字段 | 类型 | 说明 |
+| ---- | ---- | ---- |
+| `model` | string | 默认模型（如 `"sonnet"`、`"ollama/qwen3-coder"`） |
+| `permissionMode` | string | `"read-only"`、`"workspace-write"` 或 `"danger-full-access"` |
+| `env` | object | 启动时注入为环境变量的键值对。Shell 中的 export 值优先级更高。支持所有变量：API Key、`OLLAMA_HOST`、`NO_COLOR` 等。 |
+| `providers` | object | 自定义 OpenAI 兼容 Provider（见[自定义 Provider](#自定义-provideropenai-兼容)） |
+| `mcpServers` | object | MCP 服务器定义（见 [MCP 服务器](#mcp-服务器)） |
+| `plugins` | array | 要加载的插件名称（见[插件](#插件)） |
+| `hooks` | object | `PreToolUse` / `PostToolUse` 生命周期 Hook 的 Shell 命令 |
+
+### 查看合并后的配置
 
 ```bash
 /config          # 完整合并配置
@@ -421,7 +467,9 @@ Codineer 会从工作区根目录向上逐级查找匹配的指令文件：
 /config hooks    # Hook 配置
 ```
 
-**常用环境变量：**
+### 环境变量
+
+以下变量可通过 Shell export **或** settings.json 的 `"env"` 字段设置（Shell export 始终优先）：
 
 | 变量                       | 用途                                 |
 | -------------------------- | ------------------------------------ |
@@ -431,12 +479,16 @@ Codineer 会从工作区根目录向上逐级查找匹配的指令文件：
 | `OPENAI_API_KEY`           | OpenAI API Key                       |
 | `OPENROUTER_API_KEY`       | OpenRouter API Key（有免费模型）     |
 | `GROQ_API_KEY`             | Groq Cloud API Key（免费额度可用）   |
+| `OLLAMA_HOST`              | Ollama 端点（如 `http://192.168.1.100:11434`） |
 | `CODINEER_WORKSPACE_ROOT`  | 覆盖工作区根路径                     |
 | `CODINEER_CONFIG_HOME`     | 覆盖配置目录（默认 `~/.codineer`）   |
 | `CODINEER_PERMISSION_MODE` | 默认权限模式                         |
 | `NO_COLOR`                 | 禁用 ANSI 颜色输出                   |
 
-> **注意：** API 密钥可通过环境变量、`settings.json` 的 `"env"` 字段或 OAuth（`codineer login`）配置。显式环境变量始终优先于配置文件中的值。
+API 凭据的三种提供方式（按优先级排列）：
+1. **Shell 环境变量** — `export ANTHROPIC_API_KEY=sk-ant-...`
+2. **配置文件** — `{"env": {"ANTHROPIC_API_KEY": "sk-ant-..."}}`
+3. **OAuth 登录** — `codineer login`（存储在系统密钥链中）
 
 ---
 
