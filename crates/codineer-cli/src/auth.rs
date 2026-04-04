@@ -140,10 +140,16 @@ fn wait_for_oauth_callback(
 }
 
 const PROVIDER_SETUP_HINT: &str = "\
-Configure one of the supported providers:\n\
+Cloud providers (requires API key):\n\
  Anthropic (Claude)  export ANTHROPIC_API_KEY=sk-…\n\
  OpenAI              export OPENAI_API_KEY=sk-…\n\
  xAI (Grok)          export XAI_API_KEY=xai-…\n\n\
+Free cloud providers:\n\
+ OpenRouter           export OPENROUTER_API_KEY=…  (free models available)\n\
+ Groq                 export GROQ_API_KEY=…        (generous free tier)\n\n\
+Local models (no API key needed):\n\
+ Ollama               ollama serve + codineer --model ollama/qwen3-coder\n\
+ LM Studio            codineer --model lmstudio/model-name\n\n\
 Or authenticate via OAuth:\n\
  codineer login\n\n\
 Switch models:\n\

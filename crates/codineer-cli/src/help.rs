@@ -23,6 +23,10 @@ pub(crate) fn print_help_to(out: &mut impl io::Write) -> io::Result<()> {
     let color = crate::style::color_for_stdout();
     writeln!(out, "{}", logo_ascii(color))?;
     writeln!(out, "  v{VERSION}")?;
+    writeln!(
+        out,
+        "  Multi-provider AI coding agent — any model, zero lock-in."
+    )?;
     writeln!(out)?;
     print_help_section(
         out,
@@ -81,6 +85,8 @@ pub(crate) fn print_help_to(out: &mut impl io::Write) -> io::Result<()> {
             "  ANTHROPIC_AUTH_TOKEN                   Bearer token (alternative to API key)",
             "  XAI_API_KEY                           API key for xAI (Grok) models",
             "  OPENAI_API_KEY                        API key for OpenAI-compatible models",
+            "  OPENROUTER_API_KEY                    API key for OpenRouter (free models available)",
+            "  GROQ_API_KEY                          API key for Groq Cloud (free tier available)",
             "  CODINEER_WORKSPACE_ROOT               Override workspace root directory",
             "  CODINEER_CONFIG_HOME                  Override config directory (default: ~/.codineer)",
             "  CODINEER_PERMISSION_MODE              Default permission mode",
@@ -99,8 +105,26 @@ pub(crate) fn print_help_to(out: &mut impl io::Write) -> io::Result<()> {
             "  ~/.codineer.json                      Global flat config",
             "  CODINEER.md                           Project context and instructions",
             "",
-            "  Supported keys: model, env, hooks, plugins, mcpServers, permissionMode",
+            "  Supported keys: model, env, hooks, plugins, mcpServers, permissionMode, providers",
             "  Example: {\"model\": \"sonnet\", \"env\": {\"ANTHROPIC_API_KEY\": \"sk-…\"}}",
+        ],
+    )?;
+    print_help_section(
+        out,
+        "Custom providers (OpenAI-compatible)",
+        &[
+            "  Built-in:  ollama, lmstudio, openrouter, groq",
+            "  Usage:     codineer --model ollama/qwen3-coder",
+            "             codineer --model groq/llama-3.3-70b-versatile",
+            "  Auto:      codineer --model ollama   (picks best coding model)",
+            "  Zero-config Ollama: if no API keys are found and Ollama is running,",
+            "             Codineer auto-detects it and picks a coding model.",
+            "",
+            "  Configure custom providers in settings.json:",
+            "    {\"providers\": {\"ollama\": {\"baseUrl\": \"http://localhost:11434/v1\"}}}",
+            "    {\"providers\": {\"my-api\": {\"baseUrl\": \"https://...\", \"apiKeyEnv\": \"MY_KEY\"}}}",
+            "",
+            "  Models without function calling automatically fall back to text-only mode.",
         ],
     )?;
     print_help_slash_reference(out)?;

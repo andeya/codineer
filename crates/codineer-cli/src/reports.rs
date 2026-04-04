@@ -51,14 +51,24 @@ pub(crate) fn format_model_report(model: &str, message_count: usize, turns: u32)
   o3               o3                   {o}
 
 {}
+  ollama/<model>   Local Ollama model   {free}
+  lmstudio/<model> Local LM Studio      {free}
+  groq/<model>     Groq Cloud           {cloud}
+  openrouter/<model> OpenRouter          {cloud}
+  ollama           Auto-pick best coding model from Ollama
+
+{}
   /model           Show the current model
   /model <name>    Switch models for this REPL session",
         p.title("Model"),
         p.title("Aliases"),
+        p.title("Custom providers"),
         p.dim_text("Next"),
         a = p.dim_text("(Anthropic)"),
         x = p.dim_text("(xAI)"),
         o = p.dim_text("(OpenAI)"),
+        free = p.dim_text("(no key needed)"),
+        cloud = p.dim_text("(free tier)"),
     )
 }
 
@@ -350,12 +360,13 @@ pub(crate) fn render_config_report(
             "env" => runtime_config.get("env"),
             "hooks" => runtime_config.get("hooks"),
             "model" => runtime_config.get("model"),
+            "providers" => runtime_config.get("providers"),
             "plugins" => runtime_config
                 .get("plugins")
                 .or_else(|| runtime_config.get("enabledPlugins")),
             other => {
                 lines.push(format!(
-                    "  Unsupported config section '{other}'. Use env, hooks, model, or plugins."
+                    "  Unsupported config section '{other}'. Use env, hooks, model, providers, or plugins."
                 ));
                 return Ok(lines.join(
                     "
