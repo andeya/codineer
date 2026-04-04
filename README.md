@@ -124,9 +124,11 @@ Codineer auto-detects your provider. No extra flags needed. All credentials can 
 | `haiku`     | `claude-haiku-4-5-20251213`   | Anthropic |
 | `grok`      | `grok-3`                      | xAI       |
 | `grok-mini` | `grok-3-mini`                 | xAI       |
+| `grok-2`    | `grok-2`                      | xAI       |
 | `gpt`       | `gpt-4o`                      | OpenAI    |
 | `mini`      | `gpt-4o-mini`                 | OpenAI    |
 | `o3`        | `o3`                          | OpenAI    |
+| `o3-mini`   | `o3-mini`                     | OpenAI    |
 
 ```bash
 codineer --model opus "review my changes"
@@ -372,6 +374,8 @@ Skills are discovered from `.codineer/skills/`, `~/.codineer/skills/`, and `$COD
 | `Skill` | Execute skill prompts |
 | `REPL` | Run code in Python, Node, or shell |
 | `ToolSearch` | Search available tools |
+| `Sleep` | Pause execution for a duration |
+| `SendUserMessage` | Send a message to the user |
 | `Config` | Read/write config values |
 | `StructuredOutput` | Return structured JSON |
 
