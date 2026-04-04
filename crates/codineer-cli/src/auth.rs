@@ -174,11 +174,7 @@ pub fn run_login(
     if let Some(source_id) = source {
         let resolver = find_source(&chain, source_id)?;
         if !resolver.supports_login() {
-            return Err(format!(
-                "credential source '{}' does not support interactive login",
-                resolver.display_name()
-            )
-            .into());
+            return check_auto_discover_source(resolver);
         }
         return resolver.login();
     }
@@ -275,6 +271,34 @@ pub fn run_status(provider: Option<&str>) -> Result<(), Box<dyn std::error::Erro
     }
 
     Ok(())
+}
+
+/// For auto-discover sources (e.g. Claude Code) that don't support interactive
+/// login, check whether credentials are already available and print guidance.
+fn check_auto_discover_source(
+    resolver: &dyn runtime::CredentialResolver,
+) -> Result<(), Box<dyn std::error::Error>> {
+    match resolver.resolve() {
+        Ok(Some(_)) => {
+            println!(
+                "{} credentials detected and valid. No action needed.",
+                resolver.display_name()
+            );
+            Ok(())
+        }
+        _ => {
+            let hint = if resolver.id() == "claude-code" {
+                "Run `claude login` in Claude Code first, then Codineer will auto-discover the credentials."
+            } else {
+                "This credential source is auto-discovered and cannot be set up interactively through Codineer."
+            };
+            Err(format!(
+                "{} credentials not found.\n{hint}",
+                resolver.display_name()
+            )
+            .into())
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
