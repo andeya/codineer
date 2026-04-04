@@ -67,6 +67,33 @@ fn chat_completion_strips_custom_provider_prefix_for_upstream_model() {
 }
 
 #[test]
+fn sse_parses_delta_with_reasoning_content_only() {
+    let frame = "data: {\"id\":\"1\",\"choices\":[{\"delta\":{\"reasoning_content\":\"2\"}}]}\n\n";
+    let parsed = super::parse_sse_frame(frame)
+        .expect("parse")
+        .expect("chunk");
+    assert_eq!(parsed.choices.len(), 1);
+    assert_eq!(
+        parsed.choices[0].delta.stream_text_fragment(),
+        Some("2".to_string())
+    );
+}
+
+#[test]
+fn sse_parses_delta_with_content_array() {
+    let frame = r#"data: {"id":"1","choices":[{"delta":{"content":[{"type":"text","text":"hi"}]}}]}"#
+        .to_string()
+        + "\n\n";
+    let parsed = super::parse_sse_frame(&frame)
+        .expect("parse")
+        .expect("chunk");
+    assert_eq!(
+        parsed.choices[0].delta.stream_text_fragment(),
+        Some("hi".to_string())
+    );
+}
+
+#[test]
 fn chat_completion_preserves_openrouter_model_after_provider_prefix() {
     let payload = build_chat_completion_request(&MessageRequest {
         model: "openrouter/meta-llama/llama-3.1-8b:free".to_string(),

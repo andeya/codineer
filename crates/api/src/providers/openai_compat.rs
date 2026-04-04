@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, VecDeque};
 
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
 use serde_json::{json, Value};
 
 use crate::error::ApiError;
@@ -365,7 +365,7 @@ impl StreamState {
         }
 
         for choice in chunk.choices {
-            if let Some(content) = choice.delta.content.filter(|value| !value.is_empty()) {
+            if let Some(content) = choice.delta.stream_text_fragment() {
                 if self.text_phase == TextPhase::Pending {
                     self.text_phase = TextPhase::Active;
                     events.push(StreamEvent::ContentBlockStart(ContentBlockStartEvent {
@@ -600,12 +600,65 @@ struct ChunkChoice {
     finish_reason: Option<String>,
 }
 
+/// OpenAI uses a string; some providers (DashScope, Qwen) may send an array of `{type,text}` parts.
+fn deserialize_delta_content<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Raw {
+        Str(String),
+        Arr(Vec<Value>),
+    }
+    match Option::<Raw>::deserialize(deserializer)? {
+        None => Ok(None),
+        Some(Raw::Str(s)) if s.is_empty() => Ok(None),
+        Some(Raw::Str(s)) => Ok(Some(s)),
+        Some(Raw::Arr(parts)) => {
+            let mut joined = String::new();
+            for part in parts {
+                match part {
+                    Value::Object(map) => {
+                        if let Some(text) = map.get("text").and_then(Value::as_str) {
+                            joined.push_str(text);
+                        }
+                    }
+                    Value::String(s) => joined.push_str(&s),
+                    _ => {}
+                }
+            }
+            Ok((!joined.is_empty()).then_some(joined))
+        }
+    }
+}
+
 #[derive(Debug, Default, Deserialize)]
 struct ChunkDelta {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_delta_content")]
     content: Option<String>,
+    /// Qwen / DashScope reasoning models stream thinking here before `content`.
+    #[serde(default)]
+    reasoning_content: Option<String>,
+    /// Ollama and some stacks use `reasoning` instead of `reasoning_content`.
+    #[serde(default)]
+    reasoning: Option<String>,
     #[serde(default)]
     tool_calls: Vec<DeltaToolCall>,
+}
+
+impl ChunkDelta {
+    fn stream_text_fragment(&self) -> Option<String> {
+        self.content
+            .clone()
+            .filter(|s| !s.is_empty())
+            .or_else(|| {
+                self.reasoning_content
+                    .clone()
+                    .filter(|s| !s.is_empty())
+            })
+            .or_else(|| self.reasoning.clone().filter(|s| !s.is_empty()))
+    }
 }
 
 #[derive(Debug, Deserialize)]
