@@ -142,9 +142,11 @@ fn wait_for_oauth_callback(
 pub fn no_credentials_error() -> String {
     "no API credentials found\n\n\
      Configure one of the supported providers:\n\
-     \x20 Anthropic (Claude)  export ANTHROPIC_API_KEY=sk-…  or  codineer login\n\
+     \x20 Anthropic (Claude)  export ANTHROPIC_API_KEY=sk-…\n\
      \x20 OpenAI              export OPENAI_API_KEY=sk-…\n\
      \x20 xAI (Grok)          export XAI_API_KEY=xai-…\n\n\
+     Or authenticate via OAuth:\n\
+     \x20 codineer login\n\n\
      Then run codineer again, or specify a model:\n\
      \x20 codineer --model <name>"
         .to_string()
@@ -155,10 +157,13 @@ pub fn provider_hint(model: &str, err: &dyn std::fmt::Display) -> String {
         "{err}\n\n\
          Current model: {model}\n\n\
          Supported providers:\n\
-         \x20 Anthropic (Claude)  ANTHROPIC_API_KEY or `codineer login`\n\
-         \x20 OpenAI               OPENAI_API_KEY\n\
-         \x20 xAI (Grok)          XAI_API_KEY\n\n\
-         Switch models with: codineer --model <name>"
+         \x20 Anthropic (Claude)  export ANTHROPIC_API_KEY=…\n\
+         \x20 OpenAI              export OPENAI_API_KEY=…\n\
+         \x20 xAI (Grok)          export XAI_API_KEY=…\n\n\
+         Or authenticate via OAuth:\n\
+         \x20 codineer login\n\n\
+         Switch models:\n\
+         \x20 codineer --model <name>"
     )
 }
 

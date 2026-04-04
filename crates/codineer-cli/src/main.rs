@@ -124,20 +124,37 @@ fn main() {
 
 fn render_cli_error(problem: &str) -> String {
     let p = style::Palette::for_stderr();
-    let mut lines = vec![format!("{}Error{}", p.bold_red, p.r)];
-    for (index, line) in problem.lines().enumerate() {
-        let label = if index == 0 {
-            "  Problem          "
-        } else {
-            "                   "
-        };
-        lines.push(format!("{label}{line}"));
+    let mut out = String::from("\n");
+    let mut lines = problem.lines();
+
+    if let Some(summary) = lines.next() {
+        out.push_str(&format!(
+            "  {}✖ Error:{} {}{}{}\n",
+            p.bold_red, p.r, p.bold_white, summary, p.r,
+        ));
     }
-    lines.push(format!(
-        "  {}Help             codineer --help{}",
-        p.dim, p.r
-    ));
-    lines.join("\n")
+
+    for line in lines {
+        if line.is_empty() {
+            out.push('\n');
+        } else {
+            out.push_str(&format!("    {}\n", highlight_cli_hint(&p, line)));
+        }
+    }
+
+    out.push_str(&format!("\n  {}codineer --help{}\n", p.dim, p.r));
+    out
+}
+
+fn highlight_cli_hint(p: &style::Palette, line: &str) -> String {
+    if let Some(idx) = line.find("export ") {
+        let (prefix, cmd) = line.split_at(idx);
+        format!("{}{}{}{}", prefix, p.cyan_fg, cmd, p.r)
+    } else if line.trim_start().starts_with("codineer ") {
+        format!("{}{}{}", p.cyan_fg, line, p.r)
+    } else {
+        line.to_string()
+    }
 }
 
 fn run() -> Result<(), Box<dyn std::error::Error>> {
