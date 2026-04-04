@@ -3,7 +3,7 @@
 </p>
 <h1 align="center">codineer</h1>
 <p align="center">
-  <em>Your local AI coding agent — one binary, zero cloud lock-in.</em>
+  <em>Your multi-provider AI coding agent — one binary, any model, zero lock-in.</em>
 </p>
 
 <p align="center">
@@ -19,10 +19,36 @@
 
 **Codineer** turns your terminal into an AI coding companion. It reads your workspace, understands project context, and helps you write, refactor, debug, and ship code — without leaving the command line.
 
-Built in safe Rust. Ships as a **single binary**. No daemon, no cloud dependency — bring your own API key and go.
+Built in safe Rust. Ships as a **single binary**. No daemon, no runtime dependency — bring any model and go.
+
+## Why Codineer?
+
+Most AI coding CLIs lock you into a single provider. Claude Code requires Anthropic. Codex CLI requires OpenAI. **Codineer works with all of them — and local models too.**
+
+| | Codineer | Claude Code | Codex CLI | Aider |
+|---|:---:|:---:|:---:|:---:|
+| **Multi-provider** (Anthropic, OpenAI, xAI, Ollama, …) | **Yes** | Anthropic only | OpenAI only | Yes |
+| **Zero-config local AI** (auto-detect Ollama) | **Yes** | No | No | Manual setup |
+| **Single binary** (no runtime deps) | **Rust** | Node.js | Node.js | Python |
+| **MCP protocol** (external tool integration) | **Yes** | Yes | Yes | No |
+| **Plugin system** + agents + skills | **Yes** | Partial | No | No |
+| **Permission modes** (read-only → full access) | **Yes** | Yes | Yes | No |
+| **Tool-use fallback** (graceful degradation) | **Yes** | N/A | N/A | N/A |
+| **Git workflow** (/commit, /pr, /diff, /branch) | **Built-in** | Via tools | Via tools | Auto-commit |
+| **Vim mode** in REPL | **Yes** | No | No | No |
+| **CI/CD ready** (JSON output, tool allowlists) | **Yes** | Limited | Yes | No |
+
+**Key advantages:**
+
+- **Provider freedom** — switch between Claude, GPT, Grok, Ollama, or any OpenAI-compatible API with a single flag. No vendor lock-in.
+- **Free local AI** — start Ollama, run `codineer`. Zero API keys, zero cost. Codineer auto-detects your local models and picks the best one for coding.
+- **Instant setup** — one `cargo install` or `brew install`. No Node.js, no Python, no Docker. A single ~15 MB binary that runs anywhere.
+- **Graceful degradation** — models without function calling automatically fall back to text-only mode. Every model works, even simple ones.
+- **Project memory** — `CODINEER.md` gives the AI persistent context about your codebase, conventions, and workflows. Commit it to share with your team.
 
 ## Table of Contents
 
+- [Why Codineer?](#why-codineer)
 - [Install](#install)
 - [Quick Start](#quick-start)
 - [Usage Guide](#usage-guide)
@@ -85,10 +111,18 @@ cargo install --path crates/codineer-cli --locked
 **1. Authenticate** — pick one method:
 
 ```bash
-# Environment variable (any session)
+# Cloud providers (requires API key)
 export ANTHROPIC_API_KEY="sk-ant-..."   # Claude (recommended)
 export XAI_API_KEY="xai-..."            # Grok
 export OPENAI_API_KEY="sk-..."          # GPT / OpenAI-compatible
+
+# Free cloud providers
+export OPENROUTER_API_KEY="..."         # OpenRouter (free models available)
+export GROQ_API_KEY="..."               # Groq Cloud (generous free tier)
+
+# Local models (no API key needed)
+ollama serve                            # Start Ollama, then run codineer
+codineer --model ollama/qwen3-coder     # Specify model explicitly
 
 # Or via settings.json (persistent, no export needed)
 # ~/.codineer/settings.json:
@@ -241,6 +275,38 @@ codineer --model opus "review my changes"
 codineer --model grok-mini "quick question"
 ```
 
+#### Custom Providers (OpenAI-compatible)
+
+Use any OpenAI-compatible API via the `provider/model` syntax:
+
+| Prefix                       | Provider    | API key needed? |
+| ---------------------------- | ----------- | --------------- |
+| `ollama/<model>`             | Ollama      | No              |
+| `lmstudio/<model>`           | LM Studio   | No              |
+| `groq/<model>`               | Groq Cloud  | `GROQ_API_KEY`  |
+| `openrouter/<model>`         | OpenRouter  | `OPENROUTER_API_KEY` |
+
+```bash
+codineer --model ollama/qwen3-coder "refactor this module"
+codineer --model groq/llama-3.3-70b-versatile "explain this function"
+codineer --model ollama   # auto-selects the best coding model from Ollama
+```
+
+**Zero-config Ollama**: if no API keys are found and Ollama is running locally, Codineer auto-detects it and picks the best available coding model.
+
+Configure custom providers in settings:
+
+```json
+{
+  "providers": {
+    "ollama": { "baseUrl": "http://localhost:11434/v1" },
+    "my-api": { "baseUrl": "https://my-endpoint.com/v1", "apiKeyEnv": "MY_API_KEY" }
+  }
+}
+```
+
+> **Note**: models that do not support function calling will automatically fall back to text-only mode.
+
 Switch model mid-session with `/model <name>`.
 
 Set a persistent default model in your settings file:
@@ -249,7 +315,7 @@ Set a persistent default model in your settings file:
 { "model": "sonnet" }
 ```
 
-When no `--model` flag is given, Codineer checks the config `model` field before auto-detecting from available provider credentials.
+When no `--model` flag is given, Codineer checks the config `model` field, then auto-detects from available provider credentials, then checks for a running Ollama instance.
 
 ### Permission Modes
 
@@ -354,6 +420,8 @@ Inspect the merged configuration at any time:
 | `ANTHROPIC_AUTH_TOKEN`      | Bearer token (alternative to API key)      |
 | `XAI_API_KEY`               | xAI / Grok API key                         |
 | `OPENAI_API_KEY`            | OpenAI API key                             |
+| `OPENROUTER_API_KEY`        | OpenRouter API key (free models available) |
+| `GROQ_API_KEY`              | Groq Cloud API key (free tier available)   |
 | `CODINEER_WORKSPACE_ROOT`   | Override workspace root path               |
 | `CODINEER_CONFIG_HOME`      | Override config directory (`~/.codineer`)  |
 | `CODINEER_PERMISSION_MODE`  | Default permission mode                    |
