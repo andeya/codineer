@@ -43,7 +43,7 @@ fn try_enable_ansi_on_windows() -> bool {
     // crossterm's safe public API checks GetConsoleMode and enables
     // ENABLE_VIRTUAL_TERMINAL_PROCESSING when needed — same logic as the
     // previous manual FFI, but without an unsafe block in our code.
-    crossterm::terminal::supports_ansi()
+    crossterm::ansi_support::supports_ansi()
 }
 
 /// Pre-computed ANSI escape codes.
