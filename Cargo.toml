@@ -15,13 +15,14 @@ documentation = "https://github.com/andeya/codineer"
 keywords = ["ai", "coding-agent", "cli", "llm", "developer-tools"]
 categories = ["command-line-utilities", "development-tools"]
 
+# NOTE: Keep internal crate versions in sync with workspace.package.version above.
 [workspace.dependencies]
-lsp = { path = "crates/lsp", package = "codineer-lsp" }
-runtime = { path = "crates/runtime", package = "codineer-runtime" }
-api = { path = "crates/api", package = "codineer-api" }
-plugins = { path = "crates/plugins", package = "codineer-plugins" }
-tools = { path = "crates/tools", package = "codineer-tools" }
-commands = { path = "crates/commands", package = "codineer-commands" }
+lsp = { path = "crates/lsp", version = "0.6", package = "codineer-lsp" }
+runtime = { path = "crates/runtime", version = "0.6", package = "codineer-runtime" }
+api = { path = "crates/api", version = "0.6", package = "codineer-api" }
+plugins = { path = "crates/plugins", version = "0.6", package = "codineer-plugins" }
+tools = { path = "crates/tools", version = "0.6", package = "codineer-tools" }
+commands = { path = "crates/commands", version = "0.6", package = "codineer-commands" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["rt-multi-thread"] }
