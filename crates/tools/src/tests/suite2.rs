@@ -623,9 +623,8 @@ fn repl_executes_python_code() {
 #[test]
 #[cfg(unix)]
 fn powershell_runs_via_stub_shell() {
-    let _guard = env_lock()
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    use crate::powershell::execute_shell_command;
+
     let dir = std::env::temp_dir().join(format!(
         "codineer-pwsh-bin-{}",
         std::time::SystemTime::now()
@@ -649,32 +648,22 @@ printf 'pwsh:%s' "$1"
         .arg(&script)
         .status()
         .expect("chmod");
-    let original_path = std::env::var("PATH").unwrap_or_default();
-    std::env::set_var("PATH", format!("{}:{}", dir.display(), original_path));
 
-    let result = execute_tool(
-        "PowerShell",
-        &json!({"command": "Write-Output hello", "timeout": 1000}),
-    )
-    .expect("PowerShell should succeed");
+    let stub = script.to_str().expect("stub path");
 
-    let background = execute_tool(
-        "PowerShell",
-        &json!({"command": "Write-Output hello", "run_in_background": true}),
-    )
-    .expect("PowerShell background should succeed");
+    let foreground = execute_shell_command(stub, "Write-Output hello", Some(1000), None)
+        .expect("foreground should succeed");
+    assert_eq!(foreground.stdout, "pwsh:Write-Output hello");
+    assert!(foreground.stderr.is_empty());
 
-    std::env::set_var("PATH", original_path);
+    let background =
+        execute_shell_command(stub, "Write-Output hello", None, Some(true))
+            .expect("background should succeed");
+    assert!(background.background_task_id.is_some());
+    assert_eq!(background.backgrounded_by_user, Some(true));
+    assert_eq!(background.assistant_auto_backgrounded, Some(false));
+
     let _ = std::fs::remove_dir_all(dir);
-
-    let output: serde_json::Value = serde_json::from_str(&result).expect("json");
-    assert_eq!(output["stdout"], "pwsh:Write-Output hello");
-    assert!(output["stderr"].as_str().expect("stderr").is_empty());
-
-    let background_output: serde_json::Value = serde_json::from_str(&background).expect("json");
-    assert!(background_output["backgroundTaskId"].as_str().is_some());
-    assert_eq!(background_output["backgroundedByUser"], true);
-    assert_eq!(background_output["assistantAutoBackgrounded"], false);
 }
 
 #[test]
