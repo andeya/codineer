@@ -108,6 +108,7 @@ pub(crate) fn print_help_to(out: &mut impl io::Write) -> io::Result<()> {
             "",
             "  Supported keys: model, env, hooks, plugins, mcpServers, permissionMode, providers",
             "  Example: {\"model\": \"sonnet\", \"env\": {\"ANTHROPIC_API_KEY\": \"sk-…\"}}",
+            "  Tip: all env vars above can go in the \"env\" section (shell exports take precedence).",
         ],
     )?;
     print_help_section(
