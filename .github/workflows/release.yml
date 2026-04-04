@@ -125,35 +125,43 @@ jobs:
         run: |
           publish_crate() {
             local crate="$1"
-            local max_retries=3
-            local delay=60
+            local max_retries=5
+            local delay=120
             for attempt in $(seq 1 "$max_retries"); do
-              echo "Publishing $crate (attempt $attempt/$max_retries)..."
-              if cargo publish -p "$crate" --locked 2>&1; then
+              echo "::group::Publishing $crate (attempt $attempt/$max_retries)"
+              local output
+              output=$(cargo publish -p "$crate" --locked 2>&1) && {
+                echo "$output"
                 echo "$crate published successfully."
+                echo "::endgroup::"
                 return 0
-              else
-                local output
-                output=$(cargo publish -p "$crate" --locked 2>&1 || true)
-                if echo "$output" | grep -q "already uploaded"; then
-                  echo "$crate already exists on crates.io, skipping."
-                  return 0
-                fi
-                if [ "$attempt" -lt "$max_retries" ]; then
-                  echo "Retrying $crate in ${delay}s..."
-                  sleep "$delay"
-                  delay=$((delay * 2))
-                fi
+              }
+              echo "$output"
+              echo "::endgroup::"
+              if echo "$output" | grep -q "already uploaded"; then
+                echo "$crate already on crates.io, skipping."
+                return 0
+              fi
+              if [ "$attempt" -lt "$max_retries" ]; then
+                echo "Retrying $crate in ${delay}s..."
+                sleep "$delay"
+                delay=$((delay * 2))
               fi
             done
-            echo "WARNING: Failed to publish $crate after $max_retries attempts"
+            echo "::error::Failed to publish $crate after $max_retries attempts"
             return 1
           }
 
+          failed=""
           for crate in codineer-lsp codineer-runtime codineer-api codineer-plugins codineer-tools codineer-commands codineer-cli; do
-            publish_crate "$crate" || true
-            sleep 60
+            if ! publish_crate "$crate"; then
+              failed="$failed $crate"
+            fi
+            sleep 90
           done
+          if [ -n "$failed" ]; then
+            echo "::warning::These crates failed to publish:$failed"
+          fi
 
   update-homebrew:
     name: Update Homebrew tap
