@@ -19,7 +19,7 @@
 
 **Codineer** turns your terminal into an AI coding companion. It reads your workspace, understands project context, and helps you write, refactor, debug, and ship code — without leaving the command line.
 
-Built in safe Rust. Ships as a **single binary**. No daemon, no runtime dependency — bring any model and go.
+Built in safe Rust. Ships as a **single ~15 MB binary**. No daemon, no runtime dependency — bring any model and go.
 
 ## Why Codineer?
 
@@ -40,56 +40,34 @@ Most AI coding CLIs lock you into a single provider. Claude Code requires Anthro
 
 **Key advantages:**
 
-- **Provider freedom** — switch between Claude, GPT, Grok, Ollama, LM Studio, OpenRouter, Groq, or any OpenAI-compatible API with a single `--model` flag. No vendor lock-in.
-- **Zero-config local AI** — start Ollama, run `codineer`. No API keys, no flags, no config. Codineer auto-detects your local models and picks the best one for coding.
-- **Instant setup** — one `cargo install` or `brew install`. No Node.js, no Python, no Docker. A single ~15 MB Rust binary that runs anywhere.
-- **Graceful degradation** — models without function calling automatically fall back to text-only mode. Every model works, even simple ones.
-- **Project memory** — `CODINEER.md` gives the AI persistent context about your codebase, conventions, and workflows. Commit it to share with your team.
+- **Provider freedom** — switch between Claude, GPT, Grok, Ollama, LM Studio, OpenRouter, Groq, or any OpenAI-compatible API with `--model`. No vendor lock-in.
+- **Zero-config local AI** — start Ollama, run `codineer`. Auto-detects local models and picks the best one.
+- **Instant setup** — `brew install` or `cargo install`. One Rust binary, no runtime dependencies.
+- **Graceful degradation** — models without function calling automatically fall back to text-only mode.
+- **Project memory** — `CODINEER.md` gives the AI persistent context about your codebase. Commit it to share with your team.
 
 ## Table of Contents
 
-- [Why Codineer?](#why-codineer)
 - [Install](#install)
 - [Quick Start](#quick-start)
-- [Usage Guide](#usage-guide)
-  - [Interactive REPL](#interactive-repl)
-  - [One-shot Prompts](#one-shot-prompts)
-  - [Session Management](#session-management)
-  - [Model Selection](#model-selection)
-  - [Permission Modes](#permission-modes)
-  - [Scripting & Automation](#scripting--automation)
-- [Project Setup](#project-setup)
+- [Models & Providers](#models--providers)
+- [Usage](#usage)
 - [Configuration](#configuration)
-  - [Config file hierarchy](#config-file-hierarchy)
-  - [Settings reference](#settings-reference)
-  - [Environment variables](#environment-variables)
+- [Project Context](#project-context)
 - [Extending Codineer](#extending-codineer)
-  - [MCP Servers](#mcp-servers)
-  - [Plugins](#plugins)
-  - [Agents & Skills](#agents--skills)
-- [Built-in Tools](#built-in-tools)
-- [Publishing to crates.io](#publishing-to-cratesio)
+- [Reference](#reference)
 - [License](#license)
 
 ---
 
 ## Install
 
-### Homebrew (macOS / Linux)
-
 ```bash
-brew install andeya/codineer/codineer
+brew install andeya/codineer/codineer            # Homebrew (macOS / Linux)
+cargo install codineer-cli                        # Cargo (from crates.io)
 ```
 
-### Cargo (from crates.io)
-
-```bash
-cargo install codineer-cli
-```
-
-### Download binary
-
-Grab the prebuilt binary for your platform from the **[Releases](https://github.com/andeya/codineer/releases)** page:
+Or download a prebuilt binary from [Releases](https://github.com/andeya/codineer/releases):
 
 | Platform              | File                                          |
 | --------------------- | --------------------------------------------- |
@@ -99,7 +77,7 @@ Grab the prebuilt binary for your platform from the **[Releases](https://github.
 | Linux (ARM64)         | `codineer-*-aarch64-unknown-linux-gnu.tar.gz` |
 | Windows (x86_64)      | `codineer-*-x86_64-pc-windows-msvc.zip`       |
 
-### Build from source
+<details><summary>Build from source</summary>
 
 ```bash
 git clone https://github.com/andeya/codineer.git
@@ -107,162 +85,39 @@ cd codineer
 cargo install --path crates/codineer-cli --locked
 ```
 
+</details>
+
 ---
 
 ## Quick Start
 
-**1. Authenticate** — pick one method:
-
 ```bash
-# Cloud providers (requires API key)
-export ANTHROPIC_API_KEY="sk-ant-..."   # Claude (recommended)
-export XAI_API_KEY="xai-..."            # Grok
-export OPENAI_API_KEY="sk-..."          # GPT / OpenAI-compatible
+# 1. Pick a provider — any one of these:
+export ANTHROPIC_API_KEY="sk-ant-..."             # Claude
+export OPENAI_API_KEY="sk-..."                    # GPT
+export XAI_API_KEY="xai-..."                      # Grok
+export OPENROUTER_API_KEY="..."                   # OpenRouter (free models)
+export GROQ_API_KEY="..."                         # Groq Cloud (free tier)
+ollama serve                                      # Local AI (no key needed)
+codineer login                                    # Or OAuth
 
-# Free cloud providers
-export OPENROUTER_API_KEY="..."         # OpenRouter (free models available)
-export GROQ_API_KEY="..."               # Groq Cloud (generous free tier)
+# 2. Initialize project context (optional)
+codineer init
 
-# Local models (no API key needed)
-ollama serve                            # Start Ollama, then run codineer
-codineer --model ollama/qwen3-coder     # Specify model explicitly
-
-# Or configure everything in settings.json (see Configuration section)
-# ~/.codineer/settings.json:
-#   { "model": "sonnet", "env": { "ANTHROPIC_API_KEY": "sk-ant-..." } }
-
-# OAuth login (stored in keyring)
-codineer login
+# 3. Start coding
+codineer                                          # Interactive REPL
+codineer "explain this project"                   # One-shot prompt
 ```
 
-**2. Initialize your project** (optional but recommended):
-
-```bash
-cd your-project
-codineer init        # generates CODINEER.md with project context
-```
-
-**3. Start coding:**
-
-```bash
-codineer             # open interactive REPL
-```
-
-Codineer auto-detects which provider to use from your environment — no extra configuration needed.
+Codineer auto-detects your provider. No extra flags needed. All credentials can also go in [settings.json](#configuration) instead of shell exports.
 
 ---
 
-## Usage Guide
+## Models & Providers
 
-### Interactive REPL
+### Built-in aliases
 
-The default mode. Launch with no arguments, then type naturally:
-
-```bash
-codineer
-```
-
-Inside the REPL you can use **slash commands** (Tab-autocomplete supported):
-
-**Session & info**
-
-| Command                                | Description                                          |
-| -------------------------------------- | ---------------------------------------------------- |
-| `/help`                                | Show all available commands                          |
-| `/status`                              | Session info: model, tokens, git branch, config      |
-| `/version`                             | Print Codineer version                               |
-| `/model [name]`                        | View or switch the active model                      |
-| `/permissions [mode]`                  | View or change permission mode                       |
-| `/cost`                                | Show token usage and estimated cost                  |
-| `/compact`                             | Compress conversation history to save tokens         |
-| `/clear [--confirm]`                   | Reset conversation (requires `--confirm` to execute) |
-| `/session [list\|switch <id>]`         | List or switch named sessions                        |
-| `/resume <file>`                       | Resume a saved session file                          |
-| `/export [file]`                       | Export conversation to Markdown                      |
-| `/memory`                              | Inspect loaded CODINEER.md memory files              |
-| `/config [env\|hooks\|model\|plugins]` | Inspect merged configuration                         |
-| `/init`                                | Re-generate CODINEER.md for current project          |
-
-**Git & workflow**
-
-| Command              | Description                                    |
-| -------------------- | ---------------------------------------------- |
-| `/diff`              | Show workspace git diff                        |
-| `/branch`            | Show or manage git branches                    |
-| `/commit`            | Create a git commit                            |
-| `/commit-push-pr`    | Commit, push, and create a pull request        |
-| `/pr`                | Create or manage pull requests                 |
-| `/issue`             | Create or browse GitHub issues                 |
-| `/worktree`          | Manage git worktrees                           |
-
-**Agents & plugins**
-
-| Command                              | Description                              |
-| ------------------------------------ | ---------------------------------------- |
-| `/plugin list\|install\|enable\|...` | Manage plugins                           |
-| `/agents`                            | List configured sub-agents               |
-| `/skills`                            | List available skills                    |
-
-**Advanced**
-
-| Command              | Description                                    |
-| -------------------- | ---------------------------------------------- |
-| `/ultraplan`         | Generate a detailed implementation plan        |
-| `/bughunter`         | Systematic bug hunting mode                    |
-| `/teleport`          | Jump to a specific file or symbol              |
-| `/debug-tool-call`   | Debug the last tool call                       |
-| `/vim`               | Toggle Vim-style modal editing                 |
-| `/exit` or `/quit`   | Exit the REPL                                  |
-
-**Keyboard shortcuts:**
-
-| Key                       | Action                                         |
-| ------------------------- | ---------------------------------------------- |
-| `Up` / `Down`             | Browse input history                           |
-| `Tab`                     | Cycle slash command completions                |
-| `Shift+Enter` or `Ctrl+J` | Insert newline (multi-line input)              |
-| `Ctrl+C`                  | Cancel current input or interrupt running tool |
-
-### One-shot Prompts
-
-Run a single prompt and exit — perfect for scripts and CI:
-
-```bash
-codineer "explain this project's architecture"
-codineer prompt "list all TODO comments" --output-format json
-codineer -p "summarize Cargo.toml" --model sonnet
-```
-
-Flags:
-
-| Flag                              | Description                                                  |
-| --------------------------------- | ------------------------------------------------------------ |
-| `-p <text>`                       | One-shot prompt (rest of line is the prompt)                 |
-| `--model <name>`                  | Choose model (see [Model Selection](#model-selection))       |
-| `--output-format text\|json`      | Output format (default: `text`)                              |
-| `--allowedTools <list>`           | Comma-separated tool allowlist (repeatable)                  |
-| `--permission-mode <mode>`        | Permission level (see [Permission Modes](#permission-modes)) |
-| `--dangerously-skip-permissions`  | Skip all permission checks                                   |
-| `--version`, `-V`                 | Print version and build info                                 |
-
-### Session Management
-
-Save and restore conversations across terminal sessions:
-
-```bash
-# Inside the REPL — export to a file
-/export session.json
-
-# Resume later, optionally running slash commands immediately
-codineer --resume session.json
-codineer --resume session.json /status /compact /cost
-```
-
-### Model Selection
-
-Codineer supports short aliases for popular models:
-
-| Alias       | Resolves to                   | Provider  |
+| Alias       | Model                         | Provider  |
 | ----------- | ----------------------------- | --------- |
 | `opus`      | `claude-opus-4-6`             | Anthropic |
 | `sonnet`    | `claude-sonnet-4-6`           | Anthropic |
@@ -278,150 +133,113 @@ codineer --model opus "review my changes"
 codineer --model grok-mini "quick question"
 ```
 
-#### Custom Providers (OpenAI-compatible)
+### Custom providers (OpenAI-compatible)
 
-Use any OpenAI-compatible API via the `provider/model` syntax:
+Use any OpenAI-compatible API with the `provider/model` syntax:
 
-| Prefix                       | Provider    | API key needed? |
-| ---------------------------- | ----------- | --------------- |
-| `ollama/<model>`             | Ollama      | No              |
-| `lmstudio/<model>`           | LM Studio   | No              |
-| `groq/<model>`               | Groq Cloud  | `GROQ_API_KEY`  |
-| `openrouter/<model>`         | OpenRouter  | `OPENROUTER_API_KEY` |
+| Prefix                  | Provider    | API key        |
+| ----------------------- | ----------- | -------------- |
+| `ollama/<model>`        | Ollama      | —              |
+| `lmstudio/<model>`      | LM Studio   | —              |
+| `groq/<model>`          | Groq Cloud  | `GROQ_API_KEY` |
+| `openrouter/<model>`    | OpenRouter  | `OPENROUTER_API_KEY` |
 
 ```bash
 codineer --model ollama/qwen3-coder "refactor this module"
-codineer --model groq/llama-3.3-70b-versatile "explain this function"
-codineer --model ollama   # auto-selects the best coding model from Ollama
+codineer --model groq/llama-3.3-70b-versatile "explain this"
+codineer --model ollama              # auto-pick best coding model
 ```
 
-**Zero-config Ollama**: if no API keys are found and Ollama is running locally, Codineer auto-detects it and picks the best available coding model.
+**Zero-config Ollama**: when no API keys are found and Ollama is running, Codineer auto-detects it and picks the best coding model. Supports `OLLAMA_HOST` env var and remote instances (see [Configuration](#environment-variables)).
 
-**Ollama host resolution** (highest priority first):
+> Models without function calling automatically fall back to text-only mode — every model works.
 
-1. **settings.json**: `{"providers": {"ollama": {"baseUrl": "http://my-server:11434/v1"}}}`
-2. **Environment variable**: `export OLLAMA_HOST=http://192.168.1.100:11434`
-3. **Default**: `http://localhost:11434`
+### Model resolution order
 
-This means remote Ollama instances and non-default ports are fully supported.
+When no `--model` flag is given:
+1. `model` field in settings.json
+2. Auto-detect from available API credentials
+3. Auto-detect running Ollama instance
 
-Configure custom providers in settings:
-
-```json
-{
-  "providers": {
-    "ollama": { "baseUrl": "http://192.168.1.100:11434/v1" },
-    "my-api": { "baseUrl": "https://my-endpoint.com/v1", "apiKeyEnv": "MY_API_KEY" }
-  }
-}
-```
-
-> **Note**: models that do not support function calling will automatically fall back to text-only mode.
-
-Switch model mid-session with `/model <name>`.
-
-Set a persistent default model in your settings file:
-
-```json
-{ "model": "sonnet" }
-```
-
-When no `--model` flag is given, Codineer checks the config `model` field, then auto-detects from available provider credentials, then checks for a running Ollama instance.
-
-### Permission Modes
-
-Control what tools the agent can use:
-
-| Mode                 | What it allows                                     |
-| -------------------- | -------------------------------------------------- |
-| `read-only`          | Read and search tools only — no writes             |
-| `workspace-write`    | Edit files inside the workspace (default)          |
-| `danger-full-access` | Unrestricted tool access including system commands |
-
-```bash
-codineer --permission-mode read-only "audit the codebase"
-codineer --permission-mode danger-full-access "run full test suite and fix failures"
-```
-
-Switch permission mid-session with `/permissions <mode>`.
-
-### Scripting & Automation
-
-Use `--output-format json` and pipe output for integration with other tools:
-
-```bash
-# Extract structured data
-codineer -p "list all public functions in src/" --output-format json | jq '.content[0].text'
-
-# CI pipeline example
-codineer -p "check for security issues" \
-  --permission-mode read-only \
-  --allowedTools read_file,grep_search \
-  --output-format json
-```
+Switch model mid-session: `/model <name>`
 
 ---
 
-## Project Setup
+## Usage
 
-**`CODINEER.md`** is the project memory file — it tells Codineer about your codebase, conventions, and workflows. Generate one automatically:
+### Interactive REPL
 
 ```bash
-codineer init
+codineer
 ```
 
-This creates a `CODINEER.md` in your project root with detected stack, verification commands, and repository shape. Commit it to share context with your whole team.
+Type naturally. Use **slash commands** (Tab-autocomplete supported):
 
-Example `CODINEER.md`:
+| Category | Commands |
+| -------- | -------- |
+| **Info** | `/help` `/status` `/version` `/model` `/cost` `/config` `/memory` |
+| **Session** | `/compact` `/clear` `/session` `/resume` `/export` |
+| **Git** | `/diff` `/branch` `/commit` `/commit-push-pr` `/pr` `/issue` `/worktree` |
+| **Agents** | `/agents` `/skills` `/plugin` |
+| **Advanced** | `/ultraplan` `/bughunter` `/teleport` `/debug-tool-call` `/vim` |
+| **Navigation** | `/init` `/permissions` `/exit` |
 
-```markdown
-# CODINEER.md
+**Keyboard shortcuts:** `Up`/`Down` history, `Tab` completion, `Shift+Enter` newline, `Ctrl+C` cancel.
 
-## Detected stack
+### One-shot prompts
 
-- Languages: Rust, TypeScript
-
-## Verification
-
-- `cargo test --workspace`
-- `npm test`
-
-## Working agreement
-
-- All PRs require passing CI
-- Use conventional commits
+```bash
+codineer "explain this project's architecture"
+codineer -p "list all TODO comments" --output-format json
+codineer --model sonnet --permission-mode read-only "audit the codebase"
 ```
 
-Codineer walks up the directory tree from your workspace root and loads all matching instruction files:
+| Flag | Description |
+| ---- | ----------- |
+| `-p <text>` | One-shot prompt |
+| `--model <name>` | Choose model |
+| `--output-format text\|json` | Output format |
+| `--allowedTools <list>` | Restrict tool access (comma-separated) |
+| `--permission-mode <mode>` | `read-only`, `workspace-write`, `danger-full-access` |
+| `--resume <file>` | Resume a saved session |
+| `-V`, `--version` | Print version |
 
-| File                        | Purpose                                       |
-| --------------------------- | --------------------------------------------- |
-| `CODINEER.md`               | Primary project context (commit this)         |
-| `CODINEER.local.md`         | Personal overrides (gitignore this)           |
-| `.codineer/CODINEER.md`     | Alternative location inside `.codineer/` dir  |
-| `.codineer/instructions.md` | Additional instructions                       |
+### Permission modes
+
+| Mode | Allows |
+| ---- | ------ |
+| `read-only` | Read and search only — no writes |
+| `workspace-write` | Edit files inside the workspace (default) |
+| `danger-full-access` | Unrestricted access including system commands |
+
+### Scripting & CI
+
+```bash
+codineer -p "check for security issues" \
+  --permission-mode read-only \
+  --allowedTools read_file,grep_search \
+  --output-format json | jq '.content[0].text'
+```
 
 ---
 
 ## Configuration
 
-### Config file hierarchy
+### Settings files
 
-Codineer merges settings from multiple files (highest to lowest precedence):
+Codineer merges JSON settings from multiple files (highest to lowest precedence):
 
 | File | Scope | Committed? |
 | ---- | ----- | ---------- |
 | `.codineer/settings.local.json` | Project — local overrides | No (gitignored) |
-| `.codineer/settings.json` | Project — shared team settings | Yes |
-| `.codineer.json` | Project — flat config (alternative) | Yes |
-| `~/.codineer/settings.json` | User — global settings | — |
-| `~/.codineer.json` | User — global flat config (alternative) | — |
+| `.codineer/settings.json` | Project — team settings | Yes |
+| `.codineer.json` | Project — flat config | Yes |
+| `~/.codineer/settings.json` | User — global | — |
+| `~/.codineer.json` | User — global flat config | — |
 
-All files share the same JSON schema. Values in higher-priority files override lower ones; objects like `env`, `providers`, and `mcpServers` are deep-merged.
+All files use the same schema. Objects like `env`, `providers`, and `mcpServers` are deep-merged across layers.
 
 ### Settings reference
-
-A settings file is a JSON object with the following optional keys:
 
 ```json
 {
@@ -429,21 +247,15 @@ A settings file is a JSON object with the following optional keys:
   "permissionMode": "workspace-write",
   "env": {
     "ANTHROPIC_API_KEY": "sk-ant-...",
-    "GROQ_API_KEY": "gsk_...",
     "OLLAMA_HOST": "http://192.168.1.100:11434"
   },
   "providers": {
     "ollama": { "baseUrl": "http://my-server:11434/v1" },
     "my-api": { "baseUrl": "https://api.example.com/v1", "apiKeyEnv": "MY_KEY" }
   },
-  "mcpServers": {
-    "my-server": { "command": "node", "args": ["server.js"] }
-  },
+  "mcpServers": { "my-server": { "command": "node", "args": ["server.js"] } },
   "plugins": ["my-plugin"],
-  "hooks": {
-    "PreToolUse": ["lint-check"],
-    "PostToolUse": ["notify"]
-  }
+  "hooks": { "PreToolUse": ["lint-check"], "PostToolUse": ["notify"] }
 }
 ```
 
@@ -451,148 +263,131 @@ A settings file is a JSON object with the following optional keys:
 | --- | ---- | ----------- |
 | `model` | string | Default model (e.g. `"sonnet"`, `"ollama/qwen3-coder"`) |
 | `permissionMode` | string | `"read-only"`, `"workspace-write"`, or `"danger-full-access"` |
-| `env` | object | Key-value pairs injected as environment variables at startup. Shell exports take precedence over values here. Accepts any variable: API keys, `OLLAMA_HOST`, `NO_COLOR`, etc. |
-| `providers` | object | Custom OpenAI-compatible providers (see [Custom Providers](#custom-providers-openai-compatible)) |
-| `mcpServers` | object | MCP server definitions (see [MCP Servers](#mcp-servers)) |
-| `plugins` | array | Plugin names to load (see [Plugins](#plugins)) |
-| `hooks` | object | Shell commands for `PreToolUse` / `PostToolUse` lifecycle hooks |
+| `env` | object | Environment variables injected at startup. Shell exports take precedence. |
+| `providers` | object | Custom OpenAI-compatible provider endpoints |
+| `mcpServers` | object | MCP server definitions (stdio, sse, http, ws) |
+| `plugins` | array | Plugin names to load |
+| `hooks` | object | Shell commands for `PreToolUse` / `PostToolUse` hooks |
 
-### Inspecting merged config
-
-```bash
-/config          # full merged config
-/config env      # environment variables section
-/config model    # model settings
-/config plugins  # plugin configuration
-/config hooks    # hook configuration
-```
+Inspect merged config at runtime: `/config`, `/config env`, `/config model`
 
 ### Environment variables
 
-These variables can be set via shell export **or** the `"env"` section of settings.json (shell exports always take precedence):
+Set via shell export **or** the `"env"` section in settings.json (shell exports take precedence):
 
-| Variable                    | Purpose                                    |
-| --------------------------- | ------------------------------------------ |
-| `ANTHROPIC_API_KEY`         | Claude API key                             |
-| `ANTHROPIC_AUTH_TOKEN`      | Bearer token (alternative to API key)      |
-| `XAI_API_KEY`               | xAI / Grok API key                         |
-| `OPENAI_API_KEY`            | OpenAI API key                             |
-| `OPENROUTER_API_KEY`        | OpenRouter API key (free models available) |
-| `GROQ_API_KEY`              | Groq Cloud API key (free tier available)   |
-| `OLLAMA_HOST`               | Ollama endpoint (e.g. `http://192.168.1.100:11434`) |
-| `CODINEER_WORKSPACE_ROOT`   | Override workspace root path               |
-| `CODINEER_CONFIG_HOME`      | Override config directory (`~/.codineer`)  |
-| `CODINEER_PERMISSION_MODE`  | Default permission mode                    |
-| `NO_COLOR`                  | Disable ANSI color output                  |
+| Variable | Purpose |
+| -------- | ------- |
+| `ANTHROPIC_API_KEY` | Claude API key |
+| `ANTHROPIC_AUTH_TOKEN` | Bearer token (alternative) |
+| `XAI_API_KEY` | xAI / Grok API key |
+| `OPENAI_API_KEY` | OpenAI API key |
+| `OPENROUTER_API_KEY` | OpenRouter API key |
+| `GROQ_API_KEY` | Groq Cloud API key |
+| `OLLAMA_HOST` | Ollama endpoint (e.g. `http://192.168.1.100:11434`) |
+| `CODINEER_WORKSPACE_ROOT` | Override workspace root |
+| `CODINEER_CONFIG_HOME` | Override config dir (`~/.codineer`) |
+| `CODINEER_PERMISSION_MODE` | Default permission mode |
+| `NO_COLOR` | Disable ANSI colors |
 
-Three ways to provide API credentials (in order of precedence):
-1. **Shell environment** — `export ANTHROPIC_API_KEY=sk-ant-...`
-2. **Settings file** — `{"env": {"ANTHROPIC_API_KEY": "sk-ant-..."}}`
-3. **OAuth** — `codineer login` (stored in system keyring)
+**Credential precedence:** shell environment → settings.json `"env"` → OAuth (`codineer login`)
+
+---
+
+## Project Context
+
+`CODINEER.md` is the project memory file. It tells the AI about your codebase, conventions, and workflows.
+
+```bash
+codineer init        # auto-generate from detected stack
+```
+
+Codineer walks up the directory tree and loads all matching instruction files:
+
+| File | Purpose |
+| ---- | ------- |
+| `CODINEER.md` | Primary context (commit this) |
+| `CODINEER.local.md` | Personal overrides (gitignore this) |
+| `.codineer/CODINEER.md` | Alternative location |
+| `.codineer/instructions.md` | Additional instructions |
 
 ---
 
 ## Extending Codineer
 
-### MCP Servers
+### MCP servers
 
-Codineer supports the [Model Context Protocol](https://modelcontextprotocol.io) for connecting external tools. Configure MCP servers in your settings:
+Connect external tools via the [Model Context Protocol](https://modelcontextprotocol.io):
 
 ```json
 {
   "mcpServers": {
-    "my-server": {
-      "command": "node",
-      "args": ["path/to/mcp-server.js"],
-      "type": "stdio"
-    }
+    "my-server": { "command": "node", "args": ["mcp-server.js"] }
   }
 }
 ```
 
-Supported transport types: `stdio` (default), `sse`, `http`, `ws` (or `websocket`).
+Transports: `stdio` (default), `sse`, `http`, `ws`.
 
 ### Plugins
 
-Plugins add custom tools and hooks. Manage them from the REPL:
-
 ```bash
-/plugin list                          # list installed plugins
-/plugin install ./path/to/plugin      # install a local plugin
-/plugin enable my-plugin              # enable a plugin
-/plugin disable my-plugin             # disable a plugin
-/plugin update my-plugin              # update to latest
-/plugin uninstall my-plugin-id        # remove a plugin
+/plugin list                        # list installed
+/plugin install ./path/to/plugin    # install local
+/plugin enable my-plugin            # enable
 ```
 
-### Agents & Skills
+### Agents & skills
 
-**Agents** are named sub-agent configurations for specialized tasks:
-
-```bash
-codineer agents          # list configured agents
-codineer agents --help   # show agent options
-/agents                  # same, inside the REPL
-```
-
-**Skills** are reusable prompt templates. Codineer searches for skills in `.codineer/skills/`, `$CODINEER_CONFIG_HOME/skills/`, and `~/.codineer/skills/`:
+**Agents** are named sub-agent configs for specialized tasks. **Skills** are reusable prompt templates.
 
 ```bash
-codineer skills          # list available skills
-codineer /skills help    # show skill details
-/skills                  # same, inside the REPL
+codineer agents          # list agents
+codineer skills          # list skills
+/agents                  # inside REPL
+/skills                  # inside REPL
 ```
+
+Skills are discovered from `.codineer/skills/`, `~/.codineer/skills/`, and `$CODINEER_CONFIG_HOME/skills/`.
 
 ---
 
-## Built-in Tools
+## Reference
 
-Codineer ships with a rich set of tools the AI can invoke:
+### Built-in tools
 
-| Tool               | Description                                         |
-| ------------------ | --------------------------------------------------- |
-| `bash`             | Execute shell commands                              |
-| `PowerShell`       | Execute PowerShell commands (Windows)               |
-| `read_file`        | Read file contents with optional offset/limit       |
-| `write_file`       | Create or overwrite files                           |
-| `edit_file`        | Targeted string replacement in files                |
-| `glob_search`      | Find files matching a glob pattern                  |
-| `grep_search`      | Search file contents with regex                     |
-| `WebFetch`         | Fetch and summarize a web page                      |
-| `WebSearch`        | Search the web via DuckDuckGo                       |
-| `NotebookEdit`     | Edit Jupyter notebook cells                         |
-| `TodoWrite`        | Manage a structured task list                       |
-| `Agent`            | Launch a sub-agent for complex tasks                |
-| `Skill`            | Load and execute a skill prompt                     |
-| `ToolSearch`       | Search available tools by keyword                   |
-| `REPL`             | Run a persistent language REPL (Python, Node, etc.) |
-| `Sleep`            | Pause execution for a given duration                |
-| `SendUserMessage`  | Send a message to the user                          |
-| `Config`           | Read or write configuration values                  |
-| `StructuredOutput` | Return structured JSON output                       |
+| Tool | Description |
+| ---- | ----------- |
+| `bash` | Execute shell commands |
+| `PowerShell` | Execute PowerShell commands (Windows) |
+| `read_file` | Read file contents |
+| `write_file` | Create or overwrite files |
+| `edit_file` | Targeted string replacement |
+| `glob_search` | Find files by glob pattern |
+| `grep_search` | Search file contents with regex |
+| `WebFetch` | Fetch and summarize web pages |
+| `WebSearch` | Web search via DuckDuckGo |
+| `NotebookEdit` | Edit Jupyter notebook cells |
+| `TodoWrite` | Manage structured task lists |
+| `Agent` | Launch sub-agents |
+| `Skill` | Execute skill prompts |
+| `REPL` | Run code in Python, Node, or shell |
+| `ToolSearch` | Search available tools |
+| `Config` | Read/write config values |
+| `StructuredOutput` | Return structured JSON |
 
----
+### Crate structure
 
-## Publishing to crates.io
+All crates are published to crates.io. Install `codineer-cli` — the others are internal dependencies.
 
-All crates are published to crates.io with a `codineer-` prefix. Releases are automated via GitHub Actions — tag a version to trigger the release pipeline:
-
-```bash
-git tag v0.6.0
-git push origin v0.6.0
-```
-
-| Crate               | Description                            |
-| -------------------- | -------------------------------------- |
-| `codineer-cli`       | CLI binary — **install this one**      |
-| `codineer-runtime`   | Core runtime engine                    |
-| `codineer-api`       | AI provider API clients                |
-| `codineer-tools`     | Built-in tool definitions & execution  |
-| `codineer-plugins`   | Plugin system and hooks                |
-| `codineer-commands`  | Slash commands and discovery           |
-| `codineer-lsp`       | LSP client integration                 |
-
-> **Note:** The library crates are internal implementation details of `codineer-cli`. They are published to satisfy crates.io dependency requirements but their APIs are not guaranteed stable for external use.
+| Crate | Role |
+| ----- | ---- |
+| `codineer-cli` | CLI binary (**install this**) |
+| `codineer-runtime` | Core runtime engine |
+| `codineer-api` | AI provider API clients |
+| `codineer-tools` | Tool definitions & execution |
+| `codineer-plugins` | Plugin system and hooks |
+| `codineer-commands` | Slash commands |
+| `codineer-lsp` | LSP client integration |
 
 ---
 
