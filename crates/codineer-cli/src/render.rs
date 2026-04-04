@@ -12,13 +12,7 @@ use syntect::parsing::SyntaxSet;
 use syntect::util::{as_24_bit_terminal_escaped, LinesWithEndings};
 
 fn color_enabled() -> bool {
-    if std::env::var_os("NO_COLOR").is_some() {
-        return false;
-    }
-    if let Some(val) = std::env::var_os("CLICOLOR") {
-        return val != "0";
-    }
-    true
+    crate::style::color_for_stdout()
 }
 
 fn styled(text: &str, color: Color) -> String {
