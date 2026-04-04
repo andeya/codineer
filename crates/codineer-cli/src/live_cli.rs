@@ -1,6 +1,6 @@
 use std::env;
 use std::fs;
-use std::io::{self, IsTerminal};
+use std::io;
 use std::process::Command;
 use std::sync::Arc;
 
@@ -59,6 +59,20 @@ pub(crate) struct LiveCli {
 }
 
 impl LiveCli {
+    fn runtime_params(&self, session: Session, emit_output: bool) -> RuntimeParams {
+        RuntimeParams {
+            session,
+            model: self.model.clone(),
+            system_prompt: self.system_prompt.clone(),
+            enable_tools: true,
+            emit_output,
+            allowed_tools: self.allowed_tools.clone(),
+            permission_mode: self.permission_mode,
+            progress_reporter: None,
+            mcp_manager: Arc::clone(&self.mcp_manager),
+        }
+    }
+
     pub(crate) fn new(
         model: String,
         enable_tools: bool,
@@ -97,7 +111,7 @@ impl LiveCli {
     }
 
     fn startup_banner(&self) -> String {
-        let color = io::stdout().is_terminal();
+        let color = crate::style::color_for_stdout();
         let cwd = env::current_dir().ok();
         let cwd_display = cwd.as_ref().map_or_else(
             || "<unknown>".to_string(),
@@ -118,17 +132,11 @@ impl LiveCli {
         let has_codineer_md = cwd
             .as_ref()
             .is_some_and(|path| path.join("CODINEER.md").is_file());
-        let mut lines = if color {
-            vec![
-                format!("{} \x1b[2m· ready\x1b[0m", logo_line(true)),
-                format!("   \x1b[2m{}\x1b[0m", "Your local AI coding agent"),
-            ]
-        } else {
-            vec![
-                format!("{} · ready", logo_line(false)),
-                "  Your local AI coding agent".to_string(),
-            ]
-        };
+        let p = crate::style::Palette::new(color);
+        let mut lines = vec![
+            format!("{} {}· ready{}", logo_line(color), p.dim, p.r),
+            format!("   {}Your local AI coding agent{}", p.dim, p.r),
+        ];
         lines.extend([
             String::new(),
             format!("  Workspace        {workspace_summary}"),
@@ -210,17 +218,7 @@ impl LiveCli {
 
     fn run_prompt_json(&mut self, input: &str) -> Result<(), Box<dyn std::error::Error>> {
         let session = self.runtime.session().clone();
-        let mut runtime = build_runtime(RuntimeParams {
-            session,
-            model: self.model.clone(),
-            system_prompt: self.system_prompt.clone(),
-            enable_tools: true,
-            emit_output: false,
-            allowed_tools: self.allowed_tools.clone(),
-            permission_mode: self.permission_mode,
-            progress_reporter: None,
-            mcp_manager: Arc::clone(&self.mcp_manager),
-        })?;
+        let mut runtime = build_runtime(self.runtime_params(session, false))?;
         let mut permission_prompter = CliPermissionPrompter::new(self.permission_mode);
         let summary = runtime.run_turn(input, Some(&mut permission_prompter))?;
         self.runtime = runtime;
@@ -459,17 +457,9 @@ impl LiveCli {
         let previous = self.model.clone();
         let session = self.runtime.session().clone();
         let message_count = session.messages.len();
-        self.runtime = build_runtime(RuntimeParams {
-            session,
-            model: model.clone(),
-            system_prompt: self.system_prompt.clone(),
-            enable_tools: true,
-            emit_output: true,
-            allowed_tools: self.allowed_tools.clone(),
-            permission_mode: self.permission_mode,
-            progress_reporter: None,
-            mcp_manager: Arc::clone(&self.mcp_manager),
-        })?;
+        let mut params = self.runtime_params(session, true);
+        params.model = model.clone();
+        self.runtime = build_runtime(params)?;
         self.model.clone_from(&model);
         println!(
             "{}",
@@ -504,17 +494,7 @@ impl LiveCli {
         let previous = self.permission_mode.as_str().to_string();
         let session = self.runtime.session().clone();
         self.permission_mode = permission_mode_from_label(normalized)?;
-        self.runtime = build_runtime(RuntimeParams {
-            session,
-            model: self.model.clone(),
-            system_prompt: self.system_prompt.clone(),
-            enable_tools: true,
-            emit_output: true,
-            allowed_tools: self.allowed_tools.clone(),
-            permission_mode: self.permission_mode,
-            progress_reporter: None,
-            mcp_manager: Arc::clone(&self.mcp_manager),
-        })?;
+        self.runtime = build_runtime(self.runtime_params(session, true))?;
         println!(
             "{}",
             format_permissions_switch_report(&previous, normalized)
@@ -531,17 +511,7 @@ impl LiveCli {
         }
 
         self.session = create_managed_session_handle()?;
-        self.runtime = build_runtime(RuntimeParams {
-            session: Session::new(),
-            model: self.model.clone(),
-            system_prompt: self.system_prompt.clone(),
-            enable_tools: true,
-            emit_output: true,
-            allowed_tools: self.allowed_tools.clone(),
-            permission_mode: self.permission_mode,
-            progress_reporter: None,
-            mcp_manager: Arc::clone(&self.mcp_manager),
-        })?;
+        self.runtime = build_runtime(self.runtime_params(Session::new(), true))?;
         println!(
             "Session cleared\n  Mode             fresh session\n  Preserved model  {}\n  Permission mode  {}\n  Session          {}",
             self.model,
@@ -568,17 +538,7 @@ impl LiveCli {
         let handle = resolve_session_reference(&session_ref)?;
         let session = Session::load_from_path(&handle.path)?;
         let message_count = session.messages.len();
-        self.runtime = build_runtime(RuntimeParams {
-            session,
-            model: self.model.clone(),
-            system_prompt: self.system_prompt.clone(),
-            enable_tools: true,
-            emit_output: true,
-            allowed_tools: self.allowed_tools.clone(),
-            permission_mode: self.permission_mode,
-            progress_reporter: None,
-            mcp_manager: Arc::clone(&self.mcp_manager),
-        })?;
+        self.runtime = build_runtime(self.runtime_params(session, true))?;
         self.session = handle;
         println!(
             "{}",
@@ -654,17 +614,7 @@ impl LiveCli {
                 let handle = resolve_session_reference(target)?;
                 let session = Session::load_from_path(&handle.path)?;
                 let message_count = session.messages.len();
-                self.runtime = build_runtime(RuntimeParams {
-                    session,
-                    model: self.model.clone(),
-                    system_prompt: self.system_prompt.clone(),
-                    enable_tools: true,
-                    emit_output: true,
-                    allowed_tools: self.allowed_tools.clone(),
-                    permission_mode: self.permission_mode,
-                    progress_reporter: None,
-                    mcp_manager: Arc::clone(&self.mcp_manager),
-                })?;
+                self.runtime = build_runtime(self.runtime_params(session, true))?;
                 self.session = handle;
                 println!(
                     "Session switched\n  Active session   {}\n  File             {}\n  Messages         {}",
@@ -699,17 +649,8 @@ impl LiveCli {
     }
 
     fn reload_runtime_features(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        self.runtime = build_runtime(RuntimeParams {
-            session: self.runtime.session().clone(),
-            model: self.model.clone(),
-            system_prompt: self.system_prompt.clone(),
-            enable_tools: true,
-            emit_output: true,
-            allowed_tools: self.allowed_tools.clone(),
-            permission_mode: self.permission_mode,
-            progress_reporter: None,
-            mcp_manager: Arc::clone(&self.mcp_manager),
-        })?;
+        let session = self.runtime.session().clone();
+        self.runtime = build_runtime(self.runtime_params(session, true))?;
         self.persist_session()
     }
 
@@ -718,17 +659,7 @@ impl LiveCli {
         let removed = result.removed_message_count;
         let kept = result.compacted_session.messages.len();
         let skipped = removed == 0;
-        self.runtime = build_runtime(RuntimeParams {
-            session: result.compacted_session,
-            model: self.model.clone(),
-            system_prompt: self.system_prompt.clone(),
-            enable_tools: true,
-            emit_output: true,
-            allowed_tools: self.allowed_tools.clone(),
-            permission_mode: self.permission_mode,
-            progress_reporter: None,
-            mcp_manager: Arc::clone(&self.mcp_manager),
-        })?;
+        self.runtime = build_runtime(self.runtime_params(result.compacted_session, true))?;
         self.persist_session()?;
         println!("{}", format_compact_report(removed, kept, skipped));
         Ok(())
@@ -741,17 +672,10 @@ impl LiveCli {
         progress: Option<InternalPromptProgressReporter>,
     ) -> Result<String, Box<dyn std::error::Error>> {
         let session = self.runtime.session().clone();
-        let mut runtime = build_runtime(RuntimeParams {
-            session,
-            model: self.model.clone(),
-            system_prompt: self.system_prompt.clone(),
-            enable_tools,
-            emit_output: false,
-            allowed_tools: self.allowed_tools.clone(),
-            permission_mode: self.permission_mode,
-            progress_reporter: progress,
-            mcp_manager: Arc::clone(&self.mcp_manager),
-        })?;
+        let mut params = self.runtime_params(session, false);
+        params.enable_tools = enable_tools;
+        params.progress_reporter = progress;
+        let mut runtime = build_runtime(params)?;
         let mut permission_prompter = CliPermissionPrompter::new(self.permission_mode);
         let summary = runtime.run_turn(prompt, Some(&mut permission_prompter))?;
         Ok(final_assistant_text(&summary).trim().to_string())
@@ -941,7 +865,15 @@ pub(crate) fn run_repl(
     permission_mode: PermissionMode,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut cli = LiveCli::new(model, true, allowed_tools, permission_mode)?;
-    let mut editor = input::LineEditor::new("> ", slash_command_completion_candidates());
+    let p = crate::style::Palette::for_stdout();
+    let prompt_string;
+    let prompt = if p.violet.is_empty() {
+        "❯ "
+    } else {
+        prompt_string = format!("{}❯{} ", p.violet, p.r);
+        &prompt_string
+    };
+    let mut editor = input::LineEditor::new(prompt, slash_command_completion_candidates());
     println!("{}", cli.startup_banner());
 
     loop {
@@ -953,6 +885,7 @@ pub(crate) fn run_repl(
                 }
                 if matches!(trimmed, "/exit" | "/quit") {
                     cli.persist_session()?;
+                    println!("Goodbye!");
                     break;
                 }
                 if let Some(command) = SlashCommand::parse(trimmed) {
@@ -967,6 +900,7 @@ pub(crate) fn run_repl(
             input::ReadOutcome::Cancel => {}
             input::ReadOutcome::Exit => {
                 cli.persist_session()?;
+                println!("Goodbye!");
                 break;
             }
         }
