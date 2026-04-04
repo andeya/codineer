@@ -98,6 +98,9 @@ pub(crate) fn print_help_to(out: &mut impl io::Write) -> io::Result<()> {
             "  ~/.codineer/settings.json             Global settings",
             "  ~/.codineer.json                      Global flat config",
             "  CODINEER.md                           Project context and instructions",
+            "",
+            "  Supported keys: model, env, hooks, plugins, mcpServers, permissionMode",
+            "  Example: {\"model\": \"sonnet\", \"env\": {\"ANTHROPIC_API_KEY\": \"sk-…\"}}",
         ],
     )?;
     print_help_slash_reference(out)?;

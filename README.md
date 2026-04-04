@@ -243,6 +243,14 @@ codineer --model grok-mini "quick question"
 
 Switch model mid-session with `/model <name>`.
 
+Set a persistent default model in your settings file:
+
+```json
+{ "model": "sonnet" }
+```
+
+When no `--model` flag is given, Codineer checks the config `model` field before auto-detecting from available provider credentials.
+
 ### Permission Modes
 
 Control what tools the agent can use:

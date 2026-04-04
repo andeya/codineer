@@ -47,6 +47,14 @@ pub(crate) fn build_runtime(
         mcp_manager,
     } = params;
     let (feature_config, tool_registry) = build_runtime_plugin_state()?;
+    let model = if model == "auto" {
+        feature_config
+            .model()
+            .map(api::resolve_model_alias)
+            .unwrap_or(model)
+    } else {
+        model
+    };
     Ok(ConversationRuntime::new_with_features(
         session,
         DefaultRuntimeClient::new(

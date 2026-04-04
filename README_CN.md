@@ -243,6 +243,14 @@ codineer --model grok-mini "快速问一个问题"
 
 会话过程中可通过 `/model <名称>` 切换模型。
 
+在配置文件中设置持久化的默认模型：
+
+```json
+{ "model": "sonnet" }
+```
+
+未指定 `--model` 参数时，Codineer 优先使用配置中的 `model` 字段，再根据可用的 API 凭据自动检测。
+
 ### 权限模式
 
 精确控制 Agent 可以使用哪些工具：

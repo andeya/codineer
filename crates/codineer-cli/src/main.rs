@@ -1224,7 +1224,7 @@ mod tests {
 
         let rendered = String::from_utf8(out).expect("utf8");
         assert!(rendered.contains("Heading"));
-        if std::env::var_os("NO_COLOR").is_none() {
+        if crate::style::color_for_stdout() {
             assert!(rendered.contains('\u{1b}'));
         }
     }
