@@ -123,6 +123,7 @@ export GROQ_API_KEY="..."               # Groq Cloud（慷慨的免费额度）
 # 本地模型（无需 API Key）
 ollama serve                            # 启动 Ollama 后运行 codineer
 codineer --model ollama/qwen3-coder     # 明确指定模型
+export OLLAMA_HOST=http://192.168.1.100:11434  # 远程/非默认端口 Ollama
 
 # 或通过配置文件（持久化，无需每次 export）
 # ~/.codineer/settings.json:
@@ -294,12 +295,20 @@ codineer --model ollama   # 自动从 Ollama 选择最佳编码模型
 
 **Ollama 零配置**：当没有任何 API key 且 Ollama 正在运行时，Codineer 会自动检测并选择最佳编码模型。
 
+**Ollama 地址解析**（优先级从高到低）：
+
+1. **settings.json**：`{"providers": {"ollama": {"baseUrl": "http://my-server:11434/v1"}}}`
+2. **环境变量**：`export OLLAMA_HOST=http://192.168.1.100:11434`
+3. **默认值**：`http://localhost:11434`
+
+因此完全支持远程 Ollama 实例和非默认端口。
+
 在配置文件中添加自定义 Provider：
 
 ```json
 {
   "providers": {
-    "ollama": { "baseUrl": "http://localhost:11434/v1" },
+    "ollama": { "baseUrl": "http://192.168.1.100:11434/v1" },
     "my-api": { "baseUrl": "https://my-endpoint.com/v1", "apiKeyEnv": "MY_API_KEY" }
   }
 }

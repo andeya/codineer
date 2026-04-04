@@ -123,6 +123,7 @@ export GROQ_API_KEY="..."               # Groq Cloud (generous free tier)
 # Local models (no API key needed)
 ollama serve                            # Start Ollama, then run codineer
 codineer --model ollama/qwen3-coder     # Specify model explicitly
+export OLLAMA_HOST=http://192.168.1.100:11434  # Remote/custom-port Ollama
 
 # Or via settings.json (persistent, no export needed)
 # ~/.codineer/settings.json:
@@ -294,12 +295,20 @@ codineer --model ollama   # auto-selects the best coding model from Ollama
 
 **Zero-config Ollama**: if no API keys are found and Ollama is running locally, Codineer auto-detects it and picks the best available coding model.
 
+**Ollama host resolution** (highest priority first):
+
+1. **settings.json**: `{"providers": {"ollama": {"baseUrl": "http://my-server:11434/v1"}}}`
+2. **Environment variable**: `export OLLAMA_HOST=http://192.168.1.100:11434`
+3. **Default**: `http://localhost:11434`
+
+This means remote Ollama instances and non-default ports are fully supported.
+
 Configure custom providers in settings:
 
 ```json
 {
   "providers": {
-    "ollama": { "baseUrl": "http://localhost:11434/v1" },
+    "ollama": { "baseUrl": "http://192.168.1.100:11434/v1" },
     "my-api": { "baseUrl": "https://my-endpoint.com/v1", "apiKeyEnv": "MY_API_KEY" }
   }
 }

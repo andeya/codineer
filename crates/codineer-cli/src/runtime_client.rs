@@ -334,11 +334,13 @@ impl DefaultRuntimeClient {
 
 /// Probe local Ollama instance and pick the best coding model.
 /// Returns `Some("ollama/<model>")` if Ollama is running and has models.
+///
+/// Base URL resolution order:
+///   1. `providers.ollama.baseUrl` in settings.json
+///   2. `OLLAMA_HOST` environment variable
+///   3. `http://localhost:11434` (default)
 fn detect_ollama_model(providers: &BTreeMap<String, CustomProviderConfig>) -> Option<String> {
-    let base = providers
-        .get("ollama")
-        .map(|c| c.base_url.trim_end_matches("/v1").to_string())
-        .unwrap_or_else(|| "http://localhost:11434".to_string());
+    let base = resolve_ollama_base_url(providers);
 
     let tags_url = format!("{}/api/tags", base.trim_end_matches('/'));
     let client = reqwest::blocking::Client::builder()
@@ -360,6 +362,23 @@ fn detect_ollama_model(providers: &BTreeMap<String, CustomProviderConfig>) -> Op
     }
     let best = pick_best_coding_model(&names);
     Some(format!("ollama/{best}"))
+}
+
+/// Resolve Ollama base URL from config, env, or default.
+fn resolve_ollama_base_url(providers: &BTreeMap<String, CustomProviderConfig>) -> String {
+    if let Some(config) = providers.get("ollama") {
+        return config.base_url.trim_end_matches("/v1").to_string();
+    }
+    if let Ok(host) = std::env::var("OLLAMA_HOST") {
+        let host = host.trim().trim_end_matches('/');
+        if !host.is_empty() {
+            if host.starts_with("http://") || host.starts_with("https://") {
+                return host.to_string();
+            }
+            return format!("http://{host}");
+        }
+    }
+    "http://localhost:11434".to_string()
 }
 
 /// Rank Ollama models by coding suitability.
@@ -1086,5 +1105,59 @@ mod tests {
         let resolver = ModelResolver::new(&providers);
         let result = resolver.resolve("lmstudio/my-model").unwrap();
         assert_eq!(result.model, "lmstudio/my-model");
+    }
+
+    // -----------------------------------------------------------------------
+    // resolve_ollama_base_url
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn ollama_base_url_defaults_to_localhost() {
+        std::env::remove_var("OLLAMA_HOST");
+        let providers = empty_providers();
+        assert_eq!(
+            resolve_ollama_base_url(&providers),
+            "http://localhost:11434"
+        );
+    }
+
+    #[test]
+    fn ollama_base_url_from_config_takes_priority() {
+        std::env::set_var("OLLAMA_HOST", "http://env-host:9999");
+        let mut providers = BTreeMap::new();
+        providers.insert(
+            "ollama".to_string(),
+            make_provider("http://config-host:11434/v1", None),
+        );
+        let url = resolve_ollama_base_url(&providers);
+        std::env::remove_var("OLLAMA_HOST");
+        assert_eq!(url, "http://config-host:11434");
+    }
+
+    #[test]
+    fn ollama_base_url_from_env_var() {
+        std::env::set_var("OLLAMA_HOST", "http://remote-host:11434");
+        let providers = empty_providers();
+        let url = resolve_ollama_base_url(&providers);
+        std::env::remove_var("OLLAMA_HOST");
+        assert_eq!(url, "http://remote-host:11434");
+    }
+
+    #[test]
+    fn ollama_base_url_from_env_var_bare_host_port() {
+        std::env::set_var("OLLAMA_HOST", "192.168.1.100:11434");
+        let providers = empty_providers();
+        let url = resolve_ollama_base_url(&providers);
+        std::env::remove_var("OLLAMA_HOST");
+        assert_eq!(url, "http://192.168.1.100:11434");
+    }
+
+    #[test]
+    fn ollama_base_url_from_env_var_strips_trailing_slash() {
+        std::env::set_var("OLLAMA_HOST", "http://my-server:11434/");
+        let providers = empty_providers();
+        let url = resolve_ollama_base_url(&providers);
+        std::env::remove_var("OLLAMA_HOST");
+        assert_eq!(url, "http://my-server:11434");
     }
 }
