@@ -98,9 +98,11 @@ impl ConfigLoader {
             },
             oauth: parse_optional_oauth_config(&merged_value, "merged settings.oauth")?,
             model: parse_optional_model(&merged_value),
+            fallback_models: parse_optional_fallback_models(&merged_value),
             permission_mode: parse_optional_permission_mode(&merged_value)?,
             sandbox: parse_optional_sandbox_config(&merged_value)?,
             providers: parse_optional_providers_config(&merged_value)?,
+            credentials: parse_optional_credentials_config(&merged_value)?,
         };
 
         for w in &config_warnings {
@@ -185,6 +187,19 @@ fn parse_optional_model(root: &JsonValue) -> Option<String> {
         .and_then(|object| object.get("model"))
         .and_then(JsonValue::as_str)
         .map(ToOwned::to_owned)
+}
+
+fn parse_optional_fallback_models(root: &JsonValue) -> Vec<String> {
+    root.as_object()
+        .and_then(|object| object.get("fallbackModels"))
+        .and_then(JsonValue::as_array)
+        .map(|arr| {
+            arr.iter()
+                .filter_map(JsonValue::as_str)
+                .map(ToOwned::to_owned)
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 fn parse_optional_providers_config(
@@ -571,6 +586,33 @@ fn optional_string_map(
         }
         None => Ok(None),
     }
+}
+
+fn parse_optional_credentials_config(root: &JsonValue) -> Result<CredentialConfig, ConfigError> {
+    let Some(object) = root.as_object() else {
+        return Ok(CredentialConfig::default());
+    };
+    let Some(cred_value) = object.get("credentials") else {
+        return Ok(CredentialConfig::default());
+    };
+    let cred = expect_object(cred_value, "merged settings.credentials")?;
+
+    let default_source =
+        optional_string(cred, "defaultSource", "merged settings.credentials")?.map(str::to_string);
+    let auto_discover =
+        optional_bool(cred, "autoDiscover", "merged settings.credentials")?.unwrap_or(true);
+
+    let claude_code_enabled = cred
+        .get("claudeCode")
+        .and_then(JsonValue::as_object)
+        .and_then(|obj| obj.get("enabled").and_then(JsonValue::as_bool))
+        .unwrap_or(true);
+
+    Ok(CredentialConfig {
+        default_source,
+        auto_discover,
+        claude_code_enabled: auto_discover && claude_code_enabled,
+    })
 }
 
 fn deep_merge_objects(

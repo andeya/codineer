@@ -455,3 +455,141 @@ fn parses_permission_and_sandbox_mode_labels() {
 
     fs::remove_dir_all(root).expect("cleanup");
 }
+
+#[test]
+fn parses_credentials_config() {
+    let root = temp_dir();
+    let cwd = root.join("project");
+    let home = root.join("home").join(".codineer");
+    fs::create_dir_all(&home).expect("home dir");
+    fs::create_dir_all(&cwd).expect("project dir");
+    fs::write(
+        home.join("settings.json"),
+        r#"{"credentials":{"defaultSource":"codineer-oauth","autoDiscover":true,"claudeCode":{"enabled":false}}}"#,
+    )
+    .expect("write settings");
+
+    let loaded = ConfigLoader::new(&cwd, &home).load().expect("load");
+    let cred = loaded.credentials();
+    assert_eq!(cred.default_source.as_deref(), Some("codineer-oauth"));
+    assert!(cred.auto_discover);
+    assert!(!cred.claude_code_enabled);
+
+    fs::remove_dir_all(root).expect("cleanup");
+}
+
+#[test]
+fn credentials_config_defaults_when_absent() {
+    let root = temp_dir();
+    let cwd = root.join("project");
+    let home = root.join("home").join(".codineer");
+    fs::create_dir_all(&home).expect("home dir");
+    fs::create_dir_all(&cwd).expect("project dir");
+    fs::write(home.join("settings.json"), r#"{}"#).expect("write settings");
+
+    let loaded = ConfigLoader::new(&cwd, &home).load().expect("load");
+    let cred = loaded.credentials();
+    assert!(cred.default_source.is_none());
+
+    fs::remove_dir_all(root).expect("cleanup");
+}
+
+#[test]
+fn parses_fallback_models_from_settings() {
+    let root = temp_dir();
+    let cwd = root.join("project");
+    let home = root.join("home").join(".codineer");
+    fs::create_dir_all(&home).expect("home dir");
+    fs::create_dir_all(&cwd).expect("project dir");
+    fs::write(
+        home.join("settings.json"),
+        r#"{"fallbackModels":["ollama/qwen3-coder","groq/llama-3.3-70b-versatile"]}"#,
+    )
+    .expect("write settings");
+
+    let loaded = ConfigLoader::new(&cwd, &home).load().expect("load");
+    assert_eq!(
+        loaded.fallback_models(),
+        &["ollama/qwen3-coder", "groq/llama-3.3-70b-versatile"]
+    );
+
+    fs::remove_dir_all(root).expect("cleanup");
+}
+
+#[test]
+fn fallback_models_defaults_to_empty_when_absent() {
+    let root = temp_dir();
+    let cwd = root.join("project");
+    let home = root.join("home").join(".codineer");
+    fs::create_dir_all(&home).expect("home dir");
+    fs::create_dir_all(&cwd).expect("project dir");
+    fs::write(home.join("settings.json"), r#"{"model":"sonnet"}"#).expect("write settings");
+
+    let loaded = ConfigLoader::new(&cwd, &home).load().expect("load");
+    assert!(loaded.fallback_models().is_empty());
+
+    fs::remove_dir_all(root).expect("cleanup");
+}
+
+#[test]
+fn fallback_models_ignores_non_string_elements() {
+    let root = temp_dir();
+    let cwd = root.join("project");
+    let home = root.join("home").join(".codineer");
+    fs::create_dir_all(&home).expect("home dir");
+    fs::create_dir_all(&cwd).expect("project dir");
+    fs::write(
+        home.join("settings.json"),
+        r#"{"fallbackModels":["valid", 42, null, "also-valid"]}"#,
+    )
+    .expect("write settings");
+
+    let loaded = ConfigLoader::new(&cwd, &home).load().expect("load");
+    assert_eq!(loaded.fallback_models(), &["valid", "also-valid"]);
+
+    fs::remove_dir_all(root).expect("cleanup");
+}
+
+#[test]
+fn fallback_models_empty_array_returns_empty() {
+    let root = temp_dir();
+    let cwd = root.join("project");
+    let home = root.join("home").join(".codineer");
+    fs::create_dir_all(&home).expect("home dir");
+    fs::create_dir_all(&cwd).expect("project dir");
+    fs::write(home.join("settings.json"), r#"{"fallbackModels":[]}"#).expect("write settings");
+
+    let loaded = ConfigLoader::new(&cwd, &home).load().expect("load");
+    assert!(loaded.fallback_models().is_empty());
+
+    fs::remove_dir_all(root).expect("cleanup");
+}
+
+#[test]
+fn fallback_models_non_array_value_returns_empty() {
+    let root = temp_dir();
+    let cwd = root.join("project");
+    let home = root.join("home").join(".codineer");
+    fs::create_dir_all(&home).expect("home dir");
+    fs::create_dir_all(&cwd).expect("project dir");
+    fs::write(
+        home.join("settings.json"),
+        r#"{"fallbackModels":"not-an-array"}"#,
+    )
+    .expect("write settings");
+
+    let loaded = ConfigLoader::new(&cwd, &home).load().expect("load");
+    assert!(loaded.fallback_models().is_empty());
+
+    fs::remove_dir_all(root).expect("cleanup");
+}
+
+#[test]
+fn config_source_display_and_as_str() {
+    assert_eq!(ConfigSource::User.as_str(), "user");
+    assert_eq!(ConfigSource::Project.as_str(), "project");
+    assert_eq!(ConfigSource::Local.as_str(), "local");
+    assert_eq!(ConfigSource::User.to_string(), "user");
+    assert_eq!(ConfigSource::Project.to_string(), "project");
+    assert_eq!(ConfigSource::Local.to_string(), "local");
+}

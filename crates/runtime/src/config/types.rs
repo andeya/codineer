@@ -14,6 +14,22 @@ pub enum ConfigSource {
     Local,
 }
 
+impl ConfigSource {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::User => "user",
+            Self::Project => "project",
+            Self::Local => "local",
+        }
+    }
+}
+
+impl Display for ConfigSource {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ResolvedPermissionMode {
     ReadOnly,
@@ -43,6 +59,17 @@ pub struct RuntimePluginConfig {
     pub(crate) bundled_root: Option<String>,
 }
 
+/// Controls which external credential sources are enabled.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct CredentialConfig {
+    /// Default auth source id for `codineer login` (e.g. `"codineer-oauth"`).
+    pub default_source: Option<String>,
+    /// Whether to auto-discover credentials from external tools (default: true).
+    pub auto_discover: bool,
+    /// Enable Claude Code credential auto-discovery.
+    pub claude_code_enabled: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct RuntimeFeatureConfig {
     pub(crate) hooks: RuntimeHookConfig,
@@ -50,9 +77,11 @@ pub struct RuntimeFeatureConfig {
     pub(crate) mcp: McpConfigCollection,
     pub(crate) oauth: Option<OAuthConfig>,
     pub(crate) model: Option<String>,
+    pub(crate) fallback_models: Vec<String>,
     pub(crate) permission_mode: Option<ResolvedPermissionMode>,
     pub(crate) sandbox: SandboxConfig,
     pub(crate) providers: BTreeMap<String, CustomProviderConfig>,
+    pub(crate) credentials: CredentialConfig,
 }
 
 /// Configuration for a custom OpenAI-compatible provider.
@@ -178,7 +207,7 @@ impl From<std::io::Error> for ConfigError {
 
 impl RuntimeConfig {
     #[must_use]
-    pub(crate) fn new(
+    pub fn new(
         merged: BTreeMap<String, JsonValue>,
         loaded_entries: Vec<ConfigEntry>,
         feature_config: RuntimeFeatureConfig,
@@ -246,6 +275,11 @@ impl RuntimeConfig {
     }
 
     #[must_use]
+    pub fn fallback_models(&self) -> &[String] {
+        &self.feature_config.fallback_models
+    }
+
+    #[must_use]
     pub fn permission_mode(&self) -> Option<ResolvedPermissionMode> {
         self.feature_config.permission_mode
     }
@@ -258,6 +292,11 @@ impl RuntimeConfig {
     #[must_use]
     pub fn providers(&self) -> &BTreeMap<String, CustomProviderConfig> {
         &self.feature_config.providers
+    }
+
+    #[must_use]
+    pub fn credentials(&self) -> &CredentialConfig {
+        &self.feature_config.credentials
     }
 
     /// Return the `"env"` section from merged config as key-value pairs.
@@ -327,6 +366,20 @@ impl RuntimeFeatureConfig {
     #[must_use]
     pub fn providers(&self) -> &BTreeMap<String, CustomProviderConfig> {
         &self.providers
+    }
+
+    #[must_use]
+    pub fn credentials(&self) -> &CredentialConfig {
+        &self.credentials
+    }
+
+    /// Set the custom providers map (useful in tests and programmatic construction).
+    pub fn set_providers(&mut self, providers: BTreeMap<String, CustomProviderConfig>) {
+        self.providers = providers;
+    }
+
+    pub fn set_fallback_models(&mut self, fallback_models: Vec<String>) {
+        self.fallback_models = fallback_models;
     }
 }
 
