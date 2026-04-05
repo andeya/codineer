@@ -217,6 +217,7 @@ fn parse_optional_providers_config(
         let ctx = format!("merged settings.providers.{name}");
         let provider_obj = expect_object(value, &ctx)?;
         let base_url = expect_string(provider_obj, "baseUrl", &ctx)?.to_string();
+        let api_version = optional_string(provider_obj, "apiVersion", &ctx)?.map(str::to_string);
         let api_key = optional_string(provider_obj, "apiKey", &ctx)?.map(str::to_string);
         let api_key_env = optional_string(provider_obj, "apiKeyEnv", &ctx)?.map(str::to_string);
         let models = optional_string_array(provider_obj, "models", &ctx)?.unwrap_or_default();
@@ -226,6 +227,7 @@ fn parse_optional_providers_config(
             name.clone(),
             CustomProviderConfig {
                 base_url,
+                api_version,
                 api_key,
                 api_key_env,
                 models,

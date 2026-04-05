@@ -63,6 +63,8 @@ pub struct OpenAiCompatClient {
     http: reqwest::Client,
     api_key: String,
     base_url: String,
+    /// Extra query segment for the chat-completions URL, e.g. `api-version=2024-02-15-preview`.
+    endpoint_query: Option<String>,
     retry: RetryPolicy,
 }
 
@@ -70,6 +72,7 @@ impl std::fmt::Debug for OpenAiCompatClient {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("OpenAiCompatClient")
             .field("base_url", &self.base_url)
+            .field("endpoint_query", &self.endpoint_query)
             .field("api_key", &"***")
             .finish()
     }
@@ -82,6 +85,7 @@ impl OpenAiCompatClient {
             http: crate::default_http_client(),
             api_key: api_key.into(),
             base_url: read_base_url(config),
+            endpoint_query: None,
             retry: RetryPolicy::default(),
         }
     }
@@ -94,8 +98,19 @@ impl OpenAiCompatClient {
             http: crate::default_http_client(),
             api_key: api_key.into(),
             base_url: base_url.into(),
+            endpoint_query: None,
             retry: RetryPolicy::default(),
         }
+    }
+
+    /// Merged into the chat-completions request URL after any query string already present on `base_url`.
+    /// Pass a single segment such as `api-version=2024-02-15-preview` (no leading `?`).
+    #[must_use]
+    pub fn with_endpoint_query(mut self, endpoint_query: Option<String>) -> Self {
+        self.endpoint_query = endpoint_query
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty());
+        self
     }
 
     pub fn from_env(config: OpenAiCompatConfig) -> Result<Self, ApiError> {
@@ -196,7 +211,7 @@ impl OpenAiCompatClient {
         &self,
         request: &MessageRequest,
     ) -> Result<reqwest::Response, ApiError> {
-        let request_url = chat_completions_endpoint(&self.base_url);
+        let request_url = chat_completions_endpoint(&self.base_url, self.endpoint_query.as_deref());
         let mut req = self
             .http
             .post(&request_url)
@@ -556,10 +571,24 @@ struct ChatChoice {
 #[derive(Debug, Deserialize)]
 struct ChatMessage {
     role: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_openai_text_content")]
     content: Option<String>,
     #[serde(default)]
+    reasoning_content: Option<String>,
+    #[serde(default)]
+    reasoning: Option<String>,
+    #[serde(default)]
     tool_calls: Vec<ResponseToolCall>,
+}
+
+impl ChatMessage {
+    fn assistant_visible_text(&self) -> Option<String> {
+        self.content
+            .clone()
+            .filter(|s| !s.is_empty())
+            .or_else(|| self.reasoning_content.clone().filter(|s| !s.is_empty()))
+            .or_else(|| self.reasoning.clone().filter(|s| !s.is_empty()))
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -601,7 +630,7 @@ struct ChunkChoice {
 }
 
 /// OpenAI uses a string; some providers (DashScope, Qwen) may send an array of `{type,text}` parts.
-fn deserialize_delta_content<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+fn deserialize_openai_text_content<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
 where
     D: Deserializer<'de>,
 {
@@ -635,7 +664,7 @@ where
 
 #[derive(Debug, Default, Deserialize)]
 struct ChunkDelta {
-    #[serde(default, deserialize_with = "deserialize_delta_content")]
+    #[serde(default, deserialize_with = "deserialize_openai_text_content")]
     content: Option<String>,
     /// Qwen / DashScope reasoning models stream thinking here before `content`.
     #[serde(default)]
@@ -652,11 +681,7 @@ impl ChunkDelta {
         self.content
             .clone()
             .filter(|s| !s.is_empty())
-            .or_else(|| {
-                self.reasoning_content
-                    .clone()
-                    .filter(|s| !s.is_empty())
-            })
+            .or_else(|| self.reasoning_content.clone().filter(|s| !s.is_empty()))
             .or_else(|| self.reasoning.clone().filter(|s| !s.is_empty()))
     }
 }
@@ -827,7 +852,7 @@ fn normalize_response(
             "chat completion response missing choices",
         ))?;
     let mut content = Vec::new();
-    if let Some(text) = choice.message.content.filter(|value| !value.is_empty()) {
+    if let Some(text) = choice.message.assistant_visible_text() {
         content.push(OutputContentBlock::Text { text });
     }
     for tool_call in choice.message.tool_calls {
@@ -934,12 +959,32 @@ pub fn read_base_url(config: OpenAiCompatConfig) -> String {
     std::env::var(config.base_url_env).unwrap_or_else(|_| config.default_base_url.to_string())
 }
 
-fn chat_completions_endpoint(base_url: &str) -> String {
-    let trimmed = base_url.trim_end_matches('/');
-    if trimmed.ends_with("/chat/completions") {
-        trimmed.to_string()
+fn chat_completions_endpoint(base_url: &str, extra_query: Option<&str>) -> String {
+    let trimmed = base_url.trim();
+    let (path_part, base_query) = match trimmed.split_once('?') {
+        Some((p, q)) => (p.trim_end_matches('/'), Some(q)),
+        None => (trimmed.trim_end_matches('/'), None),
+    };
+    let path = if path_part.ends_with("/chat/completions") {
+        path_part.to_string()
     } else {
-        format!("{trimmed}/chat/completions")
+        format!("{path_part}/chat/completions")
+    };
+    merge_url_query(&path, base_query, extra_query)
+}
+
+fn merge_url_query(path: &str, base_query: Option<&str>, extra_query: Option<&str>) -> String {
+    let mut segments: Vec<&str> = Vec::new();
+    if let Some(q) = base_query.map(str::trim).filter(|q| !q.is_empty()) {
+        segments.push(q);
+    }
+    if let Some(q) = extra_query.map(str::trim).filter(|q| !q.is_empty()) {
+        segments.push(q);
+    }
+    if segments.is_empty() {
+        path.to_string()
+    } else {
+        format!("{path}?{}", segments.join("&"))
     }
 }
 
@@ -998,6 +1043,76 @@ impl StringExt for String {
         } else {
             self
         }
+    }
+}
+
+#[cfg(test)]
+mod openai_compat_inner_tests {
+    use super::*;
+    use crate::types::OutputContentBlock;
+
+    #[test]
+    fn chat_completions_url_appends_api_version() {
+        assert_eq!(
+            chat_completions_endpoint(
+                "https://my.openai.azure.com/openai/deployments/gpt4",
+                Some("api-version=2024-02-15-preview"),
+            ),
+            "https://my.openai.azure.com/openai/deployments/gpt4/chat/completions?api-version=2024-02-15-preview"
+        );
+    }
+
+    #[test]
+    fn chat_completions_url_merges_base_query_and_api_version() {
+        assert_eq!(
+            chat_completions_endpoint(
+                "https://x/v1/chat/completions?existing=1",
+                Some("api-version=2024-02-15-preview"),
+            ),
+            "https://x/v1/chat/completions?existing=1&api-version=2024-02-15-preview"
+        );
+    }
+
+    #[test]
+    fn non_streaming_message_parses_content_array() {
+        let json = r#"{
+            "id":"1",
+            "model":"qwen",
+            "choices":[{
+                "message":{"role":"assistant","content":[{"type":"text","text":"hello"}]},
+                "finish_reason":"stop"
+            }],
+            "usage":{"prompt_tokens":1,"completion_tokens":1}
+        }"#;
+        let resp: ChatCompletionResponse = serde_json::from_str(json).unwrap();
+        let msg = normalize_response("qwen", resp).expect("normalize");
+        assert_eq!(
+            msg.content,
+            vec![OutputContentBlock::Text {
+                text: "hello".to_string()
+            }]
+        );
+    }
+
+    #[test]
+    fn non_streaming_reasoning_only_message() {
+        let json = r#"{
+            "id":"1",
+            "model":"qwen",
+            "choices":[{
+                "message":{"role":"assistant","content":null,"reasoning_content":"think"},
+                "finish_reason":"stop"
+            }],
+            "usage":{"prompt_tokens":1,"completion_tokens":1}
+        }"#;
+        let resp: ChatCompletionResponse = serde_json::from_str(json).unwrap();
+        let msg = normalize_response("qwen", resp).expect("normalize");
+        assert_eq!(
+            msg.content,
+            vec![OutputContentBlock::Text {
+                text: "think".to_string()
+            }]
+        );
     }
 }
 

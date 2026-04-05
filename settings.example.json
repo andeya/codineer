@@ -50,6 +50,15 @@
       ],
       "defaultModel": "llama-3.3-70b-versatile"
     },
+    "azure-openai": {
+      "baseUrl": "https://YOUR_RESOURCE.openai.azure.com/openai/deployments/YOUR_DEPLOYMENT",
+      "apiVersion": "2024-02-15-preview",
+      "apiKeyEnv": "AZURE_OPENAI_API_KEY",
+      "models": [
+        "gpt-4o"
+      ],
+      "defaultModel": "gpt-4o"
+    },
     "vllm": {
       "baseUrl": "http://localhost:8000/v1",
       "models": [

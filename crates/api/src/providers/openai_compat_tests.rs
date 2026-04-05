@@ -81,9 +81,10 @@ fn sse_parses_delta_with_reasoning_content_only() {
 
 #[test]
 fn sse_parses_delta_with_content_array() {
-    let frame = r#"data: {"id":"1","choices":[{"delta":{"content":[{"type":"text","text":"hi"}]}}]}"#
-        .to_string()
-        + "\n\n";
+    let frame =
+        r#"data: {"id":"1","choices":[{"delta":{"content":[{"type":"text","text":"hi"}]}}]}"#
+            .to_string()
+            + "\n\n";
     let parsed = super::parse_sse_frame(&frame)
         .expect("parse")
         .expect("chunk");
@@ -150,15 +151,15 @@ fn missing_xai_api_key_is_provider_specific() {
 #[test]
 fn endpoint_builder_accepts_base_urls_and_full_endpoints() {
     assert_eq!(
-        chat_completions_endpoint("https://api.x.ai/v1"),
+        chat_completions_endpoint("https://api.x.ai/v1", None),
         "https://api.x.ai/v1/chat/completions"
     );
     assert_eq!(
-        chat_completions_endpoint("https://api.x.ai/v1/"),
+        chat_completions_endpoint("https://api.x.ai/v1/", None),
         "https://api.x.ai/v1/chat/completions"
     );
     assert_eq!(
-        chat_completions_endpoint("https://api.x.ai/v1/chat/completions"),
+        chat_completions_endpoint("https://api.x.ai/v1/chat/completions", None),
         "https://api.x.ai/v1/chat/completions"
     );
 }

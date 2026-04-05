@@ -198,7 +198,12 @@ impl<'a> ModelResolver<'a> {
 
         let client = if let Some(config) = self.providers.get(&lower) {
             let api_key = resolve_custom_api_key(config)?;
-            OpenAiCompatClient::new_custom(&config.base_url, api_key)
+            let mut c = OpenAiCompatClient::new_custom(&config.base_url, api_key);
+            if let Some(ref v) = config.api_version {
+                let q = format!("api-version={v}");
+                c = c.with_endpoint_query(Some(q));
+            }
+            c
         } else if let Some(preset) = api::builtin_preset(&lower) {
             let api_key = resolve_preset_api_key(preset)?;
             OpenAiCompatClient::new_custom(preset.base_url, api_key)
@@ -926,6 +931,7 @@ mod tests {
     fn make_provider(base_url: &str, default_model: Option<&str>) -> CustomProviderConfig {
         CustomProviderConfig {
             base_url: base_url.to_string(),
+            api_version: None,
             api_key: None,
             api_key_env: None,
             models: vec![],
@@ -989,6 +995,7 @@ mod tests {
     fn resolve_custom_api_key_returns_inline_key() {
         let config = CustomProviderConfig {
             base_url: "http://localhost".to_string(),
+            api_version: None,
             api_key: Some("sk-test-123".to_string()),
             api_key_env: Some("SHOULD_NOT_USE".to_string()),
             models: vec![],
@@ -1007,6 +1014,7 @@ mod tests {
     fn resolve_custom_api_key_errors_on_missing_env_var() {
         let config = CustomProviderConfig {
             base_url: "http://localhost".to_string(),
+            api_version: None,
             api_key: None,
             api_key_env: Some("__CODINEER_TEST_NONEXISTENT_KEY__".to_string()),
             models: vec![],
@@ -1112,6 +1120,7 @@ mod tests {
             "ollama".to_string(),
             CustomProviderConfig {
                 base_url: "http://custom-ollama:11434/v1".to_string(),
+                api_version: None,
                 api_key: Some("custom-key".to_string()),
                 api_key_env: None,
                 models: vec![],
