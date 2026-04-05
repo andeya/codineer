@@ -14,6 +14,8 @@
     "XAI_API_KEY": "xai-xxx",
     "GROQ_API_KEY": "gsk_xxx",
     "OPENROUTER_API_KEY": "sk-or-xxx",
+    "DASHSCOPE_API_KEY": "sk-xxx",
+    "OPENCLAW_ZERO_API_KEY": "your-gateway-token",
     "OLLAMA_HOST": "http://localhost:11434"
   },
   "providers": {
@@ -66,6 +68,34 @@
       ],
       "defaultModel": "Qwen/Qwen2.5-Coder-32B-Instruct"
     },
+    "dashscope": {
+      "baseUrl": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+      "apiKeyEnv": "DASHSCOPE_API_KEY",
+      "models": [
+        "qwen-plus-2025-07-28",
+        "qwen3-coder-480b-a35b-instruct"
+      ],
+      "defaultModel": "qwen-plus-2025-07-28"
+    },
+    "openclaw-zero": {
+      "baseUrl": "http://127.0.0.1:3001/v1",
+      "apiKeyEnv": "OPENCLAW_ZERO_API_KEY",
+      "defaultModel": "openclaw",
+      "models": [
+        "openclaw",
+        "claude-web/claude-sonnet-4-6",
+        "deepseek-web/deepseek-chat",
+        "chatgpt-web/gpt-4",
+        "gemini-web/gemini-pro",
+        "qwen-web/qwen-plus",
+        "kimi-web/moonshot-v1-128k",
+        "grok-web/grok-2",
+        "doubao-web/doubao-seed-2.0"
+      ],
+      "headers": {
+        "x-openclaw-scopes": "operator.write"
+      }
+    },
     "my-company-proxy": {
       "baseUrl": "https://ai-proxy.internal.company.com/v1",
       "apiKey": "company-secret-key",
@@ -74,7 +104,10 @@
         "gpt-4o",
         "claude-sonnet-4-6"
       ],
-      "defaultModel": "gpt-4o"
+      "defaultModel": "gpt-4o",
+      "headers": {
+        "X-Custom-Header": "custom-value"
+      }
     }
   },
   "oauth": {
