@@ -40,7 +40,6 @@ fn write_bg_padded(
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ReadOutcome {
     Submit(String),
-    Cancel,
     Exit,
 }
 

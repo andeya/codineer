@@ -863,7 +863,7 @@ pub(crate) fn run_repl(
     let b_perms = cli.permission_mode.as_str().to_string();
     let b_session_id = cli.session.id.clone();
     let b_session_path = cli.session.path.clone();
-    let hint_line = format!("{}? for shortcuts  ·  /help  ·  Esc cancels{}", p.dim, p.r);
+    let hint_line = format!("{}? for shortcuts  ·  /help  ·  Esc clears{}", p.dim, p.r);
     let mut editor = input::LineEditor::new(prompt, slash_command_entries())
         .with_separator()
         .with_hint_line(hint_line)
@@ -922,7 +922,6 @@ pub(crate) fn run_repl(
                 let enriched = process_at_mentioned_files(&input);
                 cli.run_turn(&enriched);
             }
-            input::ReadOutcome::Cancel => {}
             input::ReadOutcome::Exit => {
                 let _ = cli.persist_session();
                 print_goodbye(&cli.session.path);

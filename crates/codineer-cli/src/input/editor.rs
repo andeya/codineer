@@ -181,11 +181,19 @@ impl LineEditor {
                     return Ok(ReadOutcome::Submit(line));
                 }
                 KeyAction::Cancel => {
-                    session.clear_render(&mut stdout, 0)?;
-                    write!(stdout, "\r\n")?;
-                    stdout.flush()?;
-                    self.prefix_fn = None;
-                    return Ok(ReadOutcome::Cancel);
+                    // Stay on the same line — clear input and re-render in
+                    // place so no blank lines are created.
+                    session.text.clear();
+                    session.cursor = 0;
+                    session.history_index = None;
+                    session.history_backup = None;
+                    self.suggestion_state = None;
+                    session.render_with_suggestions(
+                        &mut stdout,
+                        &self.prompt,
+                        self.vim_enabled,
+                        None,
+                    )?;
                 }
                 KeyAction::Exit => {
                     session.clear_render(&mut stdout, 0)?;
