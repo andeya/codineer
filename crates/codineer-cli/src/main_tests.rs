@@ -67,6 +67,7 @@ fn defaults_to_repl_when_no_args() {
             model: default_model(),
             allowed_tools: None,
             permission_mode: PermissionMode::WorkspaceWrite,
+            resume_path: None,
         }
     );
 }
@@ -162,6 +163,7 @@ fn parses_permission_mode_flag() {
             model: default_model(),
             allowed_tools: None,
             permission_mode: PermissionMode::ReadOnly,
+            resume_path: None,
         }
     );
 }
@@ -201,6 +203,7 @@ fn parses_allowed_tools_flags_with_aliases_and_lists() {
                     .collect()
             ),
             permission_mode: PermissionMode::WorkspaceWrite,
+            resume_path: None,
         }
     );
 }
@@ -472,6 +475,52 @@ fn parses_direct_agents_and_skills_slash_commands() {
         .expect_err("/status should remain REPL-only when invoked directly");
     assert!(error.contains("Direct slash command unavailable"));
     assert!(error.contains("/status"));
+}
+
+#[test]
+fn parses_resume_flag_without_commands_opens_repl() {
+    let args = vec!["--resume".to_string(), "session.json".to_string()];
+    let action = parse_args(&args).expect("args should parse");
+    assert!(
+        matches!(
+            action,
+            CliAction::Repl {
+                resume_path: Some(_),
+                ..
+            }
+        ),
+        "--resume without slash commands should start the REPL, got {action:?}"
+    );
+}
+
+#[test]
+fn resume_flag_inherits_model_and_permission_flags() {
+    let args = vec![
+        "--model".to_string(),
+        "opus".to_string(),
+        "--permission-mode".to_string(),
+        "danger-full-access".to_string(),
+        "--resume".to_string(),
+        "session.json".to_string(),
+    ];
+    let action = parse_args(&args).expect("args should parse");
+    match action {
+        CliAction::Repl {
+            model,
+            permission_mode,
+            resume_path: Some(_),
+            ..
+        } => {
+            // model alias should have been resolved
+            assert!(!model.is_empty(), "model must not be empty");
+            assert_eq!(
+                permission_mode,
+                runtime::PermissionMode::DangerFullAccess,
+                "--permission-mode flag must be forwarded through --resume"
+            );
+        }
+        other => panic!("expected Repl with resume_path, got {other:?}"),
+    }
 }
 
 #[test]
@@ -882,7 +931,10 @@ fn repl_help_mentions_history_completion_and_multiline() {
     let help = render_repl_help();
     assert!(help.contains("Up/Down"));
     assert!(help.contains("Tab cycles"));
-    assert!(help.contains("Shift+Enter or Ctrl+J"));
+    assert!(help.contains("Shift+Enter"));
+    assert!(help.contains("Ctrl+J"));
+    assert!(help.contains("Ctrl-C"));
+    assert!(help.contains("Double-tap Esc"));
 }
 
 #[test]

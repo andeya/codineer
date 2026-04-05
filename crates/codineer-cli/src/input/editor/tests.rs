@@ -334,3 +334,238 @@ fn ctrl_c_cancels_when_input_exists() {
 
     assert!(matches!(action, KeyAction::Cancel));
 }
+
+// ── Double Ctrl+C to exit ────────────────────────────────────────────────────
+
+#[test]
+fn first_ctrl_c_on_empty_prompt_returns_interrupt_hint() {
+    let mut editor = LineEditor::new("> ", vec![]);
+    let mut session = EditSession::new(false);
+
+    let action = editor.handle_key_event(
+        &mut session,
+        KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL),
+    );
+    assert!(
+        matches!(action, KeyAction::InterruptHint),
+        "first Ctrl+C on empty prompt should show hint"
+    );
+}
+
+#[test]
+fn second_ctrl_c_on_empty_prompt_exits() {
+    let mut editor = LineEditor::new("> ", vec![]);
+    let mut session = EditSession::new(false);
+
+    editor.handle_key_event(
+        &mut session,
+        KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL),
+    );
+    let action = editor.handle_key_event(
+        &mut session,
+        KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL),
+    );
+    assert!(
+        matches!(action, KeyAction::Exit),
+        "second Ctrl+C should exit"
+    );
+}
+
+#[test]
+fn other_key_resets_ctrl_c_state() {
+    let mut editor = LineEditor::new("> ", vec![]);
+    let mut session = EditSession::new(false);
+
+    // First Ctrl+C → InterruptHint (empty prompt)
+    let a1 = editor.handle_key_event(
+        &mut session,
+        KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL),
+    );
+    assert!(matches!(a1, KeyAction::InterruptHint));
+
+    // Type a character — resets double-tap state and adds input
+    editor.handle_key_event(
+        &mut session,
+        KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE),
+    );
+
+    // Ctrl+C on "x" → Cancel (has input)
+    let a2 = editor.handle_key_event(
+        &mut session,
+        KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL),
+    );
+    assert!(matches!(a2, KeyAction::Cancel));
+
+    // Simulate the REPL clearing the session after Cancel
+    session.text.clear();
+    session.cursor = 0;
+
+    // Now empty — Ctrl+C should be InterruptHint again (not Exit), because
+    // the previous Cancel already consumed the last_ctrlc state.
+    let a3 = editor.handle_key_event(
+        &mut session,
+        KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL),
+    );
+    assert!(
+        matches!(a3, KeyAction::InterruptHint),
+        "typing between Ctrl+C presses should reset the double-tap state"
+    );
+}
+
+// ── Backslash + Enter for newline ────────────────────────────────────────────
+
+#[test]
+fn backslash_enter_inserts_newline() {
+    let mut editor = LineEditor::new("> ", vec![]);
+    let mut session = EditSession::new(false);
+    session.text = "hello\\".to_string();
+    session.cursor = session.text.len();
+
+    let action = editor.handle_key_event(
+        &mut session,
+        KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+    );
+    assert!(
+        matches!(action, KeyAction::Continue),
+        "backslash+enter should continue, not submit"
+    );
+    assert_eq!(session.text, "hello\n");
+}
+
+#[test]
+fn enter_without_backslash_submits() {
+    let mut editor = LineEditor::new("> ", vec![]);
+    let mut session = EditSession::new(false);
+    session.text = "hello".to_string();
+    session.cursor = session.text.len();
+
+    let action = editor.handle_key_event(
+        &mut session,
+        KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+    );
+    assert!(
+        matches!(action, KeyAction::Submit(ref s) if s == "hello"),
+        "plain enter should submit"
+    );
+}
+
+#[test]
+fn only_backslash_enter_inserts_newline_from_single_backslash() {
+    let mut editor = LineEditor::new("> ", vec![]);
+    let mut session = EditSession::new(false);
+    session.text = "\\".to_string();
+    session.cursor = session.text.len();
+
+    let action = editor.handle_key_event(
+        &mut session,
+        KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+    );
+    assert!(matches!(action, KeyAction::Continue));
+    assert_eq!(session.text, "\n");
+}
+
+// ── Double-tap Esc to clear input ────────────────────────────────────────────
+
+#[test]
+fn double_esc_clears_input_in_plain_mode() {
+    let mut editor = LineEditor::new("> ", vec![]);
+    let mut session = EditSession::new(false);
+    session.text = "some text".to_string();
+    session.cursor = session.text.len();
+
+    editor.handle_key_event(
+        &mut session,
+        KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE),
+    );
+    let action = editor.handle_key_event(
+        &mut session,
+        KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE),
+    );
+    assert!(
+        matches!(action, KeyAction::Cancel),
+        "double Esc should cancel/clear"
+    );
+    assert!(session.text.is_empty(), "text should be cleared");
+}
+
+#[test]
+fn single_esc_does_not_clear_plain_mode() {
+    let mut editor = LineEditor::new("> ", vec![]);
+    let mut session = EditSession::new(false);
+    session.text = "some text".to_string();
+    session.cursor = session.text.len();
+
+    let action = editor.handle_key_event(
+        &mut session,
+        KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE),
+    );
+    assert!(matches!(action, KeyAction::Continue));
+    assert_eq!(session.text, "some text", "single Esc should not clear");
+}
+
+#[test]
+fn other_key_between_esc_resets_double_tap() {
+    let mut editor = LineEditor::new("> ", vec![]);
+    let mut session = EditSession::new(false);
+    session.text = "abc".to_string();
+    session.cursor = session.text.len();
+
+    editor.handle_key_event(
+        &mut session,
+        KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE),
+    );
+    // Type a key in between
+    editor.handle_key_event(
+        &mut session,
+        KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE),
+    );
+    let action = editor.handle_key_event(
+        &mut session,
+        KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE),
+    );
+    assert!(
+        matches!(action, KeyAction::Continue),
+        "interleaved key should reset Esc double-tap"
+    );
+}
+
+#[test]
+fn esc_on_empty_input_does_nothing_in_plain_mode() {
+    let mut editor = LineEditor::new("> ", vec![]);
+    let mut session = EditSession::new(false);
+
+    let action = editor.handle_key_event(
+        &mut session,
+        KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE),
+    );
+    assert!(matches!(action, KeyAction::Continue));
+}
+
+// ── Ctrl+D exits on empty input ──────────────────────────────────────────────
+
+#[test]
+fn ctrl_d_exits_on_empty_input() {
+    let mut editor = LineEditor::new("> ", vec![]);
+    let mut session = EditSession::new(false);
+
+    let action = editor.handle_key_event(
+        &mut session,
+        KeyEvent::new(KeyCode::Char('d'), KeyModifiers::CONTROL),
+    );
+    assert!(matches!(action, KeyAction::Exit));
+}
+
+#[test]
+fn ctrl_d_deletes_char_when_input_exists() {
+    let mut editor = LineEditor::new("> ", vec![]);
+    let mut session = EditSession::new(false);
+    session.text = "abc".to_string();
+    session.cursor = 1;
+
+    let action = editor.handle_key_event(
+        &mut session,
+        KeyEvent::new(KeyCode::Char('d'), KeyModifiers::CONTROL),
+    );
+    assert!(matches!(action, KeyAction::Continue));
+    assert_eq!(session.text, "ac");
+}
