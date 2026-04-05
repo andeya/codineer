@@ -1,8 +1,11 @@
 use std::io::{self, IsTerminal, Write};
 use std::time::Instant;
 
-use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
-use crossterm::terminal;
+use crossterm::event::{
+    self, DisableBracketedPaste, EnableBracketedPaste, Event, KeyCode, KeyEvent, KeyEventKind,
+    KeyModifiers,
+};
+use crossterm::{execute, terminal};
 
 use super::session::{EditSession, EditorMode, KeyAction, ReadOutcome, YankBuffer, YankShape};
 use super::suggestions::{self, CommandEntry, SuggestionState, SuggestionTrigger};
@@ -85,6 +88,7 @@ impl LineEditor {
         let _raw_mode = RawModeGuard::new()?;
         let mut stdout = io::stdout();
         let mut session = EditSession::new(self.vim_enabled);
+        session.show_bottom_sep = self.show_separator;
         self.render_prefix(&mut session, &mut stdout, None)?;
 
         loop {
@@ -92,6 +96,20 @@ impl LineEditor {
             if let Event::Resize(w, _) = event {
                 crate::terminal_width::update_terminal_cols(w as usize);
                 self.render_prefix(&mut session, &mut stdout, self.suggestion_state.as_ref())?;
+                continue;
+            }
+            // Bracketed paste: insert the whole text at once so newlines in the
+            // pasted content don't accidentally trigger a submission.
+            if let Event::Paste(ref text) = event {
+                let text = text.clone();
+                session.insert_text(&text);
+                self.update_suggestions(&session);
+                session.render_with_suggestions(
+                    &mut stdout,
+                    &self.prompt,
+                    self.vim_enabled,
+                    self.suggestion_state.as_ref(),
+                )?;
                 continue;
             }
             let Event::Key(key) = event else {
@@ -159,6 +177,7 @@ impl LineEditor {
                     )?;
                     stdout.flush()?;
                     session = EditSession::new(self.vim_enabled);
+                    session.show_bottom_sep = self.show_separator;
                     self.render_prefix(&mut session, &mut stdout, None)?;
                 }
             }
@@ -669,12 +688,17 @@ struct RawModeGuard;
 impl RawModeGuard {
     fn new() -> io::Result<Self> {
         terminal::enable_raw_mode().map_err(io::Error::other)?;
+        // Enable bracketed paste so that multi-line pastes arrive as a single
+        // Event::Paste rather than individual character/Enter events, preventing
+        // newlines in pasted text from accidentally submitting the prompt.
+        let _ = execute!(io::stdout(), EnableBracketedPaste);
         Ok(Self)
     }
 }
 
 impl Drop for RawModeGuard {
     fn drop(&mut self) {
+        let _ = execute!(io::stdout(), DisableBracketedPaste);
         let _ = terminal::disable_raw_mode();
     }
 }

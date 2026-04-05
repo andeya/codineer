@@ -72,6 +72,9 @@ pub(super) struct EditSession {
     /// When true, render a "Press Ctrl-C again to exit" hint below the prompt.
     /// Cleared on the next re-render that doesn't set it.
     pub(super) show_interrupt_hint: bool,
+    /// When true, render a bottom separator line below the input text and above
+    /// the info/panel area.  Set from `LineEditor::show_separator`.
+    pub(super) show_bottom_sep: bool,
     pub(super) history_index: Option<usize>,
     pub(super) history_backup: Option<String>,
     rendered_cursor_row: usize,
@@ -99,6 +102,7 @@ impl EditSession {
             history_index: None,
             history_backup: None,
             show_interrupt_hint: false,
+            show_bottom_sep: false,
             rendered_cursor_row: 0,
             rendered_lines: 1,
             prefix_line_widths: Vec::new(),
@@ -222,8 +226,14 @@ impl EditSession {
         out.flush()
     }
 
-    /// Render prompt + buffer + suggestions/shortcuts panel (without clearing
-    /// first).
+    /// Render prompt + buffer + optional bottom separator + info panel.
+    ///
+    /// Layout:
+    /// ```text
+    /// ❯ <input text, potentially multi-line>
+    /// ──────────────────────────────────────  ← bottom separator (when show_bottom_sep)
+    /// <info area: ? panel / hint / suggestions>
+    /// ```
     pub(super) fn render_content(
         &mut self,
         out: &mut impl Write,
@@ -233,10 +243,30 @@ impl EditSession {
     ) -> std::io::Result<()> {
         let prompt = self.prompt(base_prompt, vim_enabled);
         let buffer = self.visible_buffer();
-        write!(out, "{prompt}{buffer}")?;
+        // In raw mode `\n` only moves the cursor down without resetting the
+        // column; convert to `\r\n` so continuation lines start at column 0.
+        let display_buffer = buffer.replace('\n', "\r\n");
+        write!(out, "{prompt}{display_buffer}")?;
 
         let (cursor_row, cursor_col, total_lines) = self.cursor_layout(prompt.as_ref());
 
+        // Bottom separator — always visible when enabled, separating the editable
+        // input area from the info/panel area below.
+        let sep_lines = if self.show_bottom_sep {
+            let (cols, _) = terminal::size().unwrap_or((80, 24));
+            let cols = cols as usize;
+            let p = crate::style::Palette::for_stdout();
+            if p.violet.is_empty() {
+                write!(out, "\r\n{}", "-".repeat(cols))?;
+            } else {
+                write!(out, "\r\n{}{}{}", p.dim, "─".repeat(cols), p.r)?;
+            }
+            1usize
+        } else {
+            0
+        };
+
+        // Info/panel area rendered below the separator.
         let panel_lines = if self.text == "?" {
             self.draw_shortcuts_panel(out)?
         } else if self.show_interrupt_hint {
@@ -247,7 +277,7 @@ impl EditSession {
             0
         };
 
-        let rows_below = total_lines.saturating_sub(cursor_row + 1) + panel_lines;
+        let rows_below = total_lines.saturating_sub(cursor_row + 1) + sep_lines + panel_lines;
         if rows_below > 0 {
             queue!(out, MoveUp(to_u16(rows_below)?))?;
         }
@@ -294,8 +324,9 @@ impl EditSession {
 
         let p = crate::style::Palette::for_stdout();
 
-        write!(out, "\r\n{}{}{}", p.dim, "─".repeat(cols), p.r)?;
-        let mut lines_drawn: usize = 1;
+        // Separator removed — the bottom separator from render_content serves
+        // as the visual boundary between input and this info area.
+        let mut lines_drawn: usize = 0;
 
         let name_col = (cols * 40 / 100).clamp(12, 30);
 
@@ -332,7 +363,7 @@ impl EditSession {
         Ok(lines_drawn)
     }
 
-    /// Draw the keyboard shortcuts panel below the prompt (shown when the
+    /// Draw the keyboard shortcuts panel in the info area (shown when the
     /// user types `?` as the sole character).  Returns the number of terminal
     /// lines drawn so the cursor can be repositioned correctly.
     fn draw_shortcuts_panel(&self, out: &mut impl Write) -> std::io::Result<usize> {
@@ -340,8 +371,9 @@ impl EditSession {
         let cols = cols as usize;
         let p = crate::style::Palette::for_stdout();
 
-        write!(out, "\r\n{}{}{}", p.dim, "─".repeat(cols), p.r)?;
-        let mut lines: usize = 1;
+        // Separator removed — the bottom separator from render_content serves
+        // as the visual boundary between input and this info area.
+        let mut lines: usize = 0;
 
         const SHORTCUTS: &[(&str, &str)] = &[
             ("! for bash mode", "double tap esc to clear input"),
@@ -383,7 +415,9 @@ impl EditSession {
         self.clear_render(out, self.prefix_lines())?;
         let prompt = self.prompt(base_prompt, vim_enabled);
         let buffer = self.visible_buffer();
-        write!(out, "{prompt}{buffer}")?;
+        // Convert \n to \r\n for correct raw-mode rendering.
+        let display_buffer = buffer.replace('\n', "\r\n");
+        write!(out, "{prompt}{display_buffer}")?;
         // In raw mode `\n` only moves down without resetting the column.
         // Use `\r\n` so the cursor lands at column 0 on the new line before
         // raw mode is disabled, ensuring any subsequent output starts at the
@@ -648,8 +682,8 @@ mod tests {
         let s = EditSession::new(false);
         let mut buf = Vec::new();
         let lines = s.draw_shortcuts_panel(&mut buf).unwrap();
-        // 1 separator + 6 shortcut rows
-        assert_eq!(lines, 7);
+        // 6 shortcut rows (separator is now drawn by render_content, not the panel)
+        assert_eq!(lines, 6);
         let output = String::from_utf8(buf).unwrap();
         assert!(
             output.contains("! for bash mode"),
