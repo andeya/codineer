@@ -574,7 +574,7 @@ fn ctrl_d_deletes_char_when_input_exists() {
 
 #[test]
 fn short_single_line_paste_inserts_inline() {
-    let mut editor = LineEditor::new("> ", vec![]);
+    let editor = LineEditor::new("> ", vec![]);
     // Simulate: insert short text via expand_paste_refs (no ref created).
     let result = editor.expand_paste_refs("hello world".to_string());
     assert_eq!(result, "hello world");
