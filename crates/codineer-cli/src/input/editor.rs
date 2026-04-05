@@ -249,16 +249,6 @@ impl LineEditor {
             }
         }
 
-        if self.show_separator {
-            let p = crate::style::Palette::for_stdout();
-            if p.violet.is_empty() {
-                write!(out, "{}\r\n", "-".repeat(new_cols))?;
-            } else {
-                write!(out, "{}{}{}\r\n", p.violet, "─".repeat(new_cols), p.r)?;
-            }
-            session.prefix_line_widths.push(new_cols);
-        }
-
         session.render_content(out, &self.prompt, self.vim_enabled, suggestions)
     }
 

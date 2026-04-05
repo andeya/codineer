@@ -60,13 +60,16 @@ pub(crate) fn format_tool_call_start(name: &str, input: &str) -> String {
         _ => summarize_tool_payload(input),
     };
 
-    let border = "─".repeat(name.len() + 8);
-    format!(
-        "{g}╭─ {bc}{name}{r}{g} ─╮{r}\n{g}│{r} {detail}\n{g}╰{border}╯{r}",
-        g = a.gray,
-        bc = a.bold_cyan,
-        r = a.r,
-    )
+    if detail.is_empty() {
+        format!("{bc}{name}{r}", bc = a.bold_cyan, r = a.r)
+    } else {
+        format!(
+            "{bc}{name}{r} {d}({detail}){r}",
+            bc = a.bold_cyan,
+            d = a.dim,
+            r = a.r,
+        )
+    }
 }
 
 pub(crate) fn format_tool_result(name: &str, output: &str, is_error: bool) -> String {

@@ -150,7 +150,6 @@ fn border_top(p: &Palette, layout: &BannerLayout) -> String {
             bar = "─".repeat(bar),
         )
     } else {
-        // Very narrow: truncate the title to fit.
         format!(
             "{v}╭─ {title}╮{r}",
             v = p.violet,

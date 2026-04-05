@@ -259,14 +259,14 @@ impl EditSession {
 
         let (cursor_row, cursor_col, total_lines) = self.cursor_layout(prompt.as_ref());
 
-        // Bottom separator — always visible when enabled, separating the editable
-        // input area from the info/panel area below.
+        // Bottom separator — a subtle dim line separating the input area from
+        // the info/panel area below.
         let sep_lines = if self.show_bottom_sep {
             let (cols, _) = terminal::size().unwrap_or((80, 24));
             let cols = cols as usize;
             let p = crate::style::Palette::for_stdout();
-            if p.violet.is_empty() {
-                write!(out, "\r\n{}", "-".repeat(cols))?;
+            if p.dim.is_empty() {
+                write!(out, "\r\n{}", "─".repeat(cols))?;
             } else {
                 write!(out, "\r\n{}{}{}", p.dim, "─".repeat(cols), p.r)?;
             }

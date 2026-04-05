@@ -120,7 +120,7 @@ impl LiveCli {
         }
 
         let pe = crate::style::Palette::for_stderr();
-        eprintln!("{}  ⎿  thinking…{}", pe.dim, pe.r);
+        eprintln!("{}  ∴ thinking…{}", pe.dim, pe.r);
         let mut permission_prompter = CliPermissionPrompter::new(self.permission_mode);
         let result = self.runtime.run_turn(input, Some(&mut permission_prompter));
         println!();
@@ -830,7 +830,7 @@ pub(crate) fn run_repl(
     }
     let p = crate::style::Palette::for_stdout();
     let prompt_string;
-    let prompt = if p.gray.is_empty() {
+    let prompt = if p.violet.is_empty() {
         "❯ "
     } else {
         prompt_string = format!("{}❯{} ", p.violet, p.r);
@@ -863,10 +863,7 @@ pub(crate) fn run_repl(
     let b_perms = cli.permission_mode.as_str().to_string();
     let b_session_id = cli.session.id.clone();
     let b_session_path = cli.session.path.clone();
-    let hint_line = format!(
-        "{}{}? for shortcuts  ·  /help  ·  Esc cancels{}",
-        p.dim, p.gray, p.r
-    );
+    let hint_line = format!("{}? for shortcuts  ·  /help  ·  Esc cancels{}", p.dim, p.r);
     let mut editor = input::LineEditor::new(prompt, slash_command_entries())
         .with_separator()
         .with_hint_line(hint_line)
