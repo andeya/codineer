@@ -247,6 +247,22 @@ impl LineEditor {
                     .prefix_line_widths
                     .push(crate::terminal_width::display_width(line));
             }
+            // Blank line after the banner to separate it from the input area,
+            // matching Claude Code's marginTop={1} between banner and prompt.
+            write!(out, "\r\n")?;
+            session.prefix_line_widths.push(0);
+        }
+
+        // Top separator — dim line above the prompt forming the top edge of
+        // the input box (bottom edge is drawn by render_content).
+        if self.show_separator {
+            let p = crate::style::Palette::for_stdout();
+            if p.dim.is_empty() {
+                write!(out, "{}\r\n", "─".repeat(new_cols))?;
+            } else {
+                write!(out, "{}{}{}\r\n", p.dim, "─".repeat(new_cols), p.r)?;
+            }
+            session.prefix_line_widths.push(new_cols);
         }
 
         session.render_content(out, &self.prompt, self.vim_enabled, suggestions)

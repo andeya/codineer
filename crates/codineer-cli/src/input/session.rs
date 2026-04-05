@@ -429,20 +429,18 @@ impl EditSession {
         base_prompt: &str,
         vim_enabled: bool,
     ) -> std::io::Result<()> {
-        // Only clear the prompt area (not the banner) so the banner remains
-        // visible as the session scrolls.  The next read_line() will draw a
-        // fresh banner before the next prompt.
         self.clear_render(out, 0)?;
+        // Re-draw the submitted prompt + buffer in dim gray so it visually
+        // recedes compared to the active prompt (matching Claude Code where
+        // completed turns are dimmed).
+        let p = crate::style::Palette::for_stdout();
         let prompt = self.prompt(base_prompt, vim_enabled);
-        let buffer = self.visible_buffer();
-        let prompt_display_width = strip_ansi(prompt.as_ref()).width();
+        let prompt_plain = strip_ansi(prompt.as_ref());
+        let prompt_display_width = prompt_plain.width();
         let indent = " ".repeat(prompt_display_width);
+        let buffer = self.visible_buffer();
         let display_buffer = buffer.replace('\n', &format!("\r\n{indent}"));
-        write!(out, "{prompt}{display_buffer}")?;
-        // In raw mode `\n` only moves down without resetting the column.
-        // Use `\r\n` so the cursor lands at column 0 on the new line before
-        // raw mode is disabled, ensuring any subsequent output starts at the
-        // left margin.
+        write!(out, "{}{prompt_plain}{display_buffer}{}", p.dim, p.r)?;
         write!(out, "\r\n")?;
         out.flush()
     }
