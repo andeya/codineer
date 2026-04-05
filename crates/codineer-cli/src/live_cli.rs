@@ -108,7 +108,9 @@ impl LiveCli {
         Ok(cli)
     }
 
-    fn run_turn(&mut self, input: &str) -> Result<(), Box<dyn std::error::Error>> {
+    /// Run a single conversation turn.  Errors are printed to the terminal
+    /// but never propagated — the REPL must stay alive.
+    fn run_turn(&mut self, input: &str) {
         if let Some(enrichment) = self.collect_lsp_diagnostics() {
             if let Ok(refreshed) = build_system_prompt_with_lsp(Some(&enrichment)) {
                 self.system_prompt = refreshed;
@@ -121,24 +123,27 @@ impl LiveCli {
         eprintln!("{}  ⎿  thinking…{}", pe.dim, pe.r);
         let mut permission_prompter = CliPermissionPrompter::new(self.permission_mode);
         let result = self.runtime.run_turn(input, Some(&mut permission_prompter));
+        println!();
         match result {
             Ok(_) => {
-                println!();
-                self.persist_session()?;
-                Ok(())
+                if let Err(e) = self.persist_session() {
+                    let p = crate::style::Palette::for_stdout();
+                    eprintln!(
+                        "{}  ⎿  {}{}Warning: failed to save session: {}{}",
+                        p.dim, p.r, p.bold_yellow, e, p.r
+                    );
+                }
             }
             Err(error) => {
-                println!();
                 let p = crate::style::Palette::for_stdout();
                 println!(
-                    "{}  ⎿  {}{}{}{}",
+                    "{}  ⎿  {}{}Error: {}{}",
                     p.dim,
                     p.r,
                     p.red_fg,
                     error.to_string().replace('\n', " "),
                     p.r
                 );
-                Err(Box::new(error))
             }
         }
     }
@@ -149,7 +154,10 @@ impl LiveCli {
         output_format: CliOutputFormat,
     ) -> Result<(), Box<dyn std::error::Error>> {
         match output_format {
-            CliOutputFormat::Text => self.run_turn(input),
+            CliOutputFormat::Text => {
+                self.run_turn(input);
+                Ok(())
+            }
             CliOutputFormat::Json => self.run_prompt_json(input),
         }
     }
@@ -885,7 +893,7 @@ pub(crate) fn run_repl(
                     continue;
                 }
                 if matches!(trimmed, "/exit" | "/quit") {
-                    cli.persist_session()?;
+                    let _ = cli.persist_session();
                     print_goodbye(&cli.session.path);
                     break;
                 }
@@ -896,23 +904,30 @@ pub(crate) fn run_repl(
                         let prompt = format!(
                             "Run this exact shell command and show me the output: `{shell_cmd}`"
                         );
-                        cli.run_turn(&prompt)?;
+                        cli.run_turn(&prompt);
                     }
                     continue;
                 }
                 if let Some(command) = SlashCommand::parse(trimmed) {
-                    if cli.handle_repl_command(command)? {
-                        cli.persist_session()?;
+                    match cli.handle_repl_command(command) {
+                        Ok(true) => {
+                            let _ = cli.persist_session();
+                        }
+                        Err(e) => {
+                            let p = crate::style::Palette::for_stdout();
+                            eprintln!("{}  ⎿  {}{}Error: {}{}", p.dim, p.r, p.red_fg, e, p.r);
+                        }
+                        _ => {}
                     }
                     continue;
                 }
                 editor.push_history(&input);
                 let enriched = process_at_mentioned_files(&input);
-                cli.run_turn(&enriched)?;
+                cli.run_turn(&enriched);
             }
             input::ReadOutcome::Cancel => {}
             input::ReadOutcome::Exit => {
-                cli.persist_session()?;
+                let _ = cli.persist_session();
                 print_goodbye(&cli.session.path);
                 break;
             }
