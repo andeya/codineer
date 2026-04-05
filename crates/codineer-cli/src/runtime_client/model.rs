@@ -121,6 +121,9 @@ impl<'a> ModelResolver<'a> {
                 let q = format!("api-version={v}");
                 c = c.with_endpoint_query(Some(q));
             }
+            if !config.headers.is_empty() {
+                c = c.with_custom_headers(config.headers.clone());
+            }
             c
         } else if let Some(preset) = api::builtin_preset(&lower) {
             let api_key = resolve_preset_api_key(preset)?;

@@ -73,6 +73,7 @@ pub struct OpenAiCompatClient {
     base_url: String,
     endpoint_query: Option<String>,
     retry: RetryPolicy,
+    custom_headers: std::collections::BTreeMap<String, String>,
 }
 
 impl std::fmt::Debug for OpenAiCompatClient {
@@ -94,6 +95,7 @@ impl OpenAiCompatClient {
             base_url: read_base_url(config),
             endpoint_query: None,
             retry: RetryPolicy::default(),
+            custom_headers: std::collections::BTreeMap::new(),
         }
     }
 
@@ -105,6 +107,7 @@ impl OpenAiCompatClient {
             base_url: base_url.into(),
             endpoint_query: None,
             retry: RetryPolicy::default(),
+            custom_headers: std::collections::BTreeMap::new(),
         }
     }
 
@@ -113,6 +116,15 @@ impl OpenAiCompatClient {
         self.endpoint_query = endpoint_query
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty());
+        self
+    }
+
+    #[must_use]
+    pub fn with_custom_headers(
+        mut self,
+        headers: std::collections::BTreeMap<String, String>,
+    ) -> Self {
+        self.custom_headers = headers;
         self
     }
 
@@ -221,6 +233,9 @@ impl OpenAiCompatClient {
             .header("content-type", "application/json");
         if !self.api_key.is_empty() {
             req = req.bearer_auth(&self.api_key);
+        }
+        for (name, value) in &self.custom_headers {
+            req = req.header(name.as_str(), value.as_str());
         }
         req.json(&build_chat_completion_request(request))
             .send()

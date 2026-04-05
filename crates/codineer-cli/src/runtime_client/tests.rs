@@ -22,6 +22,7 @@ fn make_provider(base_url: &str, default_model: Option<&str>) -> CustomProviderC
         api_key_env: None,
         models: vec![],
         default_model: default_model.map(|s| s.to_string()),
+        headers: BTreeMap::new(),
     }
 }
 
@@ -86,6 +87,7 @@ fn resolve_custom_api_key_returns_inline_key() {
         api_key_env: Some("SHOULD_NOT_USE".to_string()),
         models: vec![],
         default_model: None,
+        headers: BTreeMap::new(),
     };
     assert_eq!(resolve_custom_api_key(&config).unwrap(), "sk-test-123");
 }
@@ -105,6 +107,7 @@ fn resolve_custom_api_key_errors_on_missing_env_var() {
         api_key_env: Some("__CODINEER_TEST_NONEXISTENT_KEY__".to_string()),
         models: vec![],
         default_model: None,
+        headers: BTreeMap::new(),
     };
     let err = resolve_custom_api_key(&config).unwrap_err();
     assert!(err
@@ -209,6 +212,7 @@ fn resolver_uses_config_over_builtin_preset() {
             api_key_env: None,
             models: vec![],
             default_model: None,
+            headers: BTreeMap::new(),
         },
     );
     let config = config_with_providers(providers);

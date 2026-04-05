@@ -104,6 +104,8 @@ pub struct CustomProviderConfig {
     pub api_key_env: Option<String>,
     pub models: Vec<String>,
     pub default_model: Option<String>,
+    /// Extra HTTP headers sent with every request to this provider.
+    pub headers: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]

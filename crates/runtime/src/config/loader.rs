@@ -223,6 +223,7 @@ fn parse_optional_providers_config(
         let models = optional_string_array(provider_obj, "models", &ctx)?.unwrap_or_default();
         let default_model =
             optional_string(provider_obj, "defaultModel", &ctx)?.map(str::to_string);
+        let headers = optional_string_map(provider_obj, "headers", &ctx)?.unwrap_or_default();
         result.insert(
             name.clone(),
             CustomProviderConfig {
@@ -232,6 +233,7 @@ fn parse_optional_providers_config(
                 api_key_env,
                 models,
                 default_model,
+                headers,
             },
         );
     }
