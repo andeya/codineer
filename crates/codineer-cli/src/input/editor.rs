@@ -253,15 +253,9 @@ impl LineEditor {
             session.prefix_line_widths.push(0);
         }
 
-        // Top separator — dim line above the prompt forming the top edge of
-        // the input box (bottom edge is drawn by render_content).
         if self.show_separator {
-            let p = crate::style::Palette::for_stdout();
-            if p.dim.is_empty() {
-                write!(out, "{}\r\n", "─".repeat(new_cols))?;
-            } else {
-                write!(out, "{}{}{}\r\n", p.dim, "─".repeat(new_cols), p.r)?;
-            }
+            super::session::write_dim_separator(out, new_cols)?;
+            write!(out, "\r\n")?;
             session.prefix_line_widths.push(new_cols);
         }
 

@@ -12,8 +12,30 @@ use super::text::{
     previous_command_boundary, remove_previous_char, render_selected_text, selection_bounds,
     to_u16,
 };
+use crate::style::Palette;
 use crate::terminal_width::strip_ansi;
 use unicode_width::UnicodeWidthStr;
+
+/// Write a full-width dim separator line (`─`) without trailing newline.
+pub(super) fn write_dim_separator(out: &mut impl Write, cols: usize) -> std::io::Result<()> {
+    let p = Palette::for_stdout();
+    if p.dim.is_empty() {
+        write!(out, "{}", "─".repeat(cols))
+    } else {
+        write!(out, "{}{}{}", p.dim, "─".repeat(cols), p.r)
+    }
+}
+
+/// Write `content` on a `prompt_bg` background padded to `cols` width.
+fn write_bg_padded(
+    out: &mut impl Write,
+    p: &Palette,
+    content: &str,
+    cols: usize,
+) -> std::io::Result<()> {
+    let pad = cols.saturating_sub(content.width());
+    write!(out, "{}{content}{}{}", p.prompt_bg, " ".repeat(pad), p.r)
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ReadOutcome {
@@ -259,17 +281,10 @@ impl EditSession {
 
         let (cursor_row, cursor_col, total_lines) = self.cursor_layout(prompt.as_ref());
 
-        // Bottom separator — a subtle dim line separating the input area from
-        // the info/panel area below.
         let sep_lines = if self.show_bottom_sep {
             let (cols, _) = terminal::size().unwrap_or((80, 24));
-            let cols = cols as usize;
-            let p = crate::style::Palette::for_stdout();
-            if p.dim.is_empty() {
-                write!(out, "\r\n{}", "─".repeat(cols))?;
-            } else {
-                write!(out, "\r\n{}{}{}", p.dim, "─".repeat(cols), p.r)?;
-            }
+            write!(out, "\r\n")?;
+            write_dim_separator(out, cols as usize)?;
             1usize
         } else {
             0
@@ -339,18 +354,13 @@ impl EditSession {
         };
         let end = (start + max_visible).min(total);
 
-        let p = crate::style::Palette::for_stdout();
-
-        // Separator removed — the bottom separator from render_content serves
-        // as the visual boundary between input and this info area.
-        let mut lines_drawn: usize = 0;
+        let p = Palette::for_stdout();
 
         let name_col = (cols * 40 / 100).clamp(12, 30);
 
         for (i, item) in state.items[start..end].iter().enumerate() {
             let idx = start + i;
             let is_selected = idx == state.selected;
-
             let display_w = crate::terminal_width::display_width(&item.display);
             let pad = name_col.saturating_sub(display_w);
 
@@ -367,17 +377,12 @@ impl EditSession {
                 } else {
                     &item.description
                 };
-                if is_selected {
-                    write!(out, "{}{}{}{}", " ".repeat(pad), p.violet, desc, p.r)?;
-                } else {
-                    write!(out, "{}{}{}{}", " ".repeat(pad), p.dim, desc, p.r)?;
-                }
+                let color = if is_selected { p.violet } else { p.dim };
+                write!(out, "{}{color}{desc}{}", " ".repeat(pad), p.r)?;
             }
-
-            lines_drawn += 1;
         }
 
-        Ok(lines_drawn)
+        Ok(end - start)
     }
 
     /// Draw the keyboard shortcuts panel in the info area (shown when the
@@ -385,12 +390,7 @@ impl EditSession {
     /// lines drawn so the cursor can be repositioned correctly.
     fn draw_shortcuts_panel(&self, out: &mut impl Write) -> std::io::Result<usize> {
         let (cols, _) = terminal::size().unwrap_or((80, 24));
-        let cols = cols as usize;
-        let p = crate::style::Palette::for_stdout();
-
-        // Separator removed — the bottom separator from render_content serves
-        // as the visual boundary between input and this info area.
-        let mut lines: usize = 0;
+        let p = Palette::for_stdout();
 
         const SHORTCUTS: &[(&str, &str)] = &[
             ("! for bash mode", "double tap esc to clear input"),
@@ -401,24 +401,22 @@ impl EditSession {
             ("? for shortcuts", "/help for full command list"),
         ];
 
-        let left_col_width = (cols / 2).max(20);
+        let left_w = (cols as usize / 2).max(20);
         for &(left, right) in SHORTCUTS {
             write!(
                 out,
-                "\r\n{}  {:<width$}{right}{}",
+                "\r\n{}  {:<w$}{right}{}",
                 p.dim,
                 left,
                 p.r,
-                width = left_col_width - 2,
+                w = left_w - 2
             )?;
-            lines += 1;
         }
-
-        Ok(lines)
+        Ok(SHORTCUTS.len())
     }
 
     fn draw_interrupt_hint(&self, out: &mut impl Write) -> std::io::Result<usize> {
-        let p = crate::style::Palette::for_stdout();
+        let p = Palette::for_stdout();
         write!(out, "\r\n{}Press Ctrl-C again to exit{}", p.dim, p.r,)?;
         Ok(1)
     }
@@ -430,38 +428,24 @@ impl EditSession {
         vim_enabled: bool,
     ) -> std::io::Result<()> {
         self.clear_render(out, 0)?;
-        // Re-draw the submitted prompt with a dark gray background bar,
-        // matching Claude Code's highlighted input band for completed turns.
-        // The response below has no background — only the prompt line itself.
-        let p = crate::style::Palette::for_stdout();
+        let p = Palette::for_stdout();
         let prompt = self.prompt(base_prompt, vim_enabled);
-        let prompt_plain = strip_ansi(prompt.as_ref());
-        let prompt_display_width = prompt_plain.width();
-        let indent = " ".repeat(prompt_display_width);
-        let buffer = self.visible_buffer();
-        let (term_cols, _) = terminal::size().unwrap_or((80, 24));
-        let cols = term_cols as usize;
-        // Build each visual line with background padding to fill the terminal
-        // width, producing a solid background bar per line.
-        let first_line = format!("{prompt_plain}{}", buffer.lines().next().unwrap_or(""));
-        let pad = cols.saturating_sub(first_line.width());
-        write!(
+        let prompt_plain = strip_ansi(&prompt);
+        let indent = " ".repeat(prompt_plain.width());
+        let buf = self.visible_buffer();
+        let (cols, _) = terminal::size().unwrap_or((80, 24));
+        let cols = cols as usize;
+        // Each visual line gets a dark-gray background bar (Claude Code style).
+        let mut lines = buf.lines();
+        write_bg_padded(
             out,
-            "{bg}{first_line}{pad}{r}",
-            bg = p.prompt_bg,
-            pad = " ".repeat(pad),
-            r = p.r
+            &p,
+            &format!("{prompt_plain}{}", lines.next().unwrap_or("")),
+            cols,
         )?;
-        for line in buffer.lines().skip(1) {
-            let visual = format!("{indent}{line}");
-            let pad = cols.saturating_sub(visual.width());
-            write!(
-                out,
-                "\r\n{bg}{visual}{pad}{r}",
-                bg = p.prompt_bg,
-                pad = " ".repeat(pad),
-                r = p.r
-            )?;
+        for line in lines {
+            write!(out, "\r\n")?;
+            write_bg_padded(out, &p, &format!("{indent}{line}"), cols)?;
         }
         write!(out, "\r\n")?;
         out.flush()
