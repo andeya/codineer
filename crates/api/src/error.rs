@@ -19,6 +19,7 @@ pub enum ApiError {
         error_type: Option<String>,
         message: Option<String>,
         body: String,
+        url: Option<String>,
         retryable: bool,
     },
     RetriesExhausted {
@@ -98,13 +99,25 @@ impl Display for ApiError {
                 error_type,
                 message,
                 body,
+                url,
                 ..
-            } => match (error_type, message) {
-                (Some(error_type), Some(message)) => {
-                    write!(f, "api returned {status} ({error_type}): {message}")
+            } => {
+                match (error_type, message) {
+                    (Some(error_type), Some(message)) => {
+                        write!(f, "api returned {status} ({error_type}): {message}")?;
+                    }
+                    _ if body.is_empty() => {
+                        write!(f, "api returned {status} (no response body)")?;
+                    }
+                    _ => {
+                        write!(f, "api returned {status}: {body}")?;
+                    }
                 }
-                _ => write!(f, "api returned {status}: {body}"),
-            },
+                if let Some(url) = url {
+                    write!(f, "\n  request url: {url}")?;
+                }
+                Ok(())
+            }
             Self::RetriesExhausted {
                 attempts,
                 last_error,

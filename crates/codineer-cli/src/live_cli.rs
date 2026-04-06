@@ -144,12 +144,13 @@ impl LiveCli {
             }
             Err(error) => {
                 let p = crate::style::Palette::for_stdout();
+                let indent = "         ";
                 println!(
                     "{}  ⎿  {}{}Error: {}{}",
                     p.dim,
                     p.r,
                     p.red_fg,
-                    error.to_string().replace('\n', " "),
+                    error.to_string().replace('\n', &format!("\n{indent}")),
                     p.r
                 );
             }
