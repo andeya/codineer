@@ -4,7 +4,7 @@ This file provides persistent context to Codineer when working with this reposit
 
 ## Project
 
-**Codineer** is a local AI coding-agent CLI written in Rust.  It is the project that _builds_ the
+**Codineer** is a local AI coding-agent CLI written in Rust. It is the project that _builds_ the
 `codineer` binary — meaning this repo is both the tool and its own dogfood environment.
 
 - Binary crate: `codineer-cli` → produces the `codineer` executable
@@ -48,13 +48,13 @@ cargo test --workspace
 - **No external `lazy_static`** — use `std::sync::OnceLock` for one-time initialization.
 - **Error types**: prefer `Box<dyn std::error::Error>` at boundaries; typed errors inside crates.
 - **Paths**: always use `runtime::codineer_runtime_dir(cwd)` (not raw `.codineer` joins) for
-  runtime artifacts (sessions, agents, todos, sandbox dirs).  Use `runtime::find_project_codineer_dir(cwd)`
+  runtime artifacts (sessions, agents, todos, sandbox dirs). Use `runtime::find_project_codineer_dir(cwd)`
   to locate the nearest initialized `.codineer/` without falling back to home.
 - **Config loading**: `ConfigLoader::default_for(cwd)` walks ancestor dirs to find the project
   `.codineer/settings.json`; the global config is always `~/.codineer/settings.json`.
 - **Plugin manifests**: `plugin.json` lives at the plugin directory root (not in `.codineer-plugin/`).
 - **No `.codineer.json` flat config** — only directory-based `settings.json` is supported.
-- Comments should explain *why*, not *what*.  Avoid narrating obvious code.
+- Comments should explain _why_, not _what_. Avoid narrating obvious code.
 - Commit messages in English; code comments in English.
 
 ## Key design decisions
@@ -72,5 +72,5 @@ cargo test --workspace
 
 - Keep shared project defaults in `.codineer/settings.json`; machine-local overrides in
   `.codineer/settings.local.json` (gitignored).
-- Prefer small, focused commits.  Run the three verification commands above before pushing.
+- Prefer small, focused commits. Run the three verification commands above before pushing.
 - Update this file when architecture or conventions change.
