@@ -42,7 +42,6 @@ fn write_bg_padded(
 pub struct ImageData {
     pub bytes: Vec<u8>,
     pub media_type: String,
-    pub source_label: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

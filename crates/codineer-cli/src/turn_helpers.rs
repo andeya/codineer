@@ -262,8 +262,14 @@ fn strip_image_placeholders(input: &str) -> String {
             break;
         }
     }
-    // Normalise any leftover whitespace from removed tokens.
-    result.split_whitespace().collect::<Vec<_>>().join(" ")
+    // Collapse horizontal whitespace runs per line (preserving newlines).
+    result
+        .lines()
+        .map(|line| line.split_whitespace().collect::<Vec<_>>().join(" "))
+        .collect::<Vec<_>>()
+        .join("\n")
+        .trim()
+        .to_string()
 }
 
 /// Remove every `@path` (and `@"path"`) token from `input` and normalise the
@@ -320,8 +326,16 @@ mod tests {
 
     #[test]
     fn strip_image_placeholders_does_not_remove_non_numeric() {
-        // "[Image #abc]" should NOT be removed (not a valid placeholder)
         let s = "[Image #abc]text";
         assert_eq!(strip_image_placeholders(s), s);
+    }
+
+    #[test]
+    fn strip_image_placeholders_preserves_newlines() {
+        let input = "[Image #1]\nFirst paragraph.\n\nSecond paragraph.";
+        assert_eq!(
+            strip_image_placeholders(input),
+            "First paragraph.\n\nSecond paragraph."
+        );
     }
 }

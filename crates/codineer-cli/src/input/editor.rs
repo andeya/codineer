@@ -144,31 +144,17 @@ impl LineEditor {
                 let trimmed = text.trim();
 
                 // Drag-and-drop: if paste is a single-line image path, attach it.
+                let path = std::path::Path::new(trimmed);
                 if !trimmed.is_empty()
                     && !trimmed.contains('\n')
-                    && crate::image_util::is_image_path(std::path::Path::new(trimmed))
-                    && std::path::Path::new(trimmed).exists()
+                    && crate::image_util::is_image_path(path)
+                    && path.exists()
                 {
                     if let Ok(bytes) = std::fs::read(trimmed) {
                         let media_type = crate::image_util::detect_media_type(&bytes)
-                            .or_else(|| {
-                                crate::image_util::media_type_from_extension(std::path::Path::new(
-                                    trimmed,
-                                ))
-                            })
+                            .or_else(|| crate::image_util::media_type_from_extension(path))
                             .unwrap_or("image/png");
-                        let id = self.next_image_id;
-                        self.next_image_id += 1;
-                        self.image_store.insert(
-                            id,
-                            ImageData {
-                                bytes,
-                                media_type: media_type.to_string(),
-                                source_label: trimmed.to_string(),
-                            },
-                        );
-                        session.insert_text(&format!("[Image #{id}]"));
-                        self.update_suggestions(&session);
+                        self.insert_image(&mut session, bytes, media_type);
                         session.render_with_suggestions(
                             &mut stdout,
                             &self.prompt,
@@ -183,24 +169,8 @@ impl LineEditor {
                 // terminal sends an empty bracketed-paste event when the clipboard
                 // holds binary image data (no text representation).  Try arboard.
                 if trimmed.is_empty() {
-                    match super::clipboard::read_clipboard_image() {
-                        Ok((bytes, media_type)) => {
-                            let id = self.next_image_id;
-                            self.next_image_id += 1;
-                            self.image_store.insert(
-                                id,
-                                ImageData {
-                                    bytes,
-                                    media_type: media_type.to_string(),
-                                    source_label: "clipboard".to_string(),
-                                },
-                            );
-                            session.insert_text(&format!("[Image #{id}]"));
-                            self.update_suggestions(&session);
-                        }
-                        Err(_) => {
-                            // Empty paste with no image — just ignore silently.
-                        }
+                    if let Ok((bytes, media_type)) = super::clipboard::read_clipboard_image() {
+                        self.insert_image(&mut session, bytes, media_type);
                     }
                     session.render_with_suggestions(
                         &mut stdout,
@@ -248,23 +218,11 @@ impl LineEditor {
             // intercept Cmd+V themselves so SUPER is never received there — those
             // users must use Ctrl+V.
             if key.code == KeyCode::Char('v')
-                && (key.modifiers == KeyModifiers::CONTROL
-                    || key.modifiers == KeyModifiers::SUPER)
+                && (key.modifiers == KeyModifiers::CONTROL || key.modifiers == KeyModifiers::SUPER)
             {
                 match super::clipboard::read_clipboard_image() {
                     Ok((bytes, media_type)) => {
-                        let id = self.next_image_id;
-                        self.next_image_id += 1;
-                        self.image_store.insert(
-                            id,
-                            ImageData {
-                                bytes,
-                                media_type: media_type.to_string(),
-                                source_label: "clipboard".to_string(),
-                            },
-                        );
-                        session.insert_text(&format!("[Image #{id}]"));
-                        self.update_suggestions(&session);
+                        self.insert_image(&mut session, bytes, media_type);
                     }
                     Err(reason) => {
                         session.transient_status = Some(reason);
@@ -422,6 +380,21 @@ impl LineEditor {
                 images: Vec::new(),
             }));
         }
+    }
+
+    /// Store image bytes and insert a `[Image #N]` placeholder into the editor.
+    fn insert_image(&mut self, session: &mut EditSession, bytes: Vec<u8>, media_type: &str) {
+        let id = self.next_image_id;
+        self.next_image_id += 1;
+        self.image_store.insert(
+            id,
+            ImageData {
+                bytes,
+                media_type: media_type.to_string(),
+            },
+        );
+        session.insert_text(&format!("[Image #{id}]"));
+        self.update_suggestions(session);
     }
 
     /// Return only images whose `[Image #N]` placeholder still appears in
