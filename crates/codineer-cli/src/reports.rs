@@ -33,22 +33,35 @@ pub(crate) struct StatusUsage {
     pub(crate) estimated_tokens: usize,
 }
 
-pub(crate) fn format_model_report(model: &str, message_count: usize, turns: u32) -> String {
+pub(crate) fn format_model_report(
+    model: &str,
+    message_count: usize,
+    turns: u32,
+    user_aliases: &std::collections::BTreeMap<String, String>,
+) -> String {
     let p = Palette::for_stdout();
+    let free = p.dim_text("(no key needed)");
+    let cloud = p.dim_text("(free tier)");
+
+    let aliases_section = if user_aliases.is_empty() {
+        format!(
+            "\n{}  (none — configure in settings.json: {{\"modelAliases\": {{\"name\": \"model-id\"}}}})",
+            p.title("Aliases\n"),
+        )
+    } else {
+        let mut lines = vec![format!("{}", p.title("Aliases"))];
+        for (alias, canonical) in user_aliases {
+            lines.push(format!("  {alias:<16} → {canonical}"));
+        }
+        lines.join("\n")
+    };
+
     format!(
         "{}
   Current          {model}
   Session          {message_count} messages · {turns} turns
 
-{}
-  opus             claude-opus-4-6      {a}
-  sonnet           claude-sonnet-4-6    {a}
-  haiku            claude-haiku-4-5-20251213 {a}
-  grok             grok-3               {x}
-  grok-mini        grok-3-mini          {x}
-  gpt              gpt-4o               {o}
-  mini             gpt-4o-mini          {o}
-  o3               o3                   {o}
+{aliases_section}
 
 {}
   ollama/<model>   Local Ollama model   {free}
@@ -61,14 +74,8 @@ pub(crate) fn format_model_report(model: &str, message_count: usize, turns: u32)
   /model           Show the current model
   /model <name>    Switch models for this REPL session",
         p.title("Model"),
-        p.title("Aliases"),
         p.title("Custom providers"),
         p.dim_text("Next"),
-        a = p.dim_text("(Anthropic)"),
-        x = p.dim_text("(xAI)"),
-        o = p.dim_text("(OpenAI)"),
-        free = p.dim_text("(no key needed)"),
-        cloud = p.dim_text("(free tier)"),
     )
 }
 

@@ -29,7 +29,7 @@ impl<'a> ModelResolver<'a> {
 
     pub fn resolve(&self, input: &str) -> Result<ResolvedModel, Box<dyn std::error::Error>> {
         let expanded = self.expand_shorthand(input)?;
-        let canonical = api::resolve_model_alias(&expanded);
+        let canonical = api::resolve_model_alias(&expanded, self.config.model_aliases());
         match self.build_client(&canonical) {
             Ok(resolved) => Ok(resolved),
             Err(primary_err) => self.try_fallback(&canonical, primary_err),
@@ -50,7 +50,7 @@ impl<'a> ModelResolver<'a> {
                 Ok(m) => m,
                 Err(_) => continue,
             };
-            let canonical = api::resolve_model_alias(&expanded);
+            let canonical = api::resolve_model_alias(&expanded, self.config.model_aliases());
             if let Ok(resolved) = self.build_client(&canonical) {
                 eprintln!("[info] {primary_model} unavailable, falling back to {canonical}");
                 return Ok(resolved);

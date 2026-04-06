@@ -137,13 +137,29 @@ fn resolve_preset_api_key_errors_when_env_missing() {
 // -----------------------------------------------------------------------
 
 #[test]
-fn resolver_resolves_alias_before_building_client() {
-    let config = config_with_providers(empty_providers());
+fn resolver_resolves_user_alias_before_building_client() {
+    let mut feature = runtime::RuntimeFeatureConfig::default();
+    feature.set_providers(empty_providers());
+    let mut aliases = BTreeMap::new();
+    aliases.insert("sonnet".into(), "claude-sonnet-4-6".into());
+    feature.set_model_aliases(aliases);
+    let config = runtime::RuntimeConfig::new(BTreeMap::new(), Vec::new(), feature);
     let resolver = ModelResolver::new(&config);
     let err = resolver.resolve("sonnet").unwrap_err();
     assert!(
         err.to_string().contains("claude-sonnet-4-6"),
         "error should reference canonical model: {err}"
+    );
+}
+
+#[test]
+fn resolver_passes_through_unknown_name() {
+    let config = config_with_providers(empty_providers());
+    let resolver = ModelResolver::new(&config);
+    let err = resolver.resolve("sonnet").unwrap_err();
+    assert!(
+        err.to_string().contains("sonnet"),
+        "error should reference raw model name when no alias: {err}"
     );
 }
 

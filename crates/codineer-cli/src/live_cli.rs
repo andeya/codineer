@@ -16,8 +16,8 @@ use runtime::{
 use serde_json::json;
 
 use crate::cli::{
-    create_mcp_manager, permission_mode_from_label, resolve_model_alias, AllowedToolSet,
-    CliOutputFormat, SharedMcpManager,
+    create_mcp_manager, permission_mode_from_label, AllowedToolSet, CliOutputFormat,
+    SharedMcpManager,
 };
 use crate::help::{render_repl_help, render_unknown_repl_command, slash_command_entries};
 use crate::progress::{InternalPromptProgressReporter, InternalPromptProgressRun};
@@ -47,6 +47,7 @@ use crate::{
 };
 pub(crate) struct LiveCli {
     model: String,
+    model_aliases: std::collections::BTreeMap<String, String>,
     allowed_tools: Option<AllowedToolSet>,
     permission_mode: PermissionMode,
     system_prompt: Vec<String>,
@@ -80,7 +81,7 @@ impl LiveCli {
         let system_prompt = build_system_prompt()?;
         let session = create_managed_session_handle()?;
         let mcp_manager = create_mcp_manager();
-        let (runtime, resolved_model) = build_runtime(RuntimeParams {
+        let build = build_runtime(RuntimeParams {
             session: Session::new(),
             model: model.clone(),
             system_prompt: system_prompt.clone(),
@@ -95,11 +96,12 @@ impl LiveCli {
             .ok()
             .and_then(|cwd| crate::lsp_detect::detect_lsp_servers(&cwd));
         let cli = Self {
-            model: resolved_model,
+            model: build.resolved_model,
+            model_aliases: build.model_aliases,
             allowed_tools,
             permission_mode,
             system_prompt,
-            runtime,
+            runtime: build.runtime,
             session,
             mcp_manager,
             lsp_manager,
@@ -173,7 +175,7 @@ impl LiveCli {
 
     fn run_prompt_json(&mut self, input: &str) -> Result<(), Box<dyn std::error::Error>> {
         let session = self.runtime.session().clone();
-        let (mut runtime, _) = build_runtime(self.runtime_params(session, false))?;
+        let mut runtime = build_runtime(self.runtime_params(session, false))?.runtime;
         let mut permission_prompter = CliPermissionPrompter::new(self.permission_mode);
         let summary = runtime.run_turn(input, Some(&mut permission_prompter))?;
         self.runtime = runtime;
@@ -390,12 +392,13 @@ impl LiveCli {
                     &self.model,
                     self.runtime.session().messages.len(),
                     self.runtime.usage().turns(),
+                    &self.model_aliases,
                 )
             );
             return Ok(false);
         };
 
-        let model = resolve_model_alias(&model);
+        let model = crate::cli::resolve_model_alias(&model, &self.model_aliases);
 
         if model == self.model {
             println!(
@@ -404,6 +407,7 @@ impl LiveCli {
                     &self.model,
                     self.runtime.session().messages.len(),
                     self.runtime.usage().turns(),
+                    &self.model_aliases,
                 )
             );
             return Ok(false);
@@ -414,9 +418,9 @@ impl LiveCli {
         let message_count = session.messages.len();
         let mut params = self.runtime_params(session, true);
         params.model = model.clone();
-        let (runtime, resolved_model) = build_runtime(params)?;
-        self.runtime = runtime;
-        self.model.clone_from(&resolved_model);
+        let build = build_runtime(params)?;
+        self.runtime = build.runtime;
+        self.model.clone_from(&build.resolved_model);
         println!(
             "{}",
             format_model_switch_report(&previous, &model, message_count)
@@ -450,7 +454,7 @@ impl LiveCli {
         let previous = self.permission_mode.as_str().to_string();
         let session = self.runtime.session().clone();
         self.permission_mode = permission_mode_from_label(normalized)?;
-        self.runtime = build_runtime(self.runtime_params(session, true))?.0;
+        self.runtime = build_runtime(self.runtime_params(session, true))?.runtime;
         println!(
             "{}",
             format_permissions_switch_report(&previous, normalized)
@@ -467,7 +471,7 @@ impl LiveCli {
         }
 
         self.session = create_managed_session_handle()?;
-        self.runtime = build_runtime(self.runtime_params(Session::new(), true))?.0;
+        self.runtime = build_runtime(self.runtime_params(Session::new(), true))?.runtime;
         println!(
             "Session cleared\n  Mode             fresh session\n  Preserved model  {}\n  Permission mode  {}\n  Session          {}",
             self.model,
@@ -488,7 +492,7 @@ impl LiveCli {
     ) -> Result<usize, Box<dyn std::error::Error>> {
         let session = Session::load_from_path(&handle.path)?;
         let count = session.messages.len();
-        self.runtime = build_runtime(self.runtime_params(session, true))?.0;
+        self.runtime = build_runtime(self.runtime_params(session, true))?.runtime;
         self.session = handle;
         Ok(count)
     }
@@ -608,7 +612,7 @@ impl LiveCli {
 
     fn reload_runtime_features(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         let session = self.runtime.session().clone();
-        self.runtime = build_runtime(self.runtime_params(session, true))?.0;
+        self.runtime = build_runtime(self.runtime_params(session, true))?.runtime;
         self.persist_session()
     }
 
@@ -617,7 +621,7 @@ impl LiveCli {
         let removed = result.removed_message_count;
         let kept = result.compacted_session.messages.len();
         let skipped = removed == 0;
-        self.runtime = build_runtime(self.runtime_params(result.compacted_session, true))?.0;
+        self.runtime = build_runtime(self.runtime_params(result.compacted_session, true))?.runtime;
         self.persist_session()?;
         println!("{}", format_compact_report(removed, kept, skipped));
         Ok(())
@@ -633,7 +637,7 @@ impl LiveCli {
         let mut params = self.runtime_params(session, false);
         params.enable_tools = enable_tools;
         params.progress_reporter = progress;
-        let (mut runtime, _) = build_runtime(params)?;
+        let mut runtime = build_runtime(params)?.runtime;
         let mut permission_prompter = CliPermissionPrompter::new(self.permission_mode);
         let summary = runtime.run_turn(prompt, Some(&mut permission_prompter))?;
         Ok(final_assistant_text(&summary).trim().to_string())

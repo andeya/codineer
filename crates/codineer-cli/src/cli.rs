@@ -125,11 +125,11 @@ pub(crate) fn parse_flags(args: &[String]) -> Result<ParsedFlags, String> {
                 let value = args
                     .get(index + 1)
                     .ok_or_else(|| "missing value for --model".to_string())?;
-                flags.model = resolve_model_alias(value);
+                flags.model = value.trim().to_string();
                 index += 2;
             }
             flag if flag.starts_with("--model=") => {
-                flags.model = resolve_model_alias(&flag[8..]);
+                flags.model = flag[8..].trim().to_string();
                 index += 1;
             }
             "--output-format" => {
@@ -268,7 +268,7 @@ pub(crate) fn parse_args(args: &[String]) -> Result<CliAction, String> {
     if rest.first().map(String::as_str) == Some("-p") {
         return Ok(CliAction::Prompt {
             prompt: rest[1..].join(" "),
-            model: resolve_model_alias(&model),
+            model: model.clone(),
             output_format,
             allowed_tools,
             permission_mode,
@@ -405,8 +405,11 @@ pub(crate) fn format_direct_slash_command_error(command: &str, is_unknown: bool)
     lines.join("\n")
 }
 
-pub(crate) fn resolve_model_alias(model: &str) -> String {
-    api::resolve_model_alias(model)
+pub(crate) fn resolve_model_alias(
+    model: &str,
+    aliases: &std::collections::BTreeMap<String, String>,
+) -> String {
+    api::resolve_model_alias(model, aliases)
 }
 
 pub(crate) fn normalize_allowed_tools(values: &[String]) -> Result<Option<AllowedToolSet>, String> {

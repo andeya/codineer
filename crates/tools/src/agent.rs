@@ -7,9 +7,9 @@ use crate::registry::ToolSpec;
 use crate::specs::mvp_tool_specs;
 use crate::types::{AgentInput, AgentJob, AgentOutput};
 use api::{
-    max_tokens_for_model, resolve_model_alias, ContentBlockDelta, InputContentBlock, InputMessage,
-    MessageRequest, MessageResponse, OutputContentBlock, ProviderClient,
-    StreamEvent as ApiStreamEvent, ToolChoice, ToolDefinition, ToolResultContentBlock,
+    max_tokens_for_model, ContentBlockDelta, InputContentBlock, InputMessage, MessageRequest,
+    MessageResponse, OutputContentBlock, ProviderClient, StreamEvent as ApiStreamEvent, ToolChoice,
+    ToolDefinition, ToolResultContentBlock,
 };
 use runtime::{
     load_system_prompt, ApiClient, ApiRequest, AssistantEvent, ContentBlock, ConversationMessage,
@@ -386,7 +386,7 @@ struct ProviderRuntimeClient {
 
 impl ProviderRuntimeClient {
     fn new(model: &str, allowed_tools: BTreeSet<String>) -> Result<Self, String> {
-        let model = resolve_model_alias(model).clone();
+        let model = model.trim().to_string();
         let client = ProviderClient::from_model(&model).map_err(|error| error.to_string())?;
         Ok(Self {
             runtime: tokio::runtime::Runtime::new().map_err(|error| error.to_string())?,

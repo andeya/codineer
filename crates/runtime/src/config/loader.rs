@@ -99,6 +99,7 @@ impl ConfigLoader {
             oauth: parse_optional_oauth_config(&merged_value, "merged settings.oauth")?,
             model: parse_optional_model(&merged_value),
             fallback_models: parse_optional_fallback_models(&merged_value),
+            model_aliases: parse_optional_model_aliases(&merged_value),
             permission_mode: parse_optional_permission_mode(&merged_value)?,
             sandbox: parse_optional_sandbox_config(&merged_value)?,
             providers: parse_optional_providers_config(&merged_value)?,
@@ -187,6 +188,18 @@ fn parse_optional_model(root: &JsonValue) -> Option<String> {
         .and_then(|object| object.get("model"))
         .and_then(JsonValue::as_str)
         .map(ToOwned::to_owned)
+}
+
+fn parse_optional_model_aliases(root: &JsonValue) -> BTreeMap<String, String> {
+    root.as_object()
+        .and_then(|object| object.get("modelAliases"))
+        .and_then(JsonValue::as_object)
+        .map(|obj| {
+            obj.iter()
+                .filter_map(|(k, v)| v.as_str().map(|s| (k.to_ascii_lowercase(), s.to_string())))
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 fn parse_optional_fallback_models(root: &JsonValue) -> Vec<String> {

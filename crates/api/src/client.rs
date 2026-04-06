@@ -21,8 +21,7 @@ impl ProviderClient {
         model: &str,
         default_auth: Option<AuthSource>,
     ) -> Result<Self, ApiError> {
-        let resolved_model = providers::resolve_model_alias(model);
-        match providers::detect_provider_kind(&resolved_model) {
+        match providers::detect_provider_kind(model) {
             ProviderKind::CodineerApi => Ok(Self::CodineerApi(match default_auth {
                 Some(auth) => CodineerApiClient::from_auth(auth),
                 None => CodineerApiClient::from_env()?,
@@ -44,9 +43,8 @@ impl ProviderClient {
         model: &str,
         credential: runtime::ResolvedCredential,
     ) -> Result<Self, ApiError> {
-        let resolved_model = providers::resolve_model_alias(model);
         let auth = AuthSource::from(credential);
-        match providers::detect_provider_kind(&resolved_model) {
+        match providers::detect_provider_kind(model) {
             ProviderKind::CodineerApi => Ok(Self::CodineerApi(
                 CodineerApiClient::from_auth(auth)
                     .with_base_url(codineer_provider::read_base_url()),
@@ -155,12 +153,25 @@ pub fn read_xai_base_url() -> String {
 #[cfg(test)]
 mod tests {
     use crate::providers::{detect_provider_kind, resolve_model_alias, ProviderKind};
+    use std::collections::BTreeMap;
 
     #[test]
-    fn resolves_existing_and_grok_aliases() {
-        assert_eq!(resolve_model_alias("opus"), "claude-opus-4-6");
-        assert_eq!(resolve_model_alias("grok"), "grok-3");
-        assert_eq!(resolve_model_alias("grok-mini"), "grok-3-mini");
+    fn resolves_user_aliases_via_api() {
+        let mut aliases = BTreeMap::new();
+        aliases.insert("opus".into(), "claude-opus-4-6".into());
+        aliases.insert("grok".into(), "grok-3".into());
+        assert_eq!(resolve_model_alias("opus", &aliases), "claude-opus-4-6");
+        assert_eq!(resolve_model_alias("grok", &aliases), "grok-3");
+    }
+
+    #[test]
+    fn passthrough_without_aliases() {
+        let empty = BTreeMap::new();
+        assert_eq!(resolve_model_alias("grok-3", &empty), "grok-3");
+        assert_eq!(
+            resolve_model_alias("unknown-model", &empty),
+            "unknown-model"
+        );
     }
 
     #[test]

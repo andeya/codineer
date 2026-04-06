@@ -115,7 +115,7 @@ ollama serve                                      # Local AI (no key needed)
 codineer login                                    # Or OAuth login (default provider)
 codineer login anthropic --source claude-code     # Use Claude Code credentials
 codineer status                                   # Check authentication status
-codineer config set model sonnet                  # Set default model
+codineer config set model claude-sonnet-4-6        # Set default model
 
 # 2. Initialize project context (optional)
 codineer init
@@ -131,25 +131,29 @@ Codineer auto-detects your provider. No extra flags needed. All credentials can 
 
 ## Models & Providers
 
-### Built-in aliases
+### Model aliases
 
-| Alias       | Model                       | Provider  |
-| ----------- | --------------------------- | --------- |
-| `opus`      | `claude-opus-4-6`           | Anthropic |
-| `sonnet`    | `claude-sonnet-4-6`         | Anthropic |
-| `haiku`     | `claude-haiku-4-5-20251213` | Anthropic |
-| `grok`      | `grok-3`                    | xAI       |
-| `grok-mini` | `grok-3-mini`               | xAI       |
-| `grok-2`    | `grok-2`                    | xAI       |
-| `gpt`       | `gpt-4o`                    | OpenAI    |
-| `mini`      | `gpt-4o-mini`               | OpenAI    |
-| `o3`        | `o3`                        | OpenAI    |
-| `o3-mini`   | `o3-mini`                   | OpenAI    |
+Define your own short model names in `settings.json`:
+
+```json
+{
+  "modelAliases": {
+    "sonnet": "claude-sonnet-4-6",
+    "opus": "claude-opus-4-6",
+    "haiku": "claude-haiku-4-5-20251213",
+    "grok": "grok-3",
+    "gpt": "gpt-4o",
+    "flash": "gemini/gemini-2.5-flash"
+  }
+}
+```
 
 ```bash
-codineer --model opus "review my changes"
-codineer --model grok-mini "quick question"
+codineer --model sonnet "review my changes"
+codineer --model flash "quick question"
 ```
+
+No aliases are built in — you decide what short names make sense for your workflow. View your configured aliases: `codineer models`.
 
 ### Custom providers (OpenAI-compatible)
 
@@ -241,12 +245,12 @@ Set an ordered list of fallback models in `settings.json`. If the primary model 
 
 ```json
 {
-  "model": "sonnet",
+  "model": "claude-sonnet-4-6",
   "fallbackModels": ["ollama/qwen3-coder", "groq/llama-3.3-70b-versatile"]
 }
 ```
 
-This is especially useful for zero-cost setups: set a cloud model as primary and local models as fallback.
+This is especially useful for zero-cost setups: set a cloud model as primary and local models as fallback. Model names in `model` and `fallbackModels` support your custom aliases from `modelAliases`.
 
 ### OpenClaw Zero Token (Free Access to Major AI Models)
 
@@ -419,7 +423,11 @@ All files use the same schema. `env`, `providers`, and `mcpServers` objects are 
 
 ```json
 {
-  "model": "sonnet",
+  "model": "claude-sonnet-4-6",
+  "modelAliases": {
+    "sonnet": "claude-sonnet-4-6",
+    "flash": "gemini/gemini-2.5-flash"
+  },
   "permissionMode": "workspace-write",
   "env": {
     "ANTHROPIC_API_KEY": "sk-ant-...",
@@ -437,7 +445,8 @@ All files use the same schema. `env`, `providers`, and `mcpServers` objects are 
 
 | Key              | Type     | Description                                                                                                                                                                                                        |
 | ---------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `model`          | string   | Default model (e.g. `"sonnet"`, `"ollama/qwen3-coder"`)                                                                                                                                                            |
+| `model`          | string   | Default model (e.g. `"claude-sonnet-4-6"`, `"ollama/qwen3-coder"`)                                                                                                                                                 |
+| `modelAliases`   | object   | Custom short names mapping to full model IDs (e.g. `{"sonnet": "claude-sonnet-4-6"}`)                                                                                                                              |
 | `fallbackModels` | string[] | Ordered list of fallback models when the primary is unavailable                                                                                                                                                    |
 | `permissionMode` | string   | `"read-only"`, `"workspace-write"`, or `"danger-full-access"`                                                                                                                                                      |
 | `env`            | object   | Environment variables injected at startup. Shell exports take precedence.                                                                                                                                          |

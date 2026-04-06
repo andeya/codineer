@@ -38,33 +38,6 @@ pub struct ProviderMetadata {
 
 const MODEL_REGISTRY: &[(&str, ProviderMetadata)] = &[
     (
-        "opus",
-        ProviderMetadata {
-            provider: ProviderKind::CodineerApi,
-            auth_env: "ANTHROPIC_API_KEY",
-            base_url_env: "ANTHROPIC_BASE_URL",
-            default_base_url: codineer_provider::DEFAULT_BASE_URL,
-        },
-    ),
-    (
-        "sonnet",
-        ProviderMetadata {
-            provider: ProviderKind::CodineerApi,
-            auth_env: "ANTHROPIC_API_KEY",
-            base_url_env: "ANTHROPIC_BASE_URL",
-            default_base_url: codineer_provider::DEFAULT_BASE_URL,
-        },
-    ),
-    (
-        "haiku",
-        ProviderMetadata {
-            provider: ProviderKind::CodineerApi,
-            auth_env: "ANTHROPIC_API_KEY",
-            base_url_env: "ANTHROPIC_BASE_URL",
-            default_base_url: codineer_provider::DEFAULT_BASE_URL,
-        },
-    ),
-    (
         "claude-opus-4-6",
         ProviderMetadata {
             provider: ProviderKind::CodineerApi,
@@ -92,25 +65,7 @@ const MODEL_REGISTRY: &[(&str, ProviderMetadata)] = &[
         },
     ),
     (
-        "grok",
-        ProviderMetadata {
-            provider: ProviderKind::Xai,
-            auth_env: "XAI_API_KEY",
-            base_url_env: "XAI_BASE_URL",
-            default_base_url: openai_compat::DEFAULT_XAI_BASE_URL,
-        },
-    ),
-    (
         "grok-3",
-        ProviderMetadata {
-            provider: ProviderKind::Xai,
-            auth_env: "XAI_API_KEY",
-            base_url_env: "XAI_BASE_URL",
-            default_base_url: openai_compat::DEFAULT_XAI_BASE_URL,
-        },
-    ),
-    (
-        "grok-mini",
         ProviderMetadata {
             provider: ProviderKind::Xai,
             auth_env: "XAI_API_KEY",
@@ -137,25 +92,7 @@ const MODEL_REGISTRY: &[(&str, ProviderMetadata)] = &[
         },
     ),
     (
-        "gpt",
-        ProviderMetadata {
-            provider: ProviderKind::OpenAi,
-            auth_env: "OPENAI_API_KEY",
-            base_url_env: "OPENAI_BASE_URL",
-            default_base_url: openai_compat::DEFAULT_OPENAI_BASE_URL,
-        },
-    ),
-    (
         "gpt-4o",
-        ProviderMetadata {
-            provider: ProviderKind::OpenAi,
-            auth_env: "OPENAI_API_KEY",
-            base_url_env: "OPENAI_BASE_URL",
-            default_base_url: openai_compat::DEFAULT_OPENAI_BASE_URL,
-        },
-    ),
-    (
-        "mini",
         ProviderMetadata {
             provider: ProviderKind::OpenAi,
             auth_env: "OPENAI_API_KEY",
@@ -240,12 +177,6 @@ pub fn parse_custom_provider_prefix(model: &str) -> Option<(&str, &str)> {
     if provider.is_empty() || model_part.is_empty() {
         return None;
     }
-    if MODEL_REGISTRY
-        .iter()
-        .any(|(alias, _)| *alias == provider.to_ascii_lowercase())
-    {
-        return None;
-    }
     Some((provider, model_part))
 }
 
@@ -258,46 +189,27 @@ pub fn builtin_preset(name: &str) -> Option<&'static BuiltinProviderPreset> {
         .find(|preset| preset.name == lower)
 }
 
+/// Normalize a model name: trim whitespace, apply user-defined aliases.
+/// Pass an empty map if no user aliases are available.
 #[must_use]
-pub fn resolve_model_alias(model: &str) -> String {
+pub fn resolve_model_alias(
+    model: &str,
+    user_aliases: &std::collections::BTreeMap<String, String>,
+) -> String {
     let trimmed = model.trim();
     if parse_custom_provider_prefix(trimmed).is_some() {
         return trimmed.to_string();
     }
     let lower = trimmed.to_ascii_lowercase();
-    MODEL_REGISTRY
-        .iter()
-        .find_map(|(alias, metadata)| {
-            (*alias == lower).then_some(match metadata.provider {
-                ProviderKind::CodineerApi => match *alias {
-                    "opus" => "claude-opus-4-6",
-                    "sonnet" => "claude-sonnet-4-6",
-                    "haiku" => "claude-haiku-4-5-20251213",
-                    _ => trimmed,
-                },
-                ProviderKind::Xai => match *alias {
-                    "grok" | "grok-3" => "grok-3",
-                    "grok-mini" | "grok-3-mini" => "grok-3-mini",
-                    "grok-2" => "grok-2",
-                    _ => trimmed,
-                },
-                ProviderKind::OpenAi => match *alias {
-                    "gpt" | "gpt-4o" => "gpt-4o",
-                    "mini" | "gpt-4o-mini" => "gpt-4o-mini",
-                    "o3" => "o3",
-                    "o3-mini" => "o3-mini",
-                    _ => trimmed,
-                },
-                ProviderKind::Custom => trimmed,
-            })
-        })
-        .map_or_else(|| trimmed.to_string(), ToOwned::to_owned)
+    user_aliases
+        .get(&lower)
+        .cloned()
+        .unwrap_or_else(|| trimmed.to_string())
 }
 
 #[must_use]
 pub fn metadata_for_model(model: &str) -> Option<ProviderMetadata> {
-    let canonical = resolve_model_alias(model);
-    let lower = canonical.to_ascii_lowercase();
+    let lower = model.trim().to_ascii_lowercase();
     if let Some((_, metadata)) = MODEL_REGISTRY.iter().find(|(alias, _)| *alias == lower) {
         return Some(*metadata);
     }
@@ -373,10 +285,10 @@ pub fn auto_detect_default_model() -> Option<&'static str> {
 
 #[must_use]
 pub fn max_tokens_for_model(model: &str) -> u32 {
-    let canonical = resolve_model_alias(model);
-    if canonical.starts_with("claude-opus") || canonical == "opus" {
+    let canonical = model.trim();
+    if canonical.starts_with("claude-opus") {
         32_000
-    } else if parse_custom_provider_prefix(&canonical).is_some() {
+    } else if parse_custom_provider_prefix(canonical).is_some() {
         // Local / custom models often have smaller context windows;
         // 16k is a safe default that avoids hitting limits on 8B–32B models.
         16_000
@@ -385,25 +297,15 @@ pub fn max_tokens_for_model(model: &str) -> u32 {
     }
 }
 
-/// A model alias entry for listing.
-#[derive(Debug, Clone)]
-pub struct ModelAliasEntry {
-    pub alias: &'static str,
-    pub canonical: String,
-    pub provider: ProviderKind,
-}
-
-/// Return all built-in model aliases, optionally filtered by provider kind.
+/// Return all known model names from the registry.
 #[must_use]
-pub fn list_builtin_models(filter_provider: Option<ProviderKind>) -> Vec<ModelAliasEntry> {
+pub fn list_known_models(
+    filter_provider: Option<ProviderKind>,
+) -> Vec<(&'static str, ProviderKind)> {
     MODEL_REGISTRY
         .iter()
         .filter(|(_, meta)| filter_provider.is_none_or(|p| meta.provider == p))
-        .map(|(alias, meta)| ModelAliasEntry {
-            alias,
-            canonical: resolve_model_alias(alias),
-            provider: meta.provider,
-        })
+        .map(|(name, meta)| (*name, meta.provider))
         .collect()
 }
 
@@ -433,15 +335,37 @@ impl ProviderKind {
 #[cfg(test)]
 mod tests {
     use super::{
-        builtin_preset, detect_provider_kind, list_builtin_models, max_tokens_for_model,
+        builtin_preset, detect_provider_kind, list_known_models, max_tokens_for_model,
         parse_custom_provider_prefix, provider_kind_by_name, resolve_model_alias, ProviderKind,
     };
+    use std::collections::BTreeMap;
+
+    fn empty_aliases() -> BTreeMap<String, String> {
+        BTreeMap::new()
+    }
+
+    fn sample_aliases() -> BTreeMap<String, String> {
+        let mut m = BTreeMap::new();
+        m.insert("sonnet".into(), "claude-sonnet-4-6".into());
+        m.insert("grok".into(), "grok-3".into());
+        m
+    }
 
     #[test]
-    fn resolves_grok_aliases() {
-        assert_eq!(resolve_model_alias("grok"), "grok-3");
-        assert_eq!(resolve_model_alias("grok-mini"), "grok-3-mini");
-        assert_eq!(resolve_model_alias("grok-2"), "grok-2");
+    fn resolves_user_aliases() {
+        let aliases = sample_aliases();
+        assert_eq!(resolve_model_alias("sonnet", &aliases), "claude-sonnet-4-6");
+        assert_eq!(resolve_model_alias("grok", &aliases), "grok-3");
+    }
+
+    #[test]
+    fn passthrough_when_no_alias() {
+        let aliases = empty_aliases();
+        assert_eq!(resolve_model_alias("grok-2", &aliases), "grok-2");
+        assert_eq!(
+            resolve_model_alias("custom-model", &aliases),
+            "custom-model"
+        );
     }
 
     #[test]
@@ -466,7 +390,7 @@ mod tests {
 
     #[test]
     fn keeps_existing_max_token_heuristic() {
-        assert_eq!(max_tokens_for_model("opus"), 32_000);
+        assert_eq!(max_tokens_for_model("claude-opus-4-6"), 32_000);
         assert_eq!(max_tokens_for_model("grok-3"), 64_000);
     }
 
@@ -505,7 +429,7 @@ mod tests {
     #[test]
     fn resolves_custom_model_passthrough() {
         assert_eq!(
-            resolve_model_alias("ollama/qwen2.5-coder"),
+            resolve_model_alias("ollama/qwen2.5-coder", &empty_aliases()),
             "ollama/qwen2.5-coder"
         );
     }
@@ -528,29 +452,29 @@ mod tests {
     }
 
     #[test]
-    fn list_builtin_models_returns_all_when_unfiltered() {
-        let all = list_builtin_models(None);
+    fn list_known_models_returns_all_when_unfiltered() {
+        let all = list_known_models(None);
         assert!(!all.is_empty());
-        assert!(all.iter().any(|e| e.provider == ProviderKind::CodineerApi));
-        assert!(all.iter().any(|e| e.provider == ProviderKind::Xai));
+        assert!(all.iter().any(|(_, k)| *k == ProviderKind::CodineerApi));
+        assert!(all.iter().any(|(_, k)| *k == ProviderKind::Xai));
     }
 
     #[test]
-    fn list_builtin_models_filters_by_provider() {
-        let xai = list_builtin_models(Some(ProviderKind::Xai));
+    fn list_known_models_filters_by_provider() {
+        let xai = list_known_models(Some(ProviderKind::Xai));
         assert!(!xai.is_empty());
-        assert!(xai.iter().all(|e| e.provider == ProviderKind::Xai));
+        assert!(xai.iter().all(|(_, k)| *k == ProviderKind::Xai));
 
-        let anthropic = list_builtin_models(Some(ProviderKind::CodineerApi));
+        let anthropic = list_known_models(Some(ProviderKind::CodineerApi));
         assert!(!anthropic.is_empty());
         assert!(anthropic
             .iter()
-            .all(|e| e.provider == ProviderKind::CodineerApi));
+            .all(|(_, k)| *k == ProviderKind::CodineerApi));
     }
 
     #[test]
-    fn list_builtin_models_custom_filter_returns_empty() {
-        let custom = list_builtin_models(Some(ProviderKind::Custom));
+    fn list_known_models_custom_filter_returns_empty() {
+        let custom = list_known_models(Some(ProviderKind::Custom));
         assert!(custom.is_empty());
     }
 

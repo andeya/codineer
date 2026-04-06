@@ -163,8 +163,8 @@ pub(crate) fn print_help_to(out: &mut impl io::Write) -> io::Result<()> {
             "  layout you prefer; `codineer config set` always writes the directory-based file.",
             "  Override the global config dir via CODINEER_CONFIG_HOME.",
             "",
-            "  Supported keys: model, fallbackModels, env, hooks, enabledPlugins, plugins, mcpServers, permissionMode, providers, credentials",
-            "  Example: {\"model\": \"sonnet\", \"fallbackModels\": [\"ollama/qwen3-coder\"]}",
+            "  Supported keys: model, fallbackModels, modelAliases, env, hooks, enabledPlugins, plugins, mcpServers, permissionMode, providers, credentials",
+            "  Example: {\"model\": \"sonnet\", \"modelAliases\": {\"sonnet\": \"claude-sonnet-4-6\"}, \"fallbackModels\": [\"ollama/qwen3-coder\"]}",
             "  Tip: use `codineer config set <key> <value>` instead of editing JSON manually.",
         ],
     )?;
@@ -195,7 +195,7 @@ pub(crate) fn print_help_to(out: &mut impl io::Write) -> io::Result<()> {
         out,
         "Examples",
         &[
-            "  codineer --model opus \"summarize this repo\"",
+            "  codineer --model claude-sonnet-4-6 \"summarize this repo\"",
             "  codineer --output-format json prompt \"explain src/main.rs\"",
             "  codineer --allowedTools read,glob \"summarize Cargo.toml\"",
             "  codineer --resume session.json /status /diff /export notes.txt",
@@ -205,7 +205,7 @@ pub(crate) fn print_help_to(out: &mut impl io::Write) -> io::Result<()> {
             "  codineer login anthropic --source claude-code",
             "  codineer status",
             "  codineer models anthropic",
-            "  codineer config set model sonnet",
+            "  codineer config set model claude-sonnet-4-6",
             "  codineer config set fallbackModels '[\"ollama/qwen3-coder\"]'",
             "  codineer init",
         ],

@@ -34,15 +34,15 @@ pub(crate) struct RuntimeParams {
     pub(crate) mcp_manager: SharedMcpManager,
 }
 
+pub(crate) struct RuntimeBuildResult {
+    pub runtime: ConversationRuntime<DefaultRuntimeClient, CliToolExecutor>,
+    pub resolved_model: String,
+    pub model_aliases: std::collections::BTreeMap<String, String>,
+}
+
 pub(crate) fn build_runtime(
     params: RuntimeParams,
-) -> Result<
-    (
-        ConversationRuntime<DefaultRuntimeClient, CliToolExecutor>,
-        String,
-    ),
-    Box<dyn std::error::Error>,
-> {
+) -> Result<RuntimeBuildResult, Box<dyn std::error::Error>> {
     let RuntimeParams {
         session,
         model,
@@ -58,10 +58,10 @@ pub(crate) fn build_runtime(
     let model = if model == "auto" {
         runtime_config
             .model()
-            .map(api::resolve_model_alias)
+            .map(|m| api::resolve_model_alias(m, runtime_config.model_aliases()))
             .unwrap_or(model)
     } else {
-        model
+        api::resolve_model_alias(&model, runtime_config.model_aliases())
     };
     let resolver = ModelResolver::new(&runtime_config);
     let resolved = resolver.resolve(&model)?;
@@ -92,7 +92,12 @@ pub(crate) fn build_runtime(
         system_prompt,
         runtime_config.feature_config(),
     );
-    Ok((runtime, resolved_model))
+    let model_aliases = runtime_config.model_aliases().clone();
+    Ok(RuntimeBuildResult {
+        runtime,
+        resolved_model,
+        model_aliases,
+    })
 }
 
 pub(crate) struct DefaultRuntimeClient {

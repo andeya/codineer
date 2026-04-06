@@ -1,12 +1,13 @@
 use std::collections::BTreeMap;
 
-use api::{list_builtin_models, provider_kind_by_name, ProviderKind, BUILTIN_PROVIDER_PRESETS};
+use api::{list_known_models, provider_kind_by_name, ProviderKind, BUILTIN_PROVIDER_PRESETS};
 use runtime::{ConfigLoader, CustomProviderConfig};
 
 pub fn run_models(provider: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
     let cwd = std::env::current_dir()?;
     let config = ConfigLoader::default_for(&cwd).load()?;
     let providers_config = config.providers().clone();
+    let user_aliases = config.model_aliases();
 
     let filter = provider.map(|name| {
         provider_kind_by_name(name)
@@ -16,13 +17,14 @@ pub fn run_models(provider: Option<&str>) -> Result<(), Box<dyn std::error::Erro
 
     match filter {
         None => {
-            print_builtin_models(None);
+            print_known_models(None);
+            print_user_aliases(user_aliases);
             println!();
             print_custom_providers(&providers_config);
             print_ollama_models(&providers_config);
         }
         Some(FilterKind::Builtin(kind)) => {
-            print_builtin_models(Some(kind));
+            print_known_models(Some(kind));
         }
         Some(FilterKind::Custom(name)) => {
             if name.eq_ignore_ascii_case("ollama") {
@@ -50,36 +52,36 @@ enum FilterKind {
     Custom(String),
 }
 
-fn print_builtin_models(filter: Option<ProviderKind>) {
-    let entries = list_builtin_models(filter);
+fn print_known_models(filter: Option<ProviderKind>) {
+    let entries = list_known_models(filter);
     if entries.is_empty() {
         return;
     }
 
-    let mut grouped: BTreeMap<&str, Vec<(&str, &str)>> = BTreeMap::new();
-    for entry in &entries {
-        grouped
-            .entry(entry.provider.display_name())
-            .or_default()
-            .push((entry.alias, &entry.canonical));
+    let mut grouped: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+    for (name, kind) in &entries {
+        grouped.entry(kind.display_name()).or_default().push(name);
     }
 
+    println!("Known models:");
     for (provider_name, models) in &grouped {
-        println!("{provider_name}:");
-        let mut seen_canonical = std::collections::HashSet::new();
-        for (alias, canonical) in models.iter() {
-            if *alias == *canonical {
-                continue;
-            }
+        println!("  {provider_name}:");
+        for model in models {
+            println!("    {model}");
+        }
+    }
+    println!();
+}
+
+fn print_user_aliases(aliases: &BTreeMap<String, String>) {
+    if aliases.is_empty() {
+        println!("Model aliases: (none)");
+        println!("  Configure in settings.json: {{\"modelAliases\": {{\"name\": \"model-id\"}}}}");
+    } else {
+        println!("Model aliases (from settings.json):");
+        for (alias, canonical) in aliases {
             println!("  {alias:<16} → {canonical}");
-            seen_canonical.insert(*canonical);
         }
-        for (alias, canonical) in models.iter() {
-            if *alias == *canonical && !seen_canonical.contains(canonical) {
-                println!("  {alias}");
-            }
-        }
-        println!();
     }
 }
 
@@ -159,18 +161,18 @@ mod tests {
     }
 
     #[test]
-    fn print_builtin_models_empty_for_custom_filter() {
-        let entries = list_builtin_models(Some(ProviderKind::Custom));
+    fn known_models_empty_for_custom_filter() {
+        let entries = list_known_models(Some(ProviderKind::Custom));
         assert!(entries.is_empty());
     }
 
     #[test]
-    fn print_builtin_models_has_entries_for_anthropic() {
-        let entries = list_builtin_models(Some(ProviderKind::CodineerApi));
+    fn known_models_has_entries_for_anthropic() {
+        let entries = list_known_models(Some(ProviderKind::CodineerApi));
         assert!(!entries.is_empty());
         assert!(entries
             .iter()
-            .any(|e| e.alias.contains("sonnet") || e.alias.contains("opus")));
+            .any(|(name, _)| name.contains("sonnet") || name.contains("opus")));
     }
 
     #[test]

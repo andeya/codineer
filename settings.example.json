@@ -1,6 +1,14 @@
 {
   "$schema": "SettingsSchema",
-  "model": "sonnet",
+  "model": "claude-sonnet-4-6",
+  "modelAliases": {
+    "sonnet": "claude-sonnet-4-6",
+    "opus": "claude-opus-4-6",
+    "haiku": "claude-haiku-4-5-20251213",
+    "grok": "grok-3",
+    "gpt": "gpt-4o",
+    "flash": "gemini/gemini-2.5-flash"
+  },
   "fallbackModels": [
     "ollama/qwen3-coder",
     "groq/llama-3.3-70b-versatile"

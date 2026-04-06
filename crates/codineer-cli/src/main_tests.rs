@@ -1,4 +1,4 @@
-use crate::cli::{filter_tool_specs, parse_args, resolve_model_alias, CliAction, CliOutputFormat};
+use crate::cli::{filter_tool_specs, parse_args, CliAction, CliOutputFormat};
 use crate::default_model;
 use crate::help::{
     print_help_to, render_repl_help, render_unknown_repl_command,
@@ -113,7 +113,7 @@ fn parses_bare_prompt_and_json_output_flag() {
 }
 
 #[test]
-fn resolves_model_aliases_in_args() {
+fn preserves_raw_model_name_in_args() {
     let args = vec![
         "--model".to_string(),
         "opus".to_string(),
@@ -124,7 +124,7 @@ fn resolves_model_aliases_in_args() {
         parse_args(&args).expect("args should parse"),
         CliAction::Prompt {
             prompt: "explain this".to_string(),
-            model: "claude-opus-4-6".to_string(),
+            model: "opus".to_string(),
             output_format: CliOutputFormat::Text,
             allowed_tools: None,
             permission_mode: PermissionMode::WorkspaceWrite,
@@ -133,13 +133,20 @@ fn resolves_model_aliases_in_args() {
 }
 
 #[test]
-fn resolves_known_model_aliases() {
-    assert_eq!(resolve_model_alias("opus"), "claude-opus-4-6");
-    assert_eq!(resolve_model_alias("sonnet"), "claude-sonnet-4-6");
-    assert_eq!(resolve_model_alias("haiku"), "claude-haiku-4-5-20251213");
-    assert_eq!(resolve_model_alias("grok"), "grok-3");
-    assert_eq!(resolve_model_alias("grok-mini"), "grok-3-mini");
-    assert_eq!(resolve_model_alias("custom-opus"), "custom-opus");
+fn resolves_user_configured_aliases() {
+    use std::collections::BTreeMap;
+    let mut aliases = BTreeMap::new();
+    aliases.insert("sonnet".into(), "claude-sonnet-4-6".into());
+    aliases.insert("grok".into(), "grok-3".into());
+    assert_eq!(
+        crate::cli::resolve_model_alias("sonnet", &aliases),
+        "claude-sonnet-4-6"
+    );
+    assert_eq!(crate::cli::resolve_model_alias("grok", &aliases), "grok-3");
+    assert_eq!(
+        crate::cli::resolve_model_alias("custom-opus", &aliases),
+        "custom-opus"
+    );
 }
 
 #[test]
@@ -732,12 +739,25 @@ fn init_help_mentions_direct_subcommand() {
 
 #[test]
 fn model_report_uses_sectioned_layout() {
-    let report = format_model_report("sonnet", 12, 4);
+    use std::collections::BTreeMap;
+    let mut aliases = BTreeMap::new();
+    aliases.insert("sonnet".into(), "claude-sonnet-4-6".into());
+    let report = format_model_report("sonnet", 12, 4, &aliases);
     assert!(report.contains("Model"));
     assert!(report.contains("Current          sonnet"));
     assert!(report.contains("Session          12 messages · 4 turns"));
     assert!(report.contains("Aliases"));
+    assert!(report.contains("sonnet"));
+    assert!(report.contains("claude-sonnet-4-6"));
     assert!(report.contains("/model <name>    Switch models for this REPL session"));
+}
+
+#[test]
+fn model_report_empty_aliases_shows_hint() {
+    use std::collections::BTreeMap;
+    let report = format_model_report("gpt-4o", 5, 2, &BTreeMap::new());
+    assert!(report.contains("none"));
+    assert!(report.contains("modelAliases"));
 }
 
 #[test]

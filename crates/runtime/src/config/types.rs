@@ -88,6 +88,7 @@ pub struct RuntimeFeatureConfig {
     pub(crate) oauth: Option<OAuthConfig>,
     pub(crate) model: Option<String>,
     pub(crate) fallback_models: Vec<String>,
+    pub(crate) model_aliases: BTreeMap<String, String>,
     pub(crate) permission_mode: Option<ResolvedPermissionMode>,
     pub(crate) sandbox: SandboxConfig,
     pub(crate) providers: BTreeMap<String, CustomProviderConfig>,
@@ -294,6 +295,11 @@ impl RuntimeConfig {
     }
 
     #[must_use]
+    pub fn model_aliases(&self) -> &BTreeMap<String, String> {
+        &self.feature_config.model_aliases
+    }
+
+    #[must_use]
     pub fn permission_mode(&self) -> Option<ResolvedPermissionMode> {
         self.feature_config.permission_mode
     }
@@ -394,6 +400,10 @@ impl RuntimeFeatureConfig {
 
     pub fn set_fallback_models(&mut self, fallback_models: Vec<String>) {
         self.fallback_models = fallback_models;
+    }
+
+    pub fn set_model_aliases(&mut self, aliases: BTreeMap<String, String>) {
+        self.model_aliases = aliases;
     }
 }
 
