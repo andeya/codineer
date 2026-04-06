@@ -1,13 +1,6 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-const STARTER_CODINEER_JSON: &str = concat!(
-    "{\n",
-    "  \"permissions\": {\n",
-    "    \"defaultMode\": \"dontAsk\"\n",
-    "  }\n",
-    "}\n",
-);
 const GITIGNORE_COMMENT: &str = "# Codineer local artifacts";
 const GITIGNORE_ENTRIES: [&str; 5] = [
     ".codineer/settings.local.json",
@@ -102,12 +95,6 @@ pub(crate) fn initialize_repo(cwd: &Path) -> Result<InitReport, Box<dyn std::err
     let mut artifacts = ensure_codineer_scaffold(cwd)?;
 
     artifacts.push(InitArtifact {
-        name: ".codineer.json".into(),
-        depth: 0,
-        status: write_file_if_missing(&cwd.join(".codineer.json"), STARTER_CODINEER_JSON)?,
-    });
-
-    artifacts.push(InitArtifact {
         name: ".gitignore".into(),
         depth: 0,
         status: ensure_gitignore_entries(&cwd.join(".gitignore"))?,
@@ -128,7 +115,13 @@ pub(crate) fn initialize_repo(cwd: &Path) -> Result<InitReport, Box<dyn std::err
 
 const CODINEER_SUBDIRS: &[&str] = &["plugins", "skills", "agents", "sessions"];
 
-const STARTER_SETTINGS_JSON: &str = concat!("{\n", "}\n",);
+const STARTER_SETTINGS_JSON: &str = concat!(
+    "{\n",
+    "  \"permissions\": {\n",
+    "    \"defaultMode\": \"dontAsk\"\n",
+    "  }\n",
+    "}\n",
+);
 
 fn ensure_codineer_scaffold(root: &Path) -> Result<Vec<InitArtifact>, std::io::Error> {
     let cd = root.join(".codineer");
@@ -260,7 +253,7 @@ pub(crate) fn render_init_codineer_md(cwd: &Path) -> String {
 
     lines.push("## Working agreement".to_string());
     lines.push("- Prefer small, reviewable changes and keep generated bootstrap files aligned with actual repo workflows.".to_string());
-    lines.push("- Keep shared defaults in `.codineer.json`; reserve `.codineer/settings.local.json` for machine-local overrides.".to_string());
+    lines.push("- Keep shared defaults in `.codineer/settings.json`; reserve `.codineer/settings.local.json` for machine-local overrides.".to_string());
     lines.push("- Do not overwrite existing `CODINEER.md` content automatically; update it intentionally when repo workflows change.".to_string());
     lines.push(String::new());
 
@@ -441,19 +434,20 @@ mod tests {
         assert!(rendered.contains("  agents/        created"));
         assert!(rendered.contains("  sessions/      created"));
         assert!(rendered.contains("settings.json    created"));
-        assert!(rendered.contains(".codineer.json   created"));
         assert!(rendered.contains(".gitignore       created"));
         assert!(rendered.contains("CODINEER.md      created"));
+        assert!(!rendered.contains(".codineer.json"));
         assert!(root.join(".codineer").is_dir());
         assert!(root.join(".codineer").join("plugins").is_dir());
         assert!(root.join(".codineer").join("skills").is_dir());
         assert!(root.join(".codineer").join("agents").is_dir());
         assert!(root.join(".codineer").join("sessions").is_dir());
         assert!(root.join(".codineer").join("settings.json").is_file());
-        assert!(root.join(".codineer.json").is_file());
+        assert!(!root.join(".codineer.json").exists());
         assert!(root.join("CODINEER.md").is_file());
         assert_eq!(
-            fs::read_to_string(root.join(".codineer.json")).expect("read codineer json"),
+            fs::read_to_string(root.join(".codineer").join("settings.json"))
+                .expect("read settings json"),
             concat!(
                 "{\n",
                 "  \"permissions\": {\n",
@@ -493,7 +487,6 @@ mod tests {
         assert!(second_rendered.contains(".codineer/       skipped (already exists)"));
         assert!(second_rendered.contains("  plugins/       skipped (already exists)"));
         assert!(second_rendered.contains("settings.json    skipped (already exists)"));
-        assert!(second_rendered.contains(".codineer.json   skipped (already exists)"));
         assert!(second_rendered.contains(".gitignore       skipped (already exists)"));
         assert!(second_rendered.contains("CODINEER.md      skipped (already exists)"));
         assert_eq!(

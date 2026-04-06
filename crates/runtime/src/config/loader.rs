@@ -45,22 +45,10 @@ impl ConfigLoader {
 
     #[must_use]
     pub fn discover(&self) -> Vec<ConfigEntry> {
-        let user_flat_config = self.config_home.parent().map_or_else(
-            || PathBuf::from(".codineer.json"),
-            |parent| parent.join(".codineer.json"),
-        );
         vec![
             ConfigEntry {
                 source: ConfigSource::User,
-                path: user_flat_config,
-            },
-            ConfigEntry {
-                source: ConfigSource::User,
                 path: self.config_home.join("settings.json"),
-            },
-            ConfigEntry {
-                source: ConfigSource::Project,
-                path: self.cwd.join(".codineer.json"),
             },
             ConfigEntry {
                 source: ConfigSource::Project,
@@ -116,9 +104,8 @@ impl ConfigLoader {
 
 fn read_optional_json_object(
     path: &Path,
-    warnings: &mut Vec<String>,
+    _warnings: &mut Vec<String>,
 ) -> Result<Option<BTreeMap<String, JsonValue>>, ConfigError> {
-    let is_flat_config = path.file_name().and_then(|name| name.to_str()) == Some(".codineer.json");
     let contents = match fs::read_to_string(path) {
         Ok(contents) => contents,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
@@ -129,25 +116,9 @@ fn read_optional_json_object(
         return Ok(Some(BTreeMap::new()));
     }
 
-    let parsed = match JsonValue::parse(&contents) {
-        Ok(parsed) => parsed,
-        Err(error) if is_flat_config => {
-            warnings.push(format!(
-                "ignoring malformed config '{}': {error}",
-                path.display()
-            ));
-            return Ok(None);
-        }
-        Err(error) => return Err(ConfigError::Parse(format!("{}: {error}", path.display()))),
-    };
+    let parsed = JsonValue::parse(&contents)
+        .map_err(|error| ConfigError::Parse(format!("{}: {error}", path.display())))?;
     let Some(object) = parsed.as_object() else {
-        if is_flat_config {
-            warnings.push(format!(
-                "ignoring config '{}': expected JSON object at top level",
-                path.display()
-            ));
-            return Ok(None);
-        }
         return Err(ConfigError::Parse(format!(
             "{}: top-level settings value must be a JSON object",
             path.display()

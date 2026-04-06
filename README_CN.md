@@ -413,17 +413,13 @@ codineer -p "检查安全问题" \
 
 Codineer 从多个 JSON 文件合并设置（优先级从高到低）：
 
-| 文件                            | 路径示意（相对项目根 / 家目录）          | 作用域              | 是否提交         |
-| ------------------------------- | ---------------------------------------- | ------------------- | ---------------- |
-| `.codineer/settings.local.json` | `<项目根>/.codineer/settings.local.json` | 项目 — 本地覆盖     | 否（gitignored） |
-| `.codineer/settings.json`       | `<项目根>/.codineer/settings.json`       | 项目 — 目录配置     | 是               |
-| `.codineer.json`                | `<项目根>/.codineer.json`                | 项目 — 扁平配置     | 是               |
-| `~/.codineer/settings.json`     | `$HOME/.codineer/settings.json`          | 用户 — 全局目录配置 | —                |
-| `~/.codineer.json`              | `$HOME/.codineer.json`                   | 用户 — 全局扁平配置 | —                |
+| 文件                            | 路径示意（相对项目根 / 家目录）          | 作用域         | 是否提交         |
+| ------------------------------- | ---------------------------------------- | -------------- | ---------------- |
+| `.codineer/settings.local.json` | `<项目根>/.codineer/settings.local.json` | 项目 — 本地覆盖 | 否（gitignored） |
+| `.codineer/settings.json`       | `<项目根>/.codineer/settings.json`       | 项目配置       | 是               |
+| `~/.codineer/settings.json`     | `$HOME/.codineer/settings.json`          | 用户 — 全局配置 | —                |
 
-每个作用域（项目/全局）各有两个**可选**文件：目录形式（`.codineer/settings.json`，放在 `.codineer/` 子目录下）和扁平形式（`.codineer.json`，直接放在项目根或家目录下）。**两者并不重复**——它们是同一作用域下的两种布局选择，同时存在时**目录形式优先级更高**（表格中排名越靠上越优先）。选择你偏好的任一种即可；`codineer config set` 始终写入目录形式（`~/.codineer/settings.json`）。
-
-所有文件使用相同 schema。`env`、`providers`、`mcpServers` 等对象跨层级深度合并；`mcpServers` 中同名服务器以后加载的文件为准（完整替换，不深度合并）。
+所有文件使用相同 schema。`env`、`providers`、`mcpServers` 等对象跨层级深度合并；`mcpServers` 中同名服务器以后加载的文件为准（完整替换，不深度合并）。`codineer config set` 始终写入全局文件（`~/.codineer/settings.json`）。
 
 ### 配置参考
 

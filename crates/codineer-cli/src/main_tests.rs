@@ -860,7 +860,7 @@ fn parses_git_status_metadata() {
 fn status_context_reads_real_workspace_metadata() {
     let context = status_context(None).expect("status context should load");
     assert!(context.cwd.is_absolute());
-    assert_eq!(context.discovered_config_files, 5);
+    assert_eq!(context.discovered_config_files, 3);
     assert!(context.loaded_config_files <= context.discovered_config_files);
 }
 

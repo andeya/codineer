@@ -46,23 +46,13 @@ fn loads_and_merges_config_files_by_precedence() {
     fs::create_dir_all(&home).expect("home config dir");
 
     fs::write(
-        home.parent().expect("home parent").join(".codineer.json"),
-        r#"{"model":"haiku","env":{"A":"1"},"mcpServers":{"home":{"command":"uvx","args":["home"]}}}"#,
-    )
-    .expect("write user compat config");
-    fs::write(
         home.join("settings.json"),
-        r#"{"model":"sonnet","env":{"A2":"1"},"hooks":{"PreToolUse":["base"]},"permissions":{"defaultMode":"plan"}}"#,
+        r#"{"model":"sonnet","env":{"A":"1","A2":"1"},"hooks":{"PreToolUse":["base"]},"permissions":{"defaultMode":"plan"},"mcpServers":{"home":{"command":"uvx","args":["home"]}}}"#,
     )
     .expect("write user settings");
     fs::write(
-        cwd.join(".codineer.json"),
-        r#"{"model":"project-compat","env":{"B":"2"}}"#,
-    )
-    .expect("write project compat config");
-    fs::write(
         cwd.join(".codineer").join("settings.json"),
-        r#"{"env":{"C":"3"},"hooks":{"PostToolUse":["project"]},"mcpServers":{"project":{"command":"uvx","args":["project"]}}}"#,
+        r#"{"env":{"B":"2","C":"3"},"hooks":{"PostToolUse":["project"]},"mcpServers":{"project":{"command":"uvx","args":["project"]}}}"#,
     )
     .expect("write project settings");
     fs::write(
@@ -76,7 +66,7 @@ fn loads_and_merges_config_files_by_precedence() {
         .expect("config should load");
 
     assert_eq!(CODINEER_SETTINGS_SCHEMA_NAME, "SettingsSchema");
-    assert_eq!(loaded.loaded_entries().len(), 5);
+    assert_eq!(loaded.loaded_entries().len(), 3);
     assert_eq!(loaded.loaded_entries()[0].source, ConfigSource::User);
     assert_eq!(
         loaded.get("model"),
@@ -411,23 +401,6 @@ fn rejects_unsupported_mcp_server_type() {
     fs::remove_dir_all(root).expect("cleanup");
 }
 
-#[test]
-fn rejects_non_object_flat_config_gracefully() {
-    let root = temp_dir();
-    let cwd = root.join("project");
-    let home = root.join("home");
-    let config_home = home.join(".codineer");
-    fs::create_dir_all(&config_home).expect("config dir");
-    fs::create_dir_all(&cwd).expect("project dir");
-    fs::write(home.join(".codineer.json"), "[1,2,3]").expect("write flat config");
-
-    let loaded = ConfigLoader::new(&cwd, &config_home)
-        .load()
-        .expect("load config");
-    assert!(loaded.model().is_none());
-
-    fs::remove_dir_all(root).expect("cleanup");
-}
 
 #[test]
 fn parses_permission_and_sandbox_mode_labels() {

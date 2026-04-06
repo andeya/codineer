@@ -413,17 +413,13 @@ codineer -p "check for security issues" \
 
 Codineer merges JSON settings from multiple files (highest to lowest precedence):
 
-| File                            | Actual path                                    | Scope                          | Committed?      |
-| ------------------------------- | ---------------------------------------------- | ------------------------------ | --------------- |
-| `.codineer/settings.local.json` | `<project root>/.codineer/settings.local.json` | Project — local overrides      | No (gitignored) |
-| `.codineer/settings.json`       | `<project root>/.codineer/settings.json`       | Project — directory config     | Yes             |
-| `.codineer.json`                | `<project root>/.codineer.json`                | Project — flat config          | Yes             |
-| `~/.codineer/settings.json`     | `$HOME/.codineer/settings.json`                | User — global directory config | —               |
-| `~/.codineer.json`              | `$HOME/.codineer.json`                         | User — global flat config      | —               |
+| File                            | Actual path                                    | Scope                     | Committed?      |
+| ------------------------------- | ---------------------------------------------- | ------------------------- | --------------- |
+| `.codineer/settings.local.json` | `<project root>/.codineer/settings.local.json` | Project — local overrides | No (gitignored) |
+| `.codineer/settings.json`       | `<project root>/.codineer/settings.json`       | Project settings          | Yes             |
+| `~/.codineer/settings.json`     | `$HOME/.codineer/settings.json`                | User — global settings    | —               |
 
-Each scope has two **optional** files: a directory-based form (inside `.codineer/`) and a flat form (`.codineer.json` directly in the project root or home dir). **They are not duplicates** — they are two layout choices for the same scope; when both exist the directory-based file wins (higher row = higher precedence). Use whichever layout you prefer; `codineer config set` always writes the directory-based file.
-
-All files use the same schema. `env`, `providers`, and `mcpServers` objects are deep-merged across layers. For `mcpServers`, a server name defined in a later file replaces (not deep-merges) the earlier definition.
+All files use the same schema. `env`, `providers`, and `mcpServers` objects are deep-merged across layers. For `mcpServers`, a server name defined in a later file replaces (not deep-merges) the earlier definition. `codineer config set` writes to the global file (`~/.codineer/settings.json`).
 
 ### Settings reference
 

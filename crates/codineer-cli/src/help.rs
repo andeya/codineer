@@ -10,9 +10,7 @@ use crate::{logo_ascii, VERSION};
 struct ConfigFilePaths {
     local_override: String,
     project_settings: String,
-    project_flat: String,
     global_settings: String,
-    global_flat: String,
 }
 
 /// Build OS-appropriate display paths for the configuration files section.
@@ -24,17 +22,13 @@ fn config_file_paths() -> ConfigFilePaths {
         ConfigFilePaths {
             local_override: r".codineer\settings.local.json".to_string(),
             project_settings: r".codineer\settings.json".to_string(),
-            project_flat: r".codineer.json".to_string(),
             global_settings: r"%USERPROFILE%\.codineer\settings.json".to_string(),
-            global_flat: r"%USERPROFILE%\.codineer.json".to_string(),
         }
     } else {
         ConfigFilePaths {
             local_override: ".codineer/settings.local.json".to_string(),
             project_settings: ".codineer/settings.json".to_string(),
-            project_flat: ".codineer.json".to_string(),
             global_settings: "~/.codineer/settings.json".to_string(),
-            global_flat: "~/.codineer.json".to_string(),
         }
     }
 }
@@ -155,14 +149,9 @@ pub(crate) fn print_help_to(out: &mut impl io::Write) -> io::Result<()> {
         &[
             &format!("  {:<38}Local overrides (gitignored)", cfg_paths.local_override),
             &format!("  {:<38}Project settings", cfg_paths.project_settings),
-            &format!("  {:<38}Project flat config (alternative to above)", cfg_paths.project_flat),
             &format!("  {:<38}Global settings (written by `config set`)", cfg_paths.global_settings),
-            &format!("  {:<38}Global flat config (alternative to above)", cfg_paths.global_flat),
             &format!("  {:<38}Project context and instructions", "CODINEER.md"),
             "",
-            "  Each scope has two optional files (directory-based and flat). They are NOT",
-            "  duplicates: the directory-based file wins when both are present. Use whichever",
-            "  layout you prefer; `codineer config set` always writes the directory-based file.",
             "  Override the global config dir via CODINEER_CONFIG_HOME.",
             "",
             "  Supported keys: model, fallbackModels, modelAliases, env, hooks, enabledPlugins, plugins, mcpServers, permissionMode, providers, credentials",
