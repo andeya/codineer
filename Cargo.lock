@@ -148,7 +148,7 @@ dependencies = [
 
 [[package]]
 name = "codineer-api"
-version = "0.6.6"
+version = "0.6.7"
 dependencies = [
  "codineer-runtime",
  "reqwest",
@@ -159,7 +159,7 @@ dependencies = [
 
 [[package]]
 name = "codineer-cli"
-version = "0.6.6"
+version = "0.6.7"
 dependencies = [
  "arboard",
  "base64",
@@ -181,7 +181,7 @@ dependencies = [
 
 [[package]]
 name = "codineer-commands"
-version = "0.6.6"
+version = "0.6.7"
 dependencies = [
  "codineer-plugins",
  "codineer-runtime",
@@ -190,7 +190,7 @@ dependencies = [
 
 [[package]]
 name = "codineer-lsp"
-version = "0.6.6"
+version = "0.6.7"
 dependencies = [
  "lsp-types",
  "serde",
@@ -201,7 +201,7 @@ dependencies = [
 
 [[package]]
 name = "codineer-plugins"
-version = "0.6.6"
+version = "0.6.7"
 dependencies = [
  "codineer-runtime",
  "serde",
@@ -210,7 +210,7 @@ dependencies = [
 
 [[package]]
 name = "codineer-runtime"
-version = "0.6.6"
+version = "0.6.7"
 dependencies = [
  "codineer-lsp",
  "dunce",
@@ -230,7 +230,7 @@ dependencies = [
 
 [[package]]
 name = "codineer-tools"
-version = "0.6.6"
+version = "0.6.7"
 dependencies = [
  "codineer-api",
  "codineer-plugins",
