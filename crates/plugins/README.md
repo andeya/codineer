@@ -224,13 +224,16 @@ Lifecycle scripts run once per session:
 
 Plugins are discovered from multiple locations:
 
-| Location                         | Source type | Description            |
-| -------------------------------- | ----------- | ---------------------- |
-| `<project>/.codineer/plugins/*/` | Project     | Project-local plugins  |
-| `~/.codineer/plugins/*/`         | Installed   | User-installed plugins |
-| Embedded in Codineer binary      | Bundled     | Shipped with Codineer  |
+| Location                                  | Source type | Description                        |
+| ----------------------------------------- | ----------- | ---------------------------------- |
+| `~/.codineer/plugins/*/`                  | Installed   | Default install location           |
+| `plugins.installRoot` in `settings.json`  | Installed   | Custom install root (overrides default) |
+| `plugins.externalDirectories` entries     | External    | Extra dirs (e.g. `<project>/.codineer/plugins`) |
+| Embedded in Codineer binary               | Bundled     | Shipped with Codineer              |
 
-Each subdirectory must contain a `plugin.json` at its root.
+Each plugin subdirectory must contain a `plugin.json` at its root.
+
+> **Note**: `.codineer/plugins/` inside the project is **not** discovered automatically. To use project-local plugins, add the path to `plugins.externalDirectories` in `.codineer/settings.json`.
 
 ### Managing plugins
 

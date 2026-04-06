@@ -869,10 +869,9 @@ pub(crate) fn run_repl(
         || workspace_name.clone(),
         |b| format!("{workspace_name} · {b}"),
     );
-    let is_initialized = cwd.as_ref().is_some_and(|p| {
-        p.ancestors()
-            .any(|a| a.join(".codineer").join("settings.json").is_file())
-    });
+    let is_initialized = cwd
+        .as_ref()
+        .is_some_and(|p| p.join(".codineer").join("settings.json").is_file());
     let b_model = cli.model.clone();
     let b_perms = cli.permission_mode.as_str().to_string();
     let b_session_id = cli.session.id.clone();

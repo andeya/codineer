@@ -45,6 +45,8 @@ impl ConfigLoader {
 
     #[must_use]
     pub fn discover(&self) -> Vec<ConfigEntry> {
+        let project_dir = crate::find_project_codineer_dir(&self.cwd)
+            .unwrap_or_else(|| self.cwd.join(".codineer"));
         vec![
             ConfigEntry {
                 source: ConfigSource::User,
@@ -52,11 +54,11 @@ impl ConfigLoader {
             },
             ConfigEntry {
                 source: ConfigSource::Project,
-                path: self.cwd.join(".codineer").join("settings.json"),
+                path: project_dir.join("settings.json"),
             },
             ConfigEntry {
                 source: ConfigSource::Local,
-                path: self.cwd.join(".codineer").join("settings.local.json"),
+                path: project_dir.join("settings.local.json"),
             },
         ]
     }

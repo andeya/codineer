@@ -221,13 +221,16 @@ sqlite3 project.db "$SQL" --json
 
 插件从以下位置发现：
 
-| 位置                          | 来源类型 | 说明               |
-| ----------------------------- | -------- | ------------------ |
-| `<项目>/.codineer/plugins/*/` | 项目级   | 项目本地插件       |
-| `~/.codineer/plugins/*/`      | 已安装   | 用户全局安装的插件 |
-| 嵌入 Codineer 二进制          | 内置     | 随 Codineer 分发   |
+| 位置                                           | 来源类型 | 说明                                |
+| ---------------------------------------------- | -------- | ----------------------------------- |
+| `~/.codineer/plugins/*/`                       | 已安装   | 默认安装位置                        |
+| `settings.json` 中的 `plugins.installRoot`     | 已安装   | 自定义安装根目录（覆盖默认值）      |
+| `plugins.externalDirectories` 中的条目         | 外部     | 额外目录（如 `<项目>/.codineer/plugins`）|
+| 嵌入 Codineer 二进制                           | 内置     | 随 Codineer 分发                    |
 
-每个子目录的根目录下必须包含 `plugin.json`。
+每个插件子目录的根目录下必须包含 `plugin.json`。
+
+> **注意**：项目内的 `.codineer/plugins/` **不会被自动发现**。如需使用项目本地插件，请在 `.codineer/settings.json` 的 `plugins.externalDirectories` 中添加该路径。
 
 ### 管理插件
 

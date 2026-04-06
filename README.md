@@ -481,7 +481,7 @@ Set via shell export **or** the `"env"` section in settings.json (shell exports 
 | `DASHSCOPE_API_KEY`        | Alibaba Cloud DashScope (OpenAI-compatible)                                                                |
 | `OLLAMA_HOST`              | Ollama endpoint (e.g. `http://192.168.1.100:11434`)                                                        |
 | `CODINEER_WORKSPACE_ROOT`  | Override workspace root                                                                                    |
-| `CODINEER_CONFIG_HOME`     | Override global config dir (default `~/.codineer`); the global flat config moves to the parent of this dir |
+| `CODINEER_CONFIG_HOME`     | Override global config dir (default `~/.codineer`); `settings.json` is read from this directory             |
 | `CODINEER_PERMISSION_MODE` | Default permission mode                                                                                    |
 | `NO_COLOR`                 | Disable ANSI colors                                                                                        |
 | `CLICOLOR=0`               | Disable ANSI colors (alternative)                                                                          |
@@ -593,7 +593,7 @@ codineer skills          # list skills
 /skills                  # inside REPL
 ```
 
-Skills are discovered from `.codineer/skills/`, `~/.codineer/skills/`, and `$CODINEER_CONFIG_HOME/skills/`.
+Skills are discovered from the project's `.codineer/skills/` (or `~/.codineer/skills/` when no project is initialized), then `$CODINEER_CONFIG_HOME/skills/` and `~/.codineer/skills/`.
 
 ---
 

@@ -485,7 +485,7 @@ Codineer 从多个 JSON 文件合并设置（优先级从高到低）：
 | `DASHSCOPE_API_KEY`        | 阿里云通义 DashScope（OpenAI 兼容模式）                                           |
 | `OLLAMA_HOST`              | Ollama 端点（如 `http://192.168.1.100:11434`）                                    |
 | `CODINEER_WORKSPACE_ROOT`  | 覆盖工作区根路径                                                                  |
-| `CODINEER_CONFIG_HOME`     | 覆盖全局配置目录（默认 `~/.codineer`）；同时将全局扁平配置移至该目录的父目录下    |
+| `CODINEER_CONFIG_HOME`     | 覆盖全局配置目录（默认 `~/.codineer`）；`settings.json` 从该目录读取               |
 | `CODINEER_PERMISSION_MODE` | 默认权限模式                                                                      |
 | `NO_COLOR`                 | 禁用 ANSI 颜色                                                                    |
 | `CLICOLOR=0`               | 禁用 ANSI 颜色（替代方式）                                                        |
@@ -597,7 +597,7 @@ codineer skills          # 列出 Skill
 /skills                  # REPL 内
 ```
 
-Skill 搜索路径：`.codineer/skills/`、`~/.codineer/skills/`、`$CODINEER_CONFIG_HOME/skills/`。
+Skill 搜索路径：项目 `.codineer/skills/`（未初始化时退到 `~/.codineer/skills/`），以及 `$CODINEER_CONFIG_HOME/skills/` 和 `~/.codineer/skills/`。
 
 ---
 

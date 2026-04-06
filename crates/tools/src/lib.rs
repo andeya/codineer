@@ -281,14 +281,13 @@ fn resolve_skill_path(skill: &str) -> Result<std::path::PathBuf, String> {
 
     let mut candidates = Vec::new();
     if let Ok(cwd) = std::env::current_dir() {
-        candidates.push(cwd.join(".codineer").join("skills"));
+        candidates.push(runtime::codineer_runtime_dir(&cwd).join("skills"));
     }
     if let Ok(codineer_home) = std::env::var("CODINEER_CONFIG_HOME") {
         candidates.push(std::path::PathBuf::from(codineer_home).join("skills"));
     }
     if let Some(home) = runtime::home_dir() {
         candidates.push(home.join(".codineer").join("skills"));
-        candidates.push(home.join(".agents").join("skills"));
     }
 
     for root in candidates {

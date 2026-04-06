@@ -88,22 +88,25 @@ pub fn home_dir() -> Option<std::path::PathBuf> {
         .map(std::path::PathBuf::from)
 }
 
+/// Finds the nearest `.codineer/` directory in `cwd` or its ancestors that contains
+/// `settings.json`, indicating an initialized project.  Returns `None` when none is found.
+#[must_use]
+pub fn find_project_codineer_dir(cwd: &std::path::Path) -> Option<std::path::PathBuf> {
+    cwd.ancestors().find_map(|ancestor| {
+        let dir = ancestor.join(".codineer");
+        dir.join("settings.json").is_file().then_some(dir)
+    })
+}
+
 /// Returns the `.codineer/` directory to use for runtime artifacts (sessions, agents, todos,
 /// sandbox dirs, etc.).
 ///
-/// Walks up from `cwd` looking for an initialized project — one whose `.codineer/settings.json`
-/// exists.  Falls back to `~/.codineer/` (always available after first launch) when no initialized
-/// project is found in the ancestor chain.
+/// Uses the nearest initialized project's `.codineer/` (found by walking up the ancestor chain).
+/// Falls back to `~/.codineer/` when no project is initialized; `cwd/.codineer/` as last resort.
 #[must_use]
 pub fn codineer_runtime_dir(cwd: &std::path::Path) -> std::path::PathBuf {
-    for ancestor in cwd.ancestors() {
-        let dir = ancestor.join(".codineer");
-        if dir.join("settings.json").is_file() {
-            return dir;
-        }
-    }
-    home_dir()
-        .map(|h| h.join(".codineer"))
+    find_project_codineer_dir(cwd)
+        .or_else(|| home_dir().map(|h| h.join(".codineer")))
         .unwrap_or_else(|| cwd.join(".codineer"))
 }
 

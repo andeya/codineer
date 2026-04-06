@@ -297,10 +297,13 @@ fn build_macos_sandbox_command(
     })
 }
 
-fn sandbox_env(cwd: &Path, status: &SandboxStatus) -> Vec<(String, String)> {
+fn sandbox_dirs(cwd: &Path) -> (std::path::PathBuf, std::path::PathBuf) {
     let codineer_dir = crate::codineer_runtime_dir(cwd);
-    let sandbox_home = codineer_dir.join("sandbox-home");
-    let sandbox_tmp = codineer_dir.join("sandbox-tmp");
+    (codineer_dir.join("sandbox-home"), codineer_dir.join("sandbox-tmp"))
+}
+
+fn sandbox_env(cwd: &Path, status: &SandboxStatus) -> Vec<(String, String)> {
+    let (sandbox_home, sandbox_tmp) = sandbox_dirs(cwd);
     let mut env = vec![
         ("HOME".to_string(), sandbox_home.display().to_string()),
         ("TMPDIR".to_string(), sandbox_tmp.display().to_string()),
@@ -326,9 +329,7 @@ pub fn generate_seatbelt_profile(cwd: &Path, status: &SandboxStatus) -> String {
     }
 
     let cwd_str = escape_seatbelt_path(&cwd.display().to_string());
-    let codineer_dir = crate::codineer_runtime_dir(cwd);
-    let sandbox_home = codineer_dir.join("sandbox-home");
-    let sandbox_tmp = codineer_dir.join("sandbox-tmp");
+    let (sandbox_home, sandbox_tmp) = sandbox_dirs(cwd);
 
     let mut rules = vec![
         "(version 1)".to_string(),
