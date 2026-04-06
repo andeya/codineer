@@ -326,6 +326,55 @@ pub(crate) struct ReplOutput {
     pub(crate) duration_ms: u128,
 }
 
+#[derive(Debug, Deserialize)]
+pub(crate) struct MultiEditInput {
+    pub(crate) path: String,
+    pub(crate) edits: Vec<EditOperation>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct EditOperation {
+    pub(crate) old_string: String,
+    pub(crate) new_string: String,
+    pub(crate) replace_all: Option<bool>,
+}
+
+#[derive(Debug, Serialize)]
+pub(crate) struct MultiEditOutput {
+    pub(crate) path: String,
+    #[serde(rename = "editsApplied")]
+    pub(crate) edits_applied: usize,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct AskUserQuestionInput {
+    pub(crate) questions: Vec<UserQuestion>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub(crate) struct UserQuestion {
+    pub(crate) question: String,
+    pub(crate) header: Option<String>,
+    #[serde(rename = "multiSelect", default)]
+    pub(crate) multi_select: bool,
+    pub(crate) options: Vec<QuestionOption>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub(crate) struct QuestionOption {
+    pub(crate) label: String,
+    pub(crate) description: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub(crate) struct AskUserQuestionOutput {
+    pub(crate) questions: Vec<UserQuestion>,
+    #[serde(rename = "formattedMessage")]
+    pub(crate) formatted_message: String,
+    #[serde(rename = "pendingUserResponse")]
+    pub(crate) pending_user_response: bool,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(untagged)]
 pub(crate) enum WebSearchResultItem {

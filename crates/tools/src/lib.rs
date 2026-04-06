@@ -33,11 +33,12 @@ pub(crate) use types::AgentInput;
 pub(crate) use types::AgentJob;
 
 use crate::types::{
-    BriefInput, BriefOutput, BriefStatus, ConfigInput, EditFileInput, GlobSearchInputValue,
-    NotebookEditInput, PowerShellInput, ReadFileInput, ReplInput, ReplOutput, ResolvedAttachment,
+    AskUserQuestionInput, AskUserQuestionOutput, BriefInput, BriefOutput, BriefStatus, ConfigInput,
+    EditFileInput, GlobSearchInputValue, MultiEditInput, MultiEditOutput, NotebookEditInput,
+    PowerShellInput, QuestionOption, ReadFileInput, ReplInput, ReplOutput, ResolvedAttachment,
     SkillInput, SkillOutput, SleepInput, SleepOutput, StructuredOutputInput,
     StructuredOutputResult, TodoItem, TodoStatus, TodoWriteInput, TodoWriteOutput,
-    ToolSearchOutput, WebFetchInput, WebSearchInput, WriteFileInput,
+    ToolSearchOutput, UserQuestion, WebFetchInput, WebSearchInput, WriteFileInput,
 };
 
 pub fn execute_tool(name: &str, input: &Value) -> Result<String, String> {
@@ -63,6 +64,10 @@ pub fn execute_tool(name: &str, input: &Value) -> Result<String, String> {
         }
         "REPL" => from_value::<ReplInput>(input).and_then(run_repl),
         "PowerShell" => from_value::<PowerShellInput>(input).and_then(run_powershell),
+        "MultiEdit" => from_value::<MultiEditInput>(input).and_then(run_multi_edit),
+        "AskUserQuestion" => {
+            from_value::<AskUserQuestionInput>(input).and_then(run_ask_user_question)
+        }
         _ => Err(format!("unsupported tool: {name}")),
     }
 }
@@ -163,6 +168,14 @@ fn run_powershell(input: PowerShellInput) -> Result<String, String> {
     to_pretty_json(crate::powershell::execute_powershell(input).map_err(|error| error.to_string())?)
 }
 
+fn run_multi_edit(input: MultiEditInput) -> Result<String, String> {
+    to_pretty_json(execute_multi_edit(input)?)
+}
+
+fn run_ask_user_question(input: AskUserQuestionInput) -> Result<String, String> {
+    to_pretty_json(execute_ask_user_question(input)?)
+}
+
 fn to_pretty_json<T: serde::Serialize>(value: T) -> Result<String, String> {
     serde_json::to_string_pretty(&value).map_err(|error| error.to_string())
 }
@@ -251,7 +264,7 @@ fn todo_store_path() -> Result<std::path::PathBuf, String> {
         return Ok(std::path::PathBuf::from(path));
     }
     let cwd = std::env::current_dir().map_err(|error| error.to_string())?;
-    Ok(cwd.join(".codineer-todos.json"))
+    Ok(cwd.join(".codineer").join("todos.json"))
 }
 
 fn resolve_skill_path(skill: &str) -> Result<std::path::PathBuf, String> {
@@ -643,6 +656,89 @@ fn parse_skill_description(contents: &str) -> Option<String> {
         }
     }
     None
+}
+
+fn execute_multi_edit(input: MultiEditInput) -> Result<MultiEditOutput, String> {
+    if input.edits.is_empty() {
+        return Err(String::from("edits must not be empty"));
+    }
+    for (i, op) in input.edits.iter().enumerate() {
+        edit_file(
+            &input.path,
+            &op.old_string,
+            &op.new_string,
+            op.replace_all.unwrap_or(false),
+        )
+        .map_err(|error| format!("edit[{i}] failed: {error}"))?;
+    }
+    Ok(MultiEditOutput {
+        path: input.path,
+        edits_applied: input.edits.len(),
+    })
+}
+
+fn execute_ask_user_question(input: AskUserQuestionInput) -> Result<AskUserQuestionOutput, String> {
+    if input.questions.is_empty() {
+        return Err(String::from("questions must not be empty"));
+    }
+    if input.questions.len() > 4 {
+        return Err(String::from("at most 4 questions are allowed per call"));
+    }
+    for (qi, q) in input.questions.iter().enumerate() {
+        if q.question.trim().is_empty() {
+            return Err(format!("questions[{qi}].question must not be empty"));
+        }
+        if q.options.len() < 2 {
+            return Err(format!(
+                "questions[{qi}] must have at least 2 options, got {}",
+                q.options.len()
+            ));
+        }
+        if q.options.len() > 26 {
+            return Err(format!(
+                "questions[{qi}] must have at most 26 options, got {}",
+                q.options.len()
+            ));
+        }
+    }
+
+    let formatted_message = format_questions(&input.questions);
+    Ok(AskUserQuestionOutput {
+        questions: input.questions,
+        formatted_message,
+        pending_user_response: true,
+    })
+}
+
+fn format_questions(questions: &[UserQuestion]) -> String {
+    let mut out = String::from("Please answer the following question(s):\n\n");
+    for (i, q) in questions.iter().enumerate() {
+        if let Some(header) = &q.header {
+            out.push_str(&format!("**{}**\n", header));
+        }
+        let select_hint = if q.multi_select {
+            " (select one or more)"
+        } else {
+            " (select one)"
+        };
+        out.push_str(&format!("{}. {}{}\n", i + 1, q.question, select_hint));
+        for (oi, opt) in q.options.iter().enumerate() {
+            out.push_str(&format_option(oi, opt));
+        }
+        out.push('\n');
+    }
+    out.trim_end().to_string()
+}
+
+fn format_option(index: usize, opt: &QuestionOption) -> String {
+    // index is validated to be 0..=25 by execute_ask_user_question
+    let letter = char::from(b'a' + index as u8);
+    match &opt.description {
+        Some(desc) if !desc.trim().is_empty() => {
+            format!("  {letter}) {} — {}\n", opt.label, desc)
+        }
+        _ => format!("  {letter}) {}\n", opt.label),
+    }
 }
 
 pub(crate) fn kill_process(pid: u32) {
