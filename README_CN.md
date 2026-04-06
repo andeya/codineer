@@ -35,7 +35,7 @@
 | **零 Token 成本**（[免费使用主流模型](#openclaw-zero-token免费使用主流-ai-模型)） |   **支持**   |    不支持    |     不支持      |   不支持   |
 | **零配置本地 AI**（自动检测 Ollama）                                              |   **支持**   |    不支持    |  `--oss` 参数   | 需手动配置 |
 | **单一二进制**（无运行时依赖）                                                    |   **Rust**   |   Node.js    |     Node.js     |   Python   |
-| **多模态输入**（`@image.png`、剪贴板粘贴、拖拽上传）                                                    |   **支持**   |     支持     |      有限       |    有限    |
+| **多模态输入**（`@image.png`、剪贴板粘贴、拖拽上传）                              |   **支持**   |     支持     |      有限       |    有限    |
 | **MCP 协议**（外部工具集成）                                                      |   **支持**   |     支持     |      支持       |    支持    |
 | **插件系统** + Agent + Skill                                                      |   **支持**   |     支持     |     不支持      |   不支持   |
 | **权限模式**（只读 → 完全访问）                                                   |   **支持**   |     支持     |      支持       |    部分    |
@@ -50,7 +50,7 @@
 - **零 Token 成本** — 搭配 [OpenClaw Zero Token](https://github.com/andeya/openclaw-zero-token) 网关，免费使用 Claude、ChatGPT、Gemini、DeepSeek 等 10+ 主流模型，无需购买任何 API Key。
 - **零配置本地 AI** — 启动 Ollama，运行 `codineer`。自动检测本地模型并选择最适合编程的那个。
 - **即刻启动** — `brew install` 或 `cargo install`。一个 Rust 二进制文件，无运行时依赖。
-- **多模态输入** — 通过 `@photo.png` 附加图片、从剪贴板粘贴（`Ctrl+V`）或将文件拖拽到终端。支持 Anthropic、OpenAI 及所有兼容多模态的 Provider。
+- **多模态输入** — 通过 `@photo.png` 附加图片、从剪贴板粘贴（`Ctrl+V` / `/image`）或将文件拖拽到终端。支持 Anthropic、OpenAI 及所有兼容多模态的 Provider。
 - **优雅降级** — 不支持 function calling 的模型自动降级为纯文本模式。
 - **项目记忆** — `CODINEER.md` 让 AI 拥有关于代码库的持久上下文。提交到仓库，与团队共享。
 - **自适应终端 UI** — 欢迎面板和分割线随窗口宽度实时调整。超窄终端自动切换为单列布局；拖动窗口时输入行原位重绘，无闪烁。兼容 macOS、Linux 和 Windows（Windows Terminal / ConPTY）。
@@ -328,38 +328,45 @@ codineer
 
 **快捷键：**
 
-| 快捷键                               | 功能                                      |
-| ------------------------------------ | ----------------------------------------- |
-| `?`                                  | 内联快捷键参考面板                        |
-| `!<命令>`                            | Bash 模式 — 向 AI 发送 shell 命令执行请求 |
-| `@`                                  | 文件 / 图片附件（Tab 补全路径；`@img.png` → 图片块） |
-| `Ctrl+V`                             | 粘贴剪贴板图片 → 插入 `[Image #N]` 占位符 |
-| `/`                                  | 斜杠命令补全（配合 Tab）                  |
-| `↑` / `↓`                            | 历史记录回溯                              |
-| `Shift+Enter`、`Ctrl+J`、`\ + Enter` | 插入换行                                  |
-| `Ctrl+C`                             | 取消输入；空提示符下连按两次退出          |
-| `Ctrl+D`                             | 退出（空提示符下）                        |
-| `双击 Esc`                           | 清空输入                                  |
-| `/vim`                               | 切换 Vim 模态编辑                         |
+| 快捷键                               | 功能                                                                                        |
+| ------------------------------------ | ------------------------------------------------------------------------------------------- |
+| `?`                                  | 内联快捷键参考面板                                                                          |
+| `!<命令>`                            | Bash 模式 — 向 AI 发送 shell 命令执行请求                                                   |
+| `@`                                  | 文件 / 图片附件（Tab 补全路径；`@img.png` → 图片块）                                        |
+| `Ctrl+V` / `/image`                  | 粘贴剪贴板图片 → 插入 `[Image #N]` 占位符（`Ctrl+V` 适用 macOS/Linux；`/image` 全平台通用） |
+| `/`                                  | 斜杠命令补全（配合 Tab）                                                                    |
+| `↑` / `↓`                            | 历史记录回溯                                                                                |
+| `Shift+Enter`、`Ctrl+J`、`\ + Enter` | 插入换行                                                                                    |
+| `Ctrl+C`                             | 取消输入；空提示符下连按两次退出                                                            |
+| `Ctrl+D`                             | 退出（空提示符下）                                                                          |
+| `双击 Esc`                           | 清空输入                                                                                    |
+| `/vim`                               | 切换 Vim 模态编辑                                                                           |
 
 ### 文件与图片附件
 
 使用 `@` 前缀将上下文直接附加到消息中：
 
-| 语法 | 效果 |
-| ---- | ---- |
-| `@src/main.rs` | 注入文件内容（最多 2000 行） |
-| `@src/main.rs:10-50` | 注入指定行范围 |
-| `@src/` | 列出目录内容 |
-| `@photo.png` | 以多模态图片块（base64）附加 |
-| `@archive.bin` | 注入二进制文件元数据（大小、类型），不读取内容 |
+| 语法                 | 效果                                           |
+| -------------------- | ---------------------------------------------- |
+| `@src/main.rs`       | 注入文件内容（最多 2000 行）                   |
+| `@src/main.rs:10-50` | 注入指定行范围                                 |
+| `@src/`              | 列出目录内容                                   |
+| `@photo.png`         | 以多模态图片块（base64）附加                   |
+| `@archive.bin`       | 注入二进制文件元数据（大小、类型），不读取内容 |
 
 **剪贴板与拖拽图片：**
 
-| 输入 | 效果 |
-| ---- | ---- |
-| 剪贴板中有图片时按 `Ctrl+V` | 插入 `[Image #N]` 占位符，提交时随消息一起发送 |
-| 将图片文件路径拖拽到终端 | 自动识别并作为图片块附加 |
+| 输入                        | 效果                                                          |
+| --------------------------- | ------------------------------------------------------------- |
+| 剪贴板中有图片时按 `Ctrl+V` | 插入 `[Image #N]` 占位符，提交时随消息一起发送（macOS/Linux） |
+| `/image`                    | 读取剪贴板图片并插入 `[Image #N]` 占位符——**所有平台**通用    |
+| 将图片文件路径拖拽到终端    | 自动识别并作为图片块附加                                      |
+
+> **平台说明：**
+>
+> - **macOS** — 请用 `Ctrl+V`（而非 `Cmd+V`）。Terminal.app 和 iTerm2 会拦截 `Cmd+V`，无法将图片数据转发给应用。
+> - **Linux** — `Ctrl+V` 在大多数终端（gnome-terminal、konsole、kitty 等）中正常工作。
+> - **Windows** — Windows Terminal 会拦截 `Ctrl+V` 用于文本粘贴，请改用 `/image`。
 
 图片以正确的多模态内容格式发送——Anthropic 使用 `source: base64`，OpenAI 兼容 Provider 使用 `image_url` data-URL。支持格式：PNG、JPEG、GIF、WebP、BMP。每张图片最大 20 MB。
 
@@ -450,8 +457,8 @@ Codineer 从多个 JSON 文件合并设置（优先级从高到低）：
 
 | 字段             | 类型     | 说明                                                                                                                                                                                                                                |
 | ---------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `model`          | string   | 默认模型——别名或全名（如 `"sonnet"`、`"claude-sonnet-4-6"`、`"ollama/qwen3-coder"`）                                                                                                                                                 |
-| `modelAliases`   | object   | 自定义模型短名映射到完整模型 ID（如 `{"sonnet": "claude-sonnet-4-6"}`）                                                                                                                                                              |
+| `model`          | string   | 默认模型——别名或全名（如 `"sonnet"`、`"claude-sonnet-4-6"`、`"ollama/qwen3-coder"`）                                                                                                                                                |
+| `modelAliases`   | object   | 自定义模型短名映射到完整模型 ID（如 `{"sonnet": "claude-sonnet-4-6"}`）                                                                                                                                                             |
 | `fallbackModels` | string[] | 主模型不可用时依序尝试的回退模型列表                                                                                                                                                                                                |
 | `permissionMode` | string   | `"read-only"`、`"workspace-write"` 或 `"danger-full-access"`                                                                                                                                                                        |
 | `env`            | object   | 启动时注入的环境变量。Shell export 优先。                                                                                                                                                                                           |
@@ -470,22 +477,22 @@ Codineer 从多个 JSON 文件合并设置（优先级从高到低）：
 
 通过 Shell export **或** settings.json 的 `"env"` 字段设置（Shell export 优先）：
 
-| 变量                       | 用途                                                                           |
-| -------------------------- | ------------------------------------------------------------------------------ |
-| `ANTHROPIC_API_KEY`        | Claude API Key                                                                 |
-| `ANTHROPIC_AUTH_TOKEN`     | Bearer Token（替代方式）                                                       |
-| `XAI_API_KEY`              | xAI / Grok API Key                                                             |
-| `OPENAI_API_KEY`           | OpenAI API Key                                                                 |
-| `OPENROUTER_API_KEY`       | OpenRouter API Key                                                             |
-| `GROQ_API_KEY`             | Groq Cloud API Key                                                             |
-| `GEMINI_API_KEY`           | Google Gemini API Key（[AI Studio 免费申请](https://aistudio.google.com/apikey)）|
-| `DASHSCOPE_API_KEY`        | 阿里云通义 DashScope（OpenAI 兼容模式）                                        |
-| `OLLAMA_HOST`              | Ollama 端点（如 `http://192.168.1.100:11434`）                                 |
-| `CODINEER_WORKSPACE_ROOT`  | 覆盖工作区根路径                                                               |
-| `CODINEER_CONFIG_HOME`     | 覆盖全局配置目录（默认 `~/.codineer`）；同时将全局扁平配置移至该目录的父目录下 |
-| `CODINEER_PERMISSION_MODE` | 默认权限模式                                                                   |
-| `NO_COLOR`                 | 禁用 ANSI 颜色                                                                 |
-| `CLICOLOR=0`               | 禁用 ANSI 颜色（替代方式）                                                     |
+| 变量                       | 用途                                                                              |
+| -------------------------- | --------------------------------------------------------------------------------- |
+| `ANTHROPIC_API_KEY`        | Claude API Key                                                                    |
+| `ANTHROPIC_AUTH_TOKEN`     | Bearer Token（替代方式）                                                          |
+| `XAI_API_KEY`              | xAI / Grok API Key                                                                |
+| `OPENAI_API_KEY`           | OpenAI API Key                                                                    |
+| `OPENROUTER_API_KEY`       | OpenRouter API Key                                                                |
+| `GROQ_API_KEY`             | Groq Cloud API Key                                                                |
+| `GEMINI_API_KEY`           | Google Gemini API Key（[AI Studio 免费申请](https://aistudio.google.com/apikey)） |
+| `DASHSCOPE_API_KEY`        | 阿里云通义 DashScope（OpenAI 兼容模式）                                           |
+| `OLLAMA_HOST`              | Ollama 端点（如 `http://192.168.1.100:11434`）                                    |
+| `CODINEER_WORKSPACE_ROOT`  | 覆盖工作区根路径                                                                  |
+| `CODINEER_CONFIG_HOME`     | 覆盖全局配置目录（默认 `~/.codineer`）；同时将全局扁平配置移至该目录的父目录下    |
+| `CODINEER_PERMISSION_MODE` | 默认权限模式                                                                      |
+| `NO_COLOR`                 | 禁用 ANSI 颜色                                                                    |
+| `CLICOLOR=0`               | 禁用 ANSI 颜色（替代方式）                                                        |
 
 **凭据链（按 Provider 分别管理，优先级从高到低）：**
 
