@@ -662,9 +662,9 @@ fn agent_store_dir() -> Result<std::path::PathBuf, String> {
     }
     let cwd = std::env::current_dir().map_err(|error| error.to_string())?;
     if let Some(workspace_root) = cwd.ancestors().nth(2) {
-        return Ok(workspace_root.join(".codineer-agents"));
+        return Ok(workspace_root.join(".codineer").join("agents"));
     }
-    Ok(cwd.join(".codineer-agents"))
+    Ok(cwd.join(".codineer").join("agents"))
 }
 
 fn make_agent_id() -> String {

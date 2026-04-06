@@ -298,8 +298,8 @@ fn build_macos_sandbox_command(
 }
 
 fn sandbox_env(cwd: &Path, status: &SandboxStatus) -> Vec<(String, String)> {
-    let sandbox_home = cwd.join(".sandbox-home");
-    let sandbox_tmp = cwd.join(".sandbox-tmp");
+    let sandbox_home = cwd.join(".codineer").join("sandbox-home");
+    let sandbox_tmp = cwd.join(".codineer").join("sandbox-tmp");
     let mut env = vec![
         ("HOME".to_string(), sandbox_home.display().to_string()),
         ("TMPDIR".to_string(), sandbox_tmp.display().to_string()),
@@ -325,8 +325,8 @@ pub fn generate_seatbelt_profile(cwd: &Path, status: &SandboxStatus) -> String {
     }
 
     let cwd_str = escape_seatbelt_path(&cwd.display().to_string());
-    let sandbox_home = cwd.join(".sandbox-home");
-    let sandbox_tmp = cwd.join(".sandbox-tmp");
+    let sandbox_home = cwd.join(".codineer").join("sandbox-home");
+    let sandbox_tmp = cwd.join(".codineer").join("sandbox-tmp");
 
     let mut rules = vec![
         "(version 1)".to_string(),
