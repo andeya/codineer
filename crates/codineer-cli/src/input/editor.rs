@@ -242,8 +242,15 @@ impl LineEditor {
                 continue;
             }
 
-            // Ctrl+V: attempt clipboard image paste before normal key handling.
-            if key.code == KeyCode::Char('v') && key.modifiers == KeyModifiers::CONTROL {
+            // Ctrl+V / Cmd+V: attempt clipboard image paste before normal key
+            // handling.  SUPER covers Cmd on macOS for terminals that support the
+            // Kitty keyboard protocol (kitty, WezTerm).  Terminal.app and iTerm2
+            // intercept Cmd+V themselves so SUPER is never received there — those
+            // users must use Ctrl+V.
+            if key.code == KeyCode::Char('v')
+                && (key.modifiers == KeyModifiers::CONTROL
+                    || key.modifiers == KeyModifiers::SUPER)
+            {
                 match super::clipboard::read_clipboard_image() {
                     Ok((bytes, media_type)) => {
                         let id = self.next_image_id;
@@ -285,19 +292,19 @@ impl LineEditor {
                 }
                 KeyAction::Submit(line) => {
                     let line = self.expand_paste_refs(line);
-                    let images = self.drain_image_store();
+                    let images = self.drain_image_store(&line);
                     session.finalize_render(&mut stdout, &self.prompt, self.vim_enabled)?;
                     self.prefix_fn = None;
                     return Ok(ReadOutcome::Submit(SubmitPayload { text: line, images }));
                 }
                 KeyAction::Cancel => {
-                    // Stay on the same line — clear input and re-render in
-                    // place so no blank lines are created.
                     session.text.clear();
                     session.cursor = 0;
                     session.history_index = None;
                     session.history_backup = None;
                     self.suggestion_state = None;
+                    self.image_store.clear();
+                    self.paste_store.clear();
                     session.render_with_suggestions(
                         &mut stdout,
                         &self.prompt,
@@ -417,9 +424,14 @@ impl LineEditor {
         }
     }
 
-    fn drain_image_store(&mut self) -> Vec<ImageData> {
-        std::mem::take(&mut self.image_store)
-            .into_values()
+    /// Return only images whose `[Image #N]` placeholder still appears in
+    /// `text`.  Images whose placeholder was deleted by the user are discarded.
+    fn drain_image_store(&mut self, text: &str) -> Vec<ImageData> {
+        let store = std::mem::take(&mut self.image_store);
+        store
+            .into_iter()
+            .filter(|(id, _)| text.contains(&format!("[Image #{id}]")))
+            .map(|(_, data)| data)
             .collect()
     }
 
