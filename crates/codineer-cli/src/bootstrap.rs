@@ -7,6 +7,7 @@ use tools::GlobalToolRegistry;
 
 pub(crate) fn build_runtime_plugin_state(
 ) -> Result<(runtime::RuntimeConfig, GlobalToolRegistry), Box<dyn std::error::Error>> {
+    crate::init::ensure_home_codineer_dirs();
     let cwd = env::current_dir()?;
     let loader = ConfigLoader::default_for(&cwd);
     let runtime_config = loader.load()?;

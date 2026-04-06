@@ -9,7 +9,13 @@ const STARTER_CODINEER_JSON: &str = concat!(
     "}\n",
 );
 const GITIGNORE_COMMENT: &str = "# Codineer local artifacts";
-const GITIGNORE_ENTRIES: [&str; 2] = [".codineer/settings.local.json", ".codineer/sessions/"];
+const GITIGNORE_ENTRIES: [&str; 5] = [
+    ".codineer/settings.local.json",
+    ".codineer/sessions/",
+    ".codineer/agents/",
+    ".codineer/sandbox-home/",
+    ".codineer/sandbox-tmp/",
+];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum InitStatus {
@@ -31,7 +37,8 @@ impl InitStatus {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct InitArtifact {
-    pub(crate) name: &'static str,
+    pub(crate) name: String,
+    pub(crate) depth: u8,
     pub(crate) status: InitStatus,
 }
 
@@ -49,8 +56,12 @@ impl InitReport {
             format!("  Project          {}", self.project_root.display()),
         ];
         for artifact in &self.artifacts {
+            let (prefix, width) = match artifact.depth {
+                0 => ("  ", 16),
+                _ => ("    ", 14),
+            };
             lines.push(format!(
-                "  {:<16} {}",
+                "{prefix}{:<width$} {}",
                 artifact.name,
                 artifact.status.label()
             ));
@@ -88,37 +99,67 @@ impl RepoDetection {
 }
 
 pub(crate) fn initialize_repo(cwd: &Path) -> Result<InitReport, Box<dyn std::error::Error>> {
-    let mut artifacts = Vec::new();
+    let mut artifacts = ensure_codineer_scaffold(cwd)?;
 
-    let config_dir = cwd.join(".codineer");
     artifacts.push(InitArtifact {
-        name: ".codineer/",
-        status: ensure_dir(&config_dir)?,
+        name: ".codineer.json".into(),
+        depth: 0,
+        status: write_file_if_missing(&cwd.join(".codineer.json"), STARTER_CODINEER_JSON)?,
     });
 
-    let config_json = cwd.join(".codineer.json");
     artifacts.push(InitArtifact {
-        name: ".codineer.json",
-        status: write_file_if_missing(&config_json, STARTER_CODINEER_JSON)?,
+        name: ".gitignore".into(),
+        depth: 0,
+        status: ensure_gitignore_entries(&cwd.join(".gitignore"))?,
     });
 
-    let gitignore = cwd.join(".gitignore");
-    artifacts.push(InitArtifact {
-        name: ".gitignore",
-        status: ensure_gitignore_entries(&gitignore)?,
-    });
-
-    let codineer_md = cwd.join("CODINEER.md");
     let content = render_init_codineer_md(cwd);
     artifacts.push(InitArtifact {
-        name: "CODINEER.md",
-        status: write_file_if_missing(&codineer_md, &content)?,
+        name: "CODINEER.md".into(),
+        depth: 0,
+        status: write_file_if_missing(&cwd.join("CODINEER.md"), &content)?,
     });
 
     Ok(InitReport {
         project_root: cwd.to_path_buf(),
         artifacts,
     })
+}
+
+const CODINEER_SUBDIRS: &[&str] = &["plugins", "skills", "agents", "sessions"];
+
+const STARTER_SETTINGS_JSON: &str = concat!("{\n", "}\n",);
+
+fn ensure_codineer_scaffold(root: &Path) -> Result<Vec<InitArtifact>, std::io::Error> {
+    let cd = root.join(".codineer");
+    let mut artifacts = Vec::new();
+
+    artifacts.push(InitArtifact {
+        name: ".codineer/".into(),
+        depth: 0,
+        status: ensure_dir(&cd)?,
+    });
+    for dir in CODINEER_SUBDIRS {
+        artifacts.push(InitArtifact {
+            name: format!("{dir}/"),
+            depth: 1,
+            status: ensure_dir(&cd.join(dir))?,
+        });
+    }
+    artifacts.push(InitArtifact {
+        name: "settings.json".into(),
+        depth: 0,
+        status: write_file_if_missing(&cd.join("settings.json"), STARTER_SETTINGS_JSON)?,
+    });
+
+    Ok(artifacts)
+}
+
+pub(crate) fn ensure_home_codineer_dirs() {
+    let Some(home) = runtime::home_dir() else {
+        return;
+    };
+    let _ = ensure_codineer_scaffold(&home);
 }
 
 fn ensure_dir(path: &Path) -> Result<InitStatus, std::io::Error> {
@@ -395,10 +436,20 @@ mod tests {
         let report = initialize_repo(&root).expect("init should succeed");
         let rendered = report.render();
         assert!(rendered.contains(".codineer/       created"));
+        assert!(rendered.contains("  plugins/       created"));
+        assert!(rendered.contains("  skills/        created"));
+        assert!(rendered.contains("  agents/        created"));
+        assert!(rendered.contains("  sessions/      created"));
+        assert!(rendered.contains("settings.json    created"));
         assert!(rendered.contains(".codineer.json   created"));
         assert!(rendered.contains(".gitignore       created"));
         assert!(rendered.contains("CODINEER.md      created"));
         assert!(root.join(".codineer").is_dir());
+        assert!(root.join(".codineer").join("plugins").is_dir());
+        assert!(root.join(".codineer").join("skills").is_dir());
+        assert!(root.join(".codineer").join("agents").is_dir());
+        assert!(root.join(".codineer").join("sessions").is_dir());
+        assert!(root.join(".codineer").join("settings.json").is_file());
         assert!(root.join(".codineer.json").is_file());
         assert!(root.join("CODINEER.md").is_file());
         assert_eq!(
@@ -414,6 +465,9 @@ mod tests {
         let gitignore = fs::read_to_string(root.join(".gitignore")).expect("read gitignore");
         assert!(gitignore.contains(".codineer/settings.local.json"));
         assert!(gitignore.contains(".codineer/sessions/"));
+        assert!(gitignore.contains(".codineer/agents/"));
+        assert!(gitignore.contains(".codineer/sandbox-home/"));
+        assert!(gitignore.contains(".codineer/sandbox-tmp/"));
         let codineer_md = fs::read_to_string(root.join("CODINEER.md")).expect("read codineer md");
         assert!(codineer_md.contains("Languages: Rust."));
         assert!(codineer_md.contains("cargo clippy --workspace --all-targets -- -D warnings"));
@@ -437,6 +491,8 @@ mod tests {
         let second = initialize_repo(&root).expect("second init should succeed");
         let second_rendered = second.render();
         assert!(second_rendered.contains(".codineer/       skipped (already exists)"));
+        assert!(second_rendered.contains("  plugins/       skipped (already exists)"));
+        assert!(second_rendered.contains("settings.json    skipped (already exists)"));
         assert!(second_rendered.contains(".codineer.json   skipped (already exists)"));
         assert!(second_rendered.contains(".gitignore       skipped (already exists)"));
         assert!(second_rendered.contains("CODINEER.md      skipped (already exists)"));
