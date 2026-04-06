@@ -4,6 +4,7 @@ use std::path::Path;
 pub(crate) struct BundledPluginFile {
     pub relative_path: &'static str,
     pub content: &'static str,
+    #[cfg_attr(not(unix), allow(dead_code))]
     pub executable: bool,
 }
 
