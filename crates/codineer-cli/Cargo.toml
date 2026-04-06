@@ -17,6 +17,7 @@ path = "src/main.rs"
 
 [dependencies]
 api.workspace = true
+base64.workspace = true
 commands.workspace = true
 crossterm = "0.28"
 pulldown-cmark = "0.13"
@@ -33,6 +34,8 @@ syntect = "5"
 tokio = { version = "1", features = ["rt-multi-thread", "time"] }
 tools.workspace = true
 unicode-width = "0.2"
+arboard = "3.6.1"
+png = "0.18"
 
 [lints]
 workspace = true
