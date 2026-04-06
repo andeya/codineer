@@ -88,6 +88,25 @@ pub fn home_dir() -> Option<std::path::PathBuf> {
         .map(std::path::PathBuf::from)
 }
 
+/// Returns the `.codineer/` directory to use for runtime artifacts (sessions, agents, todos,
+/// sandbox dirs, etc.).
+///
+/// Walks up from `cwd` looking for an initialized project — one whose `.codineer/settings.json`
+/// exists.  Falls back to `~/.codineer/` (always available after first launch) when no initialized
+/// project is found in the ancestor chain.
+#[must_use]
+pub fn codineer_runtime_dir(cwd: &std::path::Path) -> std::path::PathBuf {
+    for ancestor in cwd.ancestors() {
+        let dir = ancestor.join(".codineer");
+        if dir.join("settings.json").is_file() {
+            return dir;
+        }
+    }
+    home_dir()
+        .map(|h| h.join(".codineer"))
+        .unwrap_or_else(|| cwd.join(".codineer"))
+}
+
 #[cfg(test)]
 fn test_env_lock() -> std::sync::MutexGuard<'static, ()> {
     use std::sync::Mutex;

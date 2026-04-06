@@ -21,7 +21,7 @@ pub(crate) struct ManagedSessionSummary {
 
 pub(crate) fn sessions_dir() -> Result<PathBuf, Box<dyn std::error::Error>> {
     let cwd = env::current_dir()?;
-    let path = cwd.join(".codineer").join("sessions");
+    let path = runtime::codineer_runtime_dir(&cwd).join("sessions");
     fs::create_dir_all(&path)?;
     Ok(path)
 }

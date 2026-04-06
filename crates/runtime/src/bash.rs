@@ -214,9 +214,10 @@ fn prepare_command(
         let mut prepared = Command::new("cmd");
         prepared.arg("/C").arg(command).current_dir(cwd);
         if sandbox_status.filesystem_active {
-            prepared.env("USERPROFILE", cwd.join(".codineer").join("sandbox-home"));
-            prepared.env("TEMP", cwd.join(".codineer").join("sandbox-tmp"));
-            prepared.env("TMP", cwd.join(".codineer").join("sandbox-tmp"));
+            let codineer_dir = crate::codineer_runtime_dir(cwd);
+            prepared.env("USERPROFILE", codineer_dir.join("sandbox-home"));
+            prepared.env("TEMP", codineer_dir.join("sandbox-tmp"));
+            prepared.env("TMP", codineer_dir.join("sandbox-tmp"));
         }
         apply_proxy_env(&mut prepared);
         prepared
@@ -226,8 +227,9 @@ fn prepare_command(
         let mut prepared = Command::new("sh");
         prepared.arg("-lc").arg(command).current_dir(cwd);
         if sandbox_status.filesystem_active {
-            prepared.env("HOME", cwd.join(".codineer").join("sandbox-home"));
-            prepared.env("TMPDIR", cwd.join(".codineer").join("sandbox-tmp"));
+            let codineer_dir = crate::codineer_runtime_dir(cwd);
+            prepared.env("HOME", codineer_dir.join("sandbox-home"));
+            prepared.env("TMPDIR", codineer_dir.join("sandbox-tmp"));
         }
         apply_proxy_env(&mut prepared);
         prepared
@@ -258,9 +260,10 @@ fn prepare_tokio_command(
         let mut prepared = TokioCommand::new("cmd");
         prepared.arg("/C").arg(command).current_dir(cwd);
         if sandbox_status.filesystem_active {
-            prepared.env("USERPROFILE", cwd.join(".codineer").join("sandbox-home"));
-            prepared.env("TEMP", cwd.join(".codineer").join("sandbox-tmp"));
-            prepared.env("TMP", cwd.join(".codineer").join("sandbox-tmp"));
+            let codineer_dir = crate::codineer_runtime_dir(cwd);
+            prepared.env("USERPROFILE", codineer_dir.join("sandbox-home"));
+            prepared.env("TEMP", codineer_dir.join("sandbox-tmp"));
+            prepared.env("TMP", codineer_dir.join("sandbox-tmp"));
         }
         apply_tokio_proxy_env(&mut prepared);
         prepared
@@ -270,8 +273,9 @@ fn prepare_tokio_command(
         let mut prepared = TokioCommand::new("sh");
         prepared.arg("-lc").arg(command).current_dir(cwd);
         if sandbox_status.filesystem_active {
-            prepared.env("HOME", cwd.join(".codineer").join("sandbox-home"));
-            prepared.env("TMPDIR", cwd.join(".codineer").join("sandbox-tmp"));
+            let codineer_dir = crate::codineer_runtime_dir(cwd);
+            prepared.env("HOME", codineer_dir.join("sandbox-home"));
+            prepared.env("TMPDIR", codineer_dir.join("sandbox-tmp"));
         }
         apply_tokio_proxy_env(&mut prepared);
         prepared
@@ -291,8 +295,9 @@ fn apply_tokio_proxy_env(cmd: &mut TokioCommand) {
 }
 
 fn prepare_sandbox_dirs(cwd: &std::path::Path) {
-    let _ = std::fs::create_dir_all(cwd.join(".codineer").join("sandbox-home"));
-    let _ = std::fs::create_dir_all(cwd.join(".codineer").join("sandbox-tmp"));
+    let codineer_dir = crate::codineer_runtime_dir(cwd);
+    let _ = std::fs::create_dir_all(codineer_dir.join("sandbox-home"));
+    let _ = std::fs::create_dir_all(codineer_dir.join("sandbox-tmp"));
 }
 
 #[cfg(test)]
