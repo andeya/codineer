@@ -299,7 +299,10 @@ fn build_macos_sandbox_command(
 
 fn sandbox_dirs(cwd: &Path) -> (std::path::PathBuf, std::path::PathBuf) {
     let codineer_dir = crate::codineer_runtime_dir(cwd);
-    (codineer_dir.join("sandbox-home"), codineer_dir.join("sandbox-tmp"))
+    (
+        codineer_dir.join("sandbox-home"),
+        codineer_dir.join("sandbox-tmp"),
+    )
 }
 
 fn sandbox_env(cwd: &Path, status: &SandboxStatus) -> Vec<(String, String)> {
