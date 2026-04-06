@@ -206,7 +206,7 @@ impl LineEditor {
             // handling.  SUPER covers Cmd on macOS for terminals that support the
             // Kitty keyboard protocol (kitty, WezTerm).  Terminal.app and iTerm2
             // intercept Cmd+V themselves so SUPER is never received there — those
-            // users must use Ctrl+V.
+            // users should use Ctrl+V or /image instead.
             if key.code == KeyCode::Char('v')
                 && (key.modifiers == KeyModifiers::CONTROL || key.modifiers == KeyModifiers::SUPER)
             {
@@ -229,6 +229,23 @@ impl LineEditor {
                     self.render(&mut session, &mut stdout, self.suggestion_state.as_ref())?;
                 }
                 KeyAction::Submit(line) => {
+                    // /image: read clipboard image into the editor (like Ctrl+V)
+                    // instead of submitting.  User stays in edit mode.
+                    if line.trim() == "/image" {
+                        session.text.clear();
+                        session.cursor = 0;
+                        match super::clipboard::read_clipboard_image() {
+                            Ok((bytes, media_type)) => {
+                                self.insert_image(&mut session, bytes, media_type);
+                            }
+                            Err(reason) => {
+                                session.transient_status = Some(reason);
+                            }
+                        }
+                        self.render(&mut session, &mut stdout, self.suggestion_state.as_ref())?;
+                        continue;
+                    }
+
                     let line = self.expand_paste_refs(line);
                     let images = self.drain_image_store(&line);
                     session.finalize_render(&mut stdout, &self.prompt, self.vim_enabled)?;

@@ -417,17 +417,10 @@ impl EditSession {
         let (cols, _) = terminal::size().unwrap_or((80, 24));
         let p = Palette::for_stdout();
 
-        const SHORTCUTS: &[(&str, &str)] = &[
-            ("! for bash mode", "double tap esc to clear input"),
-            ("/ for commands", "shift + enter for newline"),
-            ("@ for file paths", "ctrl + j for newline"),
-            ("\\ + enter for newline", "ctrl + c to clear input"),
-            ("/vim to toggle vim mode", "ctrl + d to exit"),
-            ("? for shortcuts", "/help for full command list"),
-        ];
+        let shortcuts = Self::shortcut_entries();
 
         let left_w = (cols as usize / 2).max(20);
-        for &(left, right) in SHORTCUTS {
+        for &(left, right) in &shortcuts {
             write!(
                 out,
                 "\r\n{}  {:<w$}{right}{}",
@@ -437,7 +430,26 @@ impl EditSession {
                 w = left_w - 2
             )?;
         }
-        Ok(SHORTCUTS.len())
+        Ok(shortcuts.len())
+    }
+
+    /// Platform-aware shortcut entries for the `?` panel.
+    fn shortcut_entries() -> Vec<(&'static str, &'static str)> {
+        let mut entries = vec![
+            ("! for bash mode", "double tap esc to clear input"),
+            ("/ for commands", "shift + enter for newline"),
+            ("@ for file paths", "ctrl + j for newline"),
+            ("\\ + enter for newline", "ctrl + c to clear input"),
+            ("/vim to toggle vim mode", "ctrl + d to exit"),
+        ];
+        if cfg!(target_os = "windows") {
+            entries.push(("/image to paste image", ""));
+        } else {
+            entries.push(("ctrl + v / /image to paste image", ""));
+        }
+        entries.push(("? for shortcuts", "/help for full command list"));
+        entries
+    }
 
     fn draw_interrupt_hint(&self, out: &mut impl Write) -> std::io::Result<usize> {
         let p = Palette::for_stdout();
@@ -734,8 +746,8 @@ mod tests {
         let s = EditSession::new(false);
         let mut buf = Vec::new();
         let lines = s.draw_shortcuts_panel(&mut buf).unwrap();
-        // 6 shortcut rows (separator is now drawn by render_content, not the panel)
-        assert_eq!(lines, 6);
+        // 7 shortcut rows (separator is now drawn by render_content, not the panel)
+        assert_eq!(lines, 7);
         let output = String::from_utf8(buf).unwrap();
         assert!(
             output.contains("! for bash mode"),
@@ -744,6 +756,10 @@ mod tests {
         assert!(
             output.contains("? for shortcuts"),
             "panel should contain ? shortcut"
+        );
+        assert!(
+            output.contains("/image"),
+            "panel should contain /image shortcut"
         );
     }
 

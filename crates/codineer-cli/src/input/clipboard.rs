@@ -44,7 +44,7 @@ pub(crate) fn read_clipboard_image() -> Result<(Vec<u8>, &'static str), String> 
         }
     }
 
-    Err("no image in clipboard (copy an image with Cmd+C, then press Ctrl+V)".to_string())
+    Err("no image in clipboard (copy an image first, then use Ctrl+V or /image)".to_string())
 }
 
 fn encode_rgba_to_png(width: usize, height: usize, bytes: &[u8]) -> Option<Vec<u8>> {
