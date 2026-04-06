@@ -90,7 +90,7 @@ pub(crate) fn print_help_to(out: &mut impl io::Write) -> io::Result<()> {
             "  codineer config set <key> <value>         Set a configuration value",
             "  codineer config get [<key>]               Show a configuration value",
             "  codineer config list                      List all configuration",
-            "  codineer init                             Scaffold CODINEER.md + local files",
+            "  codineer init                             Scaffold .codineer/ directory",
         ],
     )?;
     print_help_section(
@@ -146,7 +146,7 @@ pub(crate) fn print_help_to(out: &mut impl io::Write) -> io::Result<()> {
             &format!("  {:<38}Local overrides (gitignored)", cfg_paths.local_override),
             &format!("  {:<38}Project settings", cfg_paths.project_settings),
             &format!("  {:<38}Global settings (written by `config set`)", cfg_paths.global_settings),
-            &format!("  {:<38}Project context and instructions", "CODINEER.md"),
+            &format!("  {:<38}Project context and instructions", ".codineer/CODINEER.md"),
             "",
             "  Override the global config dir via CODINEER_CONFIG_HOME.",
             "",

@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 /// Lines starting with `!` are negated (i.e. explicitly tracked).
 const CODINEER_GITIGNORE: &str = "\
 # Tracked (committed to the repo)
+!CODINEER.md
 !settings.json
 !plugins/
 !skills/
@@ -104,8 +105,8 @@ pub(crate) fn initialize_repo(cwd: &Path) -> Result<InitReport, Box<dyn std::err
     let content = render_init_codineer_md(cwd);
     artifacts.push(InitArtifact {
         name: "CODINEER.md".into(),
-        depth: 0,
-        status: write_file_if_missing(&cwd.join("CODINEER.md"), &content)?,
+        depth: 1,
+        status: write_file_if_missing(&cwd.join(".codineer").join("CODINEER.md"), &content)?,
     });
 
     Ok(InitReport {
@@ -228,7 +229,7 @@ pub(crate) fn render_init_codineer_md(cwd: &Path) -> String {
     lines.push("## Working agreement".to_string());
     lines.push("- Prefer small, reviewable changes and keep generated bootstrap files aligned with actual repo workflows.".to_string());
     lines.push("- Keep shared defaults in `.codineer/settings.json`; reserve `.codineer/settings.local.json` for machine-local overrides.".to_string());
-    lines.push("- Do not overwrite existing `CODINEER.md` content automatically; update it intentionally when repo workflows change.".to_string());
+    lines.push("- Do not overwrite existing `.codineer/CODINEER.md` content automatically; update it intentionally when repo workflows change.".to_string());
     lines.push(String::new());
 
     lines.join("\n")
@@ -409,18 +410,18 @@ mod tests {
         assert!(rendered.contains("  sessions/      created"));
         assert!(rendered.contains("  settings.json  created"));
         assert!(rendered.contains("  .gitignore     created"));
-        assert!(rendered.contains("CODINEER.md      created"));
-        assert!(root.join(".codineer").is_dir());
-        assert!(root.join(".codineer").join("plugins").is_dir());
-        assert!(root.join(".codineer").join("skills").is_dir());
-        assert!(root.join(".codineer").join("agents").is_dir());
-        assert!(root.join(".codineer").join("sessions").is_dir());
-        assert!(root.join(".codineer").join("settings.json").is_file());
-        assert!(root.join(".codineer").join(".gitignore").is_file());
-        assert!(root.join("CODINEER.md").is_file());
+        assert!(rendered.contains("  CODINEER.md    created"));
+        let cd = root.join(".codineer");
+        assert!(cd.is_dir());
+        assert!(cd.join("plugins").is_dir());
+        assert!(cd.join("skills").is_dir());
+        assert!(cd.join("agents").is_dir());
+        assert!(cd.join("sessions").is_dir());
+        assert!(cd.join("settings.json").is_file());
+        assert!(cd.join(".gitignore").is_file());
+        assert!(cd.join("CODINEER.md").is_file());
         assert_eq!(
-            fs::read_to_string(root.join(".codineer").join("settings.json"))
-                .expect("read settings json"),
+            fs::read_to_string(cd.join("settings.json")).expect("read settings json"),
             concat!(
                 "{\n",
                 "  \"permissions\": {\n",
@@ -429,8 +430,8 @@ mod tests {
                 "}\n",
             )
         );
-        let gitignore =
-            fs::read_to_string(root.join(".codineer").join(".gitignore")).expect("read gitignore");
+        let gitignore = fs::read_to_string(cd.join(".gitignore")).expect("read gitignore");
+        assert!(gitignore.contains("!CODINEER.md"));
         assert!(gitignore.contains("!settings.json"));
         assert!(gitignore.contains("!plugins/"));
         assert!(gitignore.contains("!skills/"));
@@ -440,7 +441,7 @@ mod tests {
         assert!(gitignore.contains("sandbox-home/"));
         assert!(gitignore.contains("sandbox-tmp/"));
         assert!(gitignore.contains("todos.json"));
-        let codineer_md = fs::read_to_string(root.join("CODINEER.md")).expect("read codineer md");
+        let codineer_md = fs::read_to_string(cd.join("CODINEER.md")).expect("read codineer md");
         assert!(codineer_md.contains("Languages: Rust."));
         assert!(codineer_md.contains("cargo clippy --workspace --all-targets -- -D warnings"));
 
@@ -450,23 +451,23 @@ mod tests {
     #[test]
     fn initialize_repo_is_idempotent_and_preserves_existing_files() {
         let root = temp_dir();
-        fs::create_dir_all(&root).expect("create root");
-        fs::write(root.join("CODINEER.md"), "custom guidance\n")
-            .expect("write existing codineer md");
+        let cd = root.join(".codineer");
+        fs::create_dir_all(&cd).expect("create .codineer dir");
+        fs::write(cd.join("CODINEER.md"), "custom guidance\n").expect("write existing codineer md");
 
         let first = initialize_repo(&root).expect("first init should succeed");
         assert!(first
             .render()
-            .contains("CODINEER.md      skipped (already exists)"));
+            .contains("CODINEER.md    skipped (already exists)"));
         let second = initialize_repo(&root).expect("second init should succeed");
         let second_rendered = second.render();
         assert!(second_rendered.contains(".codineer/       skipped (already exists)"));
         assert!(second_rendered.contains("  plugins/       skipped (already exists)"));
         assert!(second_rendered.contains("  settings.json  skipped (already exists)"));
         assert!(second_rendered.contains("  .gitignore     skipped (already exists)"));
-        assert!(second_rendered.contains("CODINEER.md      skipped (already exists)"));
+        assert!(second_rendered.contains("  CODINEER.md    skipped (already exists)"));
         assert_eq!(
-            fs::read_to_string(root.join("CODINEER.md")).expect("read existing codineer md"),
+            fs::read_to_string(cd.join("CODINEER.md")).expect("read existing codineer md"),
             "custom guidance\n"
         );
 

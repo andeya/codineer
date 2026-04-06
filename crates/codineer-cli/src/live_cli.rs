@@ -869,9 +869,7 @@ pub(crate) fn run_repl(
         || workspace_name.clone(),
         |b| format!("{workspace_name} · {b}"),
     );
-    let has_codineer_md = cwd
-        .as_ref()
-        .is_some_and(|p| p.join("CODINEER.md").is_file());
+    let is_initialized = cwd.as_ref().is_some_and(|p| p.join(".codineer").is_dir());
     let b_model = cli.model.clone();
     let b_perms = cli.permission_mode.as_str().to_string();
     let b_session_id = cli.session.id.clone();
@@ -890,7 +888,7 @@ pub(crate) fn run_repl(
                     permissions: &b_perms,
                     session_id: &b_session_id,
                     session_path: &b_session_path,
-                    has_codineer_md,
+                    is_initialized,
                 },
             )
         });

@@ -73,7 +73,7 @@ pub(crate) struct BannerContext<'a> {
     pub permissions: &'a str,
     pub session_id: &'a str,
     pub session_path: &'a Path,
-    pub has_codineer_md: bool,
+    pub is_initialized: bool,
 }
 
 /// Render the full welcome banner as a `String`.
@@ -225,7 +225,7 @@ fn right_column(p: &Palette, ctx: &BannerContext<'_>, layout: &BannerLayout) -> 
             format!("{}{text}{}", p.violet, p.r)
         }
     };
-    let tips: &[&str] = if ctx.has_codineer_md {
+    let tips: &[&str] = if ctx.is_initialized {
         if crate::platform::vim_installed() {
             &["/help · Tab completes slash", "/vim for modal edit"]
         } else {
@@ -300,7 +300,7 @@ mod tests {
             permissions,
             session_id,
             session_path,
-            has_codineer_md: false,
+            is_initialized: false,
         }
     }
 

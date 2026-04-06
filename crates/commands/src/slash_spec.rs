@@ -115,7 +115,7 @@ const SLASH_COMMAND_SPECS: &[SlashCommandSpec] = &[
     SlashCommandSpec {
         name: "init",
         aliases: &[],
-        summary: "Create a starter CODINEER.md for this repo",
+        summary: "Scaffold .codineer/ directory and CODINEER.md",
         argument_hint: None,
         resume_supported: true,
         category: SlashCommandCategory::Workspace,

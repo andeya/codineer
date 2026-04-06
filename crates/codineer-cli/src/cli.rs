@@ -237,7 +237,7 @@ const SUBCOMMAND_HELP: &[(&str, &str, &str)] = &[
     ),
     (
         "init",
-        "Scaffold a CODINEER.md project context file in the current directory.",
+        "Scaffold .codineer/ directory with settings, gitignore, and CODINEER.md.",
         "codineer init",
     ),
 ];

@@ -211,9 +211,9 @@ fn discover_instruction_files(cwd: &Path) -> std::io::Result<Vec<ContextFile>> {
     let mut files = Vec::new();
     for dir in directories {
         for candidate in [
+            dir.join(".codineer").join("CODINEER.md"),
             dir.join("CODINEER.md"),
             dir.join("CODINEER.local.md"),
-            dir.join(".codineer").join("CODINEER.md"),
             dir.join(".codineer").join("instructions.md"),
         ] {
             push_context_file(&mut files, candidate)?;
