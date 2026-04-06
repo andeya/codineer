@@ -450,7 +450,7 @@ Codineer 从多个 JSON 文件合并设置（优先级从高到低）：
     }
   },
   "mcpServers": { "my-server": { "command": "node", "args": ["server.js"] } },
-  "enabledPlugins": { "my-plugin": true },
+  "enabledPlugins": { "my-plugin@external": true },
   "hooks": { "PreToolUse": ["lint-check"], "PostToolUse": ["notify"] }
 }
 ```
@@ -467,7 +467,7 @@ Codineer 从多个 JSON 文件合并设置（优先级从高到低）：
 | `credentials`    | object   | 凭据链配置（defaultSource、autoDiscover、claudeCode）                                                                                                                                                                               |
 | `mcpServers`     | object   | MCP 服务器定义（stdio、sse、http、ws）                                                                                                                                                                                              |
 | `sandbox`        | object   | 沙箱安全设置（enabled、filesystemMode、allowedMounts）                                                                                                                                                                              |
-| `enabledPlugins` | object   | 启用的插件（插件名 → 布尔值的映射）                                                                                                                                                                                                 |
+| `enabledPlugins` | object   | 插件启用/禁用覆盖（`name@marketplace` → 布尔值的映射）                                                                                                                                                                              |
 | `plugins`        | object   | 插件管理（externalDirectories、installRoot）                                                                                                                                                                                        |
 | `hooks`          | object   | `PreToolUse` / `PostToolUse` Hook 的 Shell 命令                                                                                                                                                                                     |
 
@@ -560,11 +560,26 @@ Codineer 沿目录树向上查找并加载所有匹配的指令文件：
 
 ### 插件
 
-```bash
-/plugin list                        # 列出已安装
-/plugin install ./path/to/plugin    # 安装本地插件
-/plugin enable my-plugin            # 启用
+插件用于扩展 Codineer，可以提供自定义**工具**（AI 可调用的函数）、**斜杠命令**、**钩子**（工具调用前/后拦截）和**生命周期脚本**。插件是一个包含 `plugin.json` 清单的目录：
+
 ```
+.codineer/plugins/my-plugin/
+├── plugin.json              ← 清单（工具、命令、钩子、生命周期）
+├── tools/query-db.sh        ← AI 自动调用此工具
+├── hooks/audit.sh           ← 每次工具调用前/后运行
+└── commands/deploy.sh       ← 用户输入 /deploy 时执行
+```
+
+在 REPL 中管理插件：
+
+```bash
+/plugin list                        # 列出所有插件及状态
+/plugin install ./path/to/plugin    # 从本地路径或 Git URL 安装
+/plugin enable my-plugin            # 启用
+/plugin disable my-plugin           # 禁用
+```
+
+> **完整插件开发指南：** [`crates/plugins/README_CN.md`](crates/plugins/README_CN.md)
 
 ### Agent 与 Skill
 

@@ -5,7 +5,10 @@
 .codineer/settings.local.json
 .codineer/sessions/
 .codineer/cache/
-.codineer-agents/
+.codineer/agents/
+.codineer/todos.json
+.codineer/sandbox-home/
+.codineer/sandbox-tmp/
 
 # Environment
 .env
@@ -36,7 +39,3 @@ codineer.log
 *.key
 
 test-write.txt
-
-# Sandbox artifacts
-sandbox-home/
-.sandbox-tmp/

@@ -446,7 +446,7 @@ All files use the same schema. `env`, `providers`, and `mcpServers` objects are 
     "my-api": { "baseUrl": "https://api.example.com/v1", "apiKeyEnv": "MY_KEY" }
   },
   "mcpServers": { "my-server": { "command": "node", "args": ["server.js"] } },
-  "enabledPlugins": { "my-plugin": true },
+  "enabledPlugins": { "my-plugin@external": true },
   "hooks": { "PreToolUse": ["lint-check"], "PostToolUse": ["notify"] }
 }
 ```
@@ -463,7 +463,7 @@ All files use the same schema. `env`, `providers`, and `mcpServers` objects are 
 | `credentials`    | object   | Credential chain config (defaultSource, autoDiscover, claudeCode)                                                                                                                                                  |
 | `mcpServers`     | object   | MCP server definitions (stdio, sse, http, ws)                                                                                                                                                                      |
 | `sandbox`        | object   | Sandbox security settings (enabled, filesystemMode, allowedMounts)                                                                                                                                                 |
-| `enabledPlugins` | object   | Plugins to enable (map of plugin name → boolean)                                                                                                                                                                   |
+| `enabledPlugins` | object   | Plugin enable/disable overrides (map of `name@marketplace` → boolean)                                                                                                                                              |
 | `plugins`        | object   | Plugin management (externalDirectories, installRoot)                                                                                                                                                               |
 | `hooks`          | object   | Shell commands for `PreToolUse` / `PostToolUse` hooks                                                                                                                                                              |
 
@@ -556,11 +556,26 @@ Transports: `stdio` (default), `sse`, `http`, `ws`.
 
 ### Plugins
 
-```bash
-/plugin list                        # list installed
-/plugin install ./path/to/plugin    # install local
-/plugin enable my-plugin            # enable
+Plugins extend Codineer with custom **tools** (AI-callable functions), **slash commands**, **hooks** (pre/post tool-call interception), and **lifecycle scripts**. A plugin is a directory with a `plugin.json` manifest:
+
 ```
+.codineer/plugins/my-plugin/
+├── plugin.json              ← manifest (tools, commands, hooks, lifecycle)
+├── tools/query-db.sh        ← AI calls this tool automatically
+├── hooks/audit.sh           ← runs before/after every tool call
+└── commands/deploy.sh       ← user types /deploy
+```
+
+Manage plugins from the REPL:
+
+```bash
+/plugin list                        # list all plugins with status
+/plugin install ./path/to/plugin    # install from local path or Git URL
+/plugin enable my-plugin            # enable
+/plugin disable my-plugin           # disable
+```
+
+> **Full plugin development guide:** [`crates/plugins/README.md`](crates/plugins/README.md)
 
 ### Agents & skills
 
