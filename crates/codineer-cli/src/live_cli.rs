@@ -111,6 +111,12 @@ impl LiveCli {
     /// Run a single conversation turn.  Errors are printed to the terminal
     /// but never propagated — the REPL must stay alive.
     fn run_turn(&mut self, input: &str) {
+        self.run_turn_blocks(vec![runtime::ContentBlock::Text {
+            text: input.to_string(),
+        }]);
+    }
+
+    fn run_turn_blocks(&mut self, blocks: Vec<runtime::ContentBlock>) {
         if let Some(enrichment) = self.collect_lsp_diagnostics() {
             if let Ok(refreshed) = build_system_prompt_with_lsp(Some(&enrichment)) {
                 self.system_prompt = refreshed;
@@ -122,7 +128,9 @@ impl LiveCli {
         let pe = crate::style::Palette::for_stderr();
         eprintln!("{}  ∴ thinking…{}", pe.dim, pe.r);
         let mut permission_prompter = CliPermissionPrompter::new(self.permission_mode);
-        let result = self.runtime.run_turn(input, Some(&mut permission_prompter));
+        let result = self
+            .runtime
+            .run_turn_with_blocks(blocks, Some(&mut permission_prompter));
         println!();
         match result {
             Ok(_) => {
@@ -884,9 +892,10 @@ pub(crate) fn run_repl(
 
     loop {
         match editor.read_line()? {
-            input::ReadOutcome::Submit(input) => {
+            input::ReadOutcome::Submit(payload) => {
+                let input = &payload.text;
                 let trimmed = input.trim();
-                if trimmed.is_empty() {
+                if trimmed.is_empty() && payload.images.is_empty() {
                     continue;
                 }
                 if matches!(trimmed, "/exit" | "/quit") {
@@ -897,7 +906,7 @@ pub(crate) fn run_repl(
                 if let Some(shell_cmd) = trimmed.strip_prefix('!') {
                     let shell_cmd = shell_cmd.trim();
                     if !shell_cmd.is_empty() {
-                        editor.push_history(&input);
+                        editor.push_history(input);
                         let prompt = format!(
                             "Run this exact shell command and show me the output: `{shell_cmd}`"
                         );
@@ -918,9 +927,19 @@ pub(crate) fn run_repl(
                     }
                     continue;
                 }
-                editor.push_history(&input);
-                let enriched = process_at_mentioned_files(&input);
-                cli.run_turn(&enriched);
+                editor.push_history(input);
+
+                let extra_images: Vec<runtime::ContentBlock> = payload
+                    .images
+                    .iter()
+                    .filter_map(|img| {
+                        crate::image_util::bytes_to_image_block(&img.bytes, Some(&img.media_type))
+                            .ok()
+                    })
+                    .collect();
+
+                let enriched = process_at_mentioned_files(input, extra_images);
+                cli.run_turn_blocks(enriched.blocks);
             }
             input::ReadOutcome::Exit => {
                 let _ = cli.persist_session();

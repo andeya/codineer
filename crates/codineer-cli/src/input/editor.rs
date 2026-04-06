@@ -9,7 +9,10 @@ use crossterm::event::{
 };
 use crossterm::{execute, terminal};
 
-use super::session::{EditSession, EditorMode, KeyAction, ReadOutcome, YankBuffer, YankShape};
+use super::session::{
+    EditSession, EditorMode, ImageData, KeyAction, ReadOutcome, SubmitPayload, YankBuffer,
+    YankShape,
+};
 use super::suggestions::{self, CommandEntry, SuggestionState, SuggestionTrigger};
 use super::text::{current_line_delete_range, is_vim_toggle, line_end, next_boundary};
 
@@ -51,6 +54,10 @@ pub struct LineEditor {
     paste_store: HashMap<usize, String>,
     /// Auto-incrementing counter for paste reference IDs.
     next_paste_id: usize,
+    /// Storage for clipboard-pasted images: keyed by monotonic ID so
+    /// `drain_image_store` can return them in insertion order cheaply.
+    image_store: std::collections::BTreeMap<usize, ImageData>,
+    next_image_id: usize,
 }
 
 impl LineEditor {
@@ -71,6 +78,8 @@ impl LineEditor {
             hint_line: None,
             paste_store: HashMap::new(),
             next_paste_id: 1,
+            image_store: std::collections::BTreeMap::new(),
+            next_image_id: 1,
         }
     }
 
@@ -132,10 +141,79 @@ impl LineEditor {
             // pasted content don't accidentally trigger a submission.
             if let Event::Paste(ref text) = event {
                 let text = text.replace('\r', "\n");
+                let trimmed = text.trim();
+
+                // Drag-and-drop: if paste is a single-line image path, attach it.
+                if !trimmed.is_empty()
+                    && !trimmed.contains('\n')
+                    && crate::image_util::is_image_path(std::path::Path::new(trimmed))
+                    && std::path::Path::new(trimmed).exists()
+                {
+                    if let Ok(bytes) = std::fs::read(trimmed) {
+                        let media_type = crate::image_util::detect_media_type(&bytes)
+                            .or_else(|| {
+                                crate::image_util::media_type_from_extension(std::path::Path::new(
+                                    trimmed,
+                                ))
+                            })
+                            .unwrap_or("image/png");
+                        let id = self.next_image_id;
+                        self.next_image_id += 1;
+                        self.image_store.insert(
+                            id,
+                            ImageData {
+                                bytes,
+                                media_type: media_type.to_string(),
+                                source_label: trimmed.to_string(),
+                            },
+                        );
+                        session.insert_text(&format!("[Image #{id}]"));
+                        self.update_suggestions(&session);
+                        session.render_with_suggestions(
+                            &mut stdout,
+                            &self.prompt,
+                            self.vim_enabled,
+                            self.suggestion_state.as_ref(),
+                        )?;
+                        continue;
+                    }
+                }
+
+                // Cmd+V (macOS) / Ctrl+Shift+V (Linux) with image clipboard: the
+                // terminal sends an empty bracketed-paste event when the clipboard
+                // holds binary image data (no text representation).  Try arboard.
+                if trimmed.is_empty() {
+                    match super::clipboard::read_clipboard_image() {
+                        Ok((bytes, media_type)) => {
+                            let id = self.next_image_id;
+                            self.next_image_id += 1;
+                            self.image_store.insert(
+                                id,
+                                ImageData {
+                                    bytes,
+                                    media_type: media_type.to_string(),
+                                    source_label: "clipboard".to_string(),
+                                },
+                            );
+                            session.insert_text(&format!("[Image #{id}]"));
+                            self.update_suggestions(&session);
+                        }
+                        Err(_) => {
+                            // Empty paste with no image — just ignore silently.
+                        }
+                    }
+                    session.render_with_suggestions(
+                        &mut stdout,
+                        &self.prompt,
+                        self.vim_enabled,
+                        self.suggestion_state.as_ref(),
+                    )?;
+                    continue;
+                }
+
                 let num_newlines = text.matches('\n').count();
                 let insert =
                     if text.len() > PASTE_CHAR_THRESHOLD || num_newlines > PASTE_LINE_THRESHOLD {
-                        // Store the full content and show a compact reference token.
                         let id = self.next_paste_id;
                         self.next_paste_id += 1;
                         self.paste_store.insert(id, text);
@@ -164,6 +242,37 @@ impl LineEditor {
                 continue;
             }
 
+            // Ctrl+V: attempt clipboard image paste before normal key handling.
+            if key.code == KeyCode::Char('v') && key.modifiers == KeyModifiers::CONTROL {
+                match super::clipboard::read_clipboard_image() {
+                    Ok((bytes, media_type)) => {
+                        let id = self.next_image_id;
+                        self.next_image_id += 1;
+                        self.image_store.insert(
+                            id,
+                            ImageData {
+                                bytes,
+                                media_type: media_type.to_string(),
+                                source_label: "clipboard".to_string(),
+                            },
+                        );
+                        session.insert_text(&format!("[Image #{id}]"));
+                        self.update_suggestions(&session);
+                    }
+                    Err(reason) => {
+                        session.transient_status = Some(reason);
+                    }
+                }
+                session.render_with_suggestions(
+                    &mut stdout,
+                    &self.prompt,
+                    self.vim_enabled,
+                    self.suggestion_state.as_ref(),
+                )?;
+                // Consume Ctrl+V here so the fallthrough path never inserts 'v'.
+                continue;
+            }
+
             match self.handle_key_event(&mut session, key) {
                 KeyAction::Continue => {
                     self.update_suggestions(&session);
@@ -176,9 +285,10 @@ impl LineEditor {
                 }
                 KeyAction::Submit(line) => {
                     let line = self.expand_paste_refs(line);
+                    let images = self.drain_image_store();
                     session.finalize_render(&mut stdout, &self.prompt, self.vim_enabled)?;
                     self.prefix_fn = None;
-                    return Ok(ReadOutcome::Submit(line));
+                    return Ok(ReadOutcome::Submit(SubmitPayload { text: line, images }));
                 }
                 KeyAction::Cancel => {
                     // Stay on the same line — clear input and re-render in
@@ -300,8 +410,17 @@ impl LineEditor {
                 continue;
             }
 
-            return Ok(ReadOutcome::Submit(buffer));
+            return Ok(ReadOutcome::Submit(SubmitPayload {
+                text: buffer,
+                images: Vec::new(),
+            }));
         }
+    }
+
+    fn drain_image_store(&mut self) -> Vec<ImageData> {
+        std::mem::take(&mut self.image_store)
+            .into_values()
+            .collect()
     }
 
     // --- Paste reference expansion ---
@@ -437,9 +556,9 @@ impl LineEditor {
         session: &mut EditSession,
         key: KeyEvent,
     ) -> KeyAction {
-        // Clear the "Press Ctrl-C again" hint on every keystroke so it
-        // disappears as soon as the user does anything else.
+        // Clear one-shot hints on every keystroke.
         session.show_interrupt_hint = false;
+        session.transient_status = None;
 
         // When suggestions are visible, intercept navigation keys
         if self.suggestion_state.is_some() {

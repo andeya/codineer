@@ -4,6 +4,7 @@ mod bootstrap;
 mod cli;
 mod config_cmd;
 mod help;
+mod image_util;
 mod init;
 mod input;
 mod live_cli;

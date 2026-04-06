@@ -37,9 +37,23 @@ fn write_bg_padded(
     write!(out, "{}{content}{}{}", p.prompt_bg, " ".repeat(pad), p.r)
 }
 
+/// Raw image bytes captured from clipboard or drag-and-drop.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ImageData {
+    pub bytes: Vec<u8>,
+    pub media_type: String,
+    pub source_label: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SubmitPayload {
+    pub text: String,
+    pub images: Vec<ImageData>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ReadOutcome {
-    Submit(String),
+    Submit(SubmitPayload),
     Exit,
 }
 
@@ -93,6 +107,10 @@ pub(super) struct EditSession {
     /// When true, render a "Press Ctrl-C again to exit" hint below the prompt.
     /// Cleared on the next re-render that doesn't set it.
     pub(super) show_interrupt_hint: bool,
+    /// One-shot status message rendered in the info area (e.g. "no image in
+    /// clipboard").  Cleared at the start of the next key-event handler so it
+    /// disappears after the user presses any key.
+    pub(super) transient_status: Option<String>,
     /// When true, render a bottom separator line below the input text and above
     /// the info/panel area.  Set from `LineEditor::show_separator`.
     pub(super) show_bottom_sep: bool,
@@ -127,6 +145,7 @@ impl EditSession {
             history_index: None,
             history_backup: None,
             show_interrupt_hint: false,
+            transient_status: None,
             show_bottom_sep: false,
             static_hint: None,
             rendered_cursor_row: 0,
@@ -296,6 +315,10 @@ impl EditSession {
             self.draw_interrupt_hint(out)?
         } else if let Some(state) = suggestions.filter(|s| !s.items.is_empty()) {
             self.draw_suggestions(out, state)?
+        } else if let Some(ref status) = self.transient_status {
+            let p = Palette::for_stdout();
+            write!(out, "\r\n{}{status}{}", p.dim, p.r)?;
+            1
         } else if self.show_bottom_sep {
             // Static hint line — shown whenever the info area is otherwise empty.
             if let Some(ref hint) = self.static_hint {

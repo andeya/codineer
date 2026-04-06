@@ -1,3 +1,4 @@
+pub(crate) mod clipboard;
 mod editor;
 mod session;
 pub(crate) mod suggestions;
