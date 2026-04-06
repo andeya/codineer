@@ -70,20 +70,21 @@ pub(crate) fn print_help_to(out: &mut impl io::Write) -> io::Result<()> {
             "  codineer --resume SESSION.json /status    Inspect a saved session",
         ],
     )?;
-    print_help_section(
-        out,
-        "Interactive essentials",
-        &[
+    {
+        let mut essentials = vec![
             "  /help                                 Browse the full slash command map",
             "  /status                               Inspect session + workspace state",
             "  /model <name>                         Switch models mid-session",
             "  Ctrl+V / /image                       Paste clipboard image (Ctrl+V on macOS/Linux; /image on all platforms)",
             "  /permissions <mode>                   Adjust tool access",
             "  Tab                                   Complete slash commands",
-            "  /vim                                  Toggle modal editing",
-            "  Shift+Enter / Ctrl+J                  Insert a newline",
-        ],
-    )?;
+        ];
+        if crate::platform::vim_installed() {
+            essentials.push("  /vim                                  Toggle modal editing");
+        }
+        essentials.push("  Shift+Enter / Ctrl+J                  Insert a newline");
+        print_help_section(out, "Interactive essentials", &essentials)?;
+    }
     print_help_section(
         out,
         "Commands",
@@ -233,13 +234,17 @@ pub(crate) fn print_help() {
 }
 
 pub(crate) fn render_repl_help() -> String {
-    const HEADER: &[&str] = &[
+    let mut header: Vec<&str> = vec![
         "Interactive REPL",
         "  Quick start          Welcome panel shows context and `codineer --resume …`; prompt is `❯`. Ask in plain English or use commands below.",
         "  Core commands        /help · /status · /model · /permissions · /compact",
         "  Exit                 /exit, /quit, or Ctrl-D",
         "  Bash mode            !<command> sends a shell command request to the AI",
-        "  Vim mode             /vim toggles modal editing",
+    ];
+    if crate::platform::vim_installed() {
+        header.push("  Vim mode             /vim toggles modal editing");
+    }
+    header.extend(&[
         "  History              Up/Down recalls previous prompts",
         "  Completion           Tab cycles slash command matches",
         "  Cancel               Ctrl-C clears input; press twice on empty prompt to exit",
@@ -247,8 +252,8 @@ pub(crate) fn render_repl_help() -> String {
         "  Image paste          Ctrl+V or /image pastes a clipboard image",
         "  Clear input          Double-tap Esc clears the current input",
         "  Shortcuts            Type ? to see the shortcut reference (inline preview)",
-    ];
-    let mut parts: Vec<&str> = HEADER.to_vec();
+    ]);
+    let mut parts: Vec<&str> = header;
     parts.push("");
     let commands = render_slash_command_help();
     parts.push(&commands);
@@ -296,11 +301,13 @@ pub(crate) fn slash_command_entries() -> Vec<crate::input::CommandEntry> {
         description: "Paste clipboard image into editor".into(),
         has_args: false,
     });
-    entries.push(CommandEntry {
-        name: "/vim".into(),
-        description: "Toggle modal editing".into(),
-        has_args: false,
-    });
+    if crate::platform::vim_installed() {
+        entries.push(CommandEntry {
+            name: "/vim".into(),
+            description: "Toggle modal editing".into(),
+            has_args: false,
+        });
+    }
     entries.push(CommandEntry {
         name: "/exit".into(),
         description: "Exit the REPL".into(),
@@ -327,10 +334,12 @@ pub(crate) fn slash_command_completion_candidates() -> Vec<String> {
         .collect::<Vec<_>>();
     candidates.extend([
         String::from("/image"),
-        String::from("/vim"),
         String::from("/exit"),
         String::from("/quit"),
     ]);
+    if crate::platform::vim_installed() {
+        candidates.push(String::from("/vim"));
+    }
     candidates.sort();
     candidates.dedup();
     candidates

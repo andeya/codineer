@@ -226,7 +226,11 @@ fn right_column(p: &Palette, ctx: &BannerContext<'_>, layout: &BannerLayout) -> 
         }
     };
     let tips: &[&str] = if ctx.has_codineer_md {
-        &["/help · Tab completes slash", "/vim for modal edit"]
+        if crate::platform::vim_installed() {
+            &["/help · Tab completes slash", "/vim for modal edit"]
+        } else {
+            &["/help · Tab completes slash", "? for shortcuts"]
+        }
     } else {
         &["/init · /help · /status", "— then ask for a task"]
     };

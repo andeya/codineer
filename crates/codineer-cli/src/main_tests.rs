@@ -640,9 +640,13 @@ fn repl_help_includes_shared_commands_and_exit() {
 fn completion_candidates_include_repl_only_exit_commands() {
     let candidates = slash_command_completion_candidates();
     assert!(candidates.contains(&"/help".to_string()));
-    assert!(candidates.contains(&"/vim".to_string()));
     assert!(candidates.contains(&"/exit".to_string()));
     assert!(candidates.contains(&"/quit".to_string()));
+    assert_eq!(
+        candidates.contains(&"/vim".to_string()),
+        crate::platform::vim_installed(),
+        "/vim should appear iff vim is installed"
+    );
 }
 
 #[test]

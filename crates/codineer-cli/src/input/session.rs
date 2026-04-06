@@ -440,8 +440,12 @@ impl EditSession {
             ("/ for commands", "shift + enter for newline"),
             ("@ for file paths", "ctrl + j for newline"),
             ("\\ + enter for newline", "ctrl + c to clear input"),
-            ("/vim to toggle vim mode", "ctrl + d to exit"),
         ];
+        if crate::platform::vim_installed() {
+            entries.push(("/vim to toggle vim mode", "ctrl + d to exit"));
+        } else {
+            entries.push(("ctrl + d to exit", ""));
+        }
         if cfg!(target_os = "windows") {
             entries.push(("/image to paste image", ""));
         } else {

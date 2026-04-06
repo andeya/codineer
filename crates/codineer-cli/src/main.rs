@@ -10,6 +10,7 @@ mod input;
 mod live_cli;
 mod lsp_detect;
 mod models_cmd;
+mod platform;
 mod progress;
 mod render;
 mod reports;
