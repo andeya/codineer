@@ -1,6 +1,6 @@
 {
   "$schema": "SettingsSchema",
-  "model": "claude-sonnet-4-6",
+  "model": "sonnet",
   "modelAliases": {
     "sonnet": "claude-sonnet-4-6",
     "opus": "claude-opus-4-6",

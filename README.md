@@ -115,7 +115,7 @@ ollama serve                                      # Local AI (no key needed)
 codineer login                                    # Or OAuth login (default provider)
 codineer login anthropic --source claude-code     # Use Claude Code credentials
 codineer status                                   # Check authentication status
-codineer config set model claude-sonnet-4-6        # Set default model
+codineer config set model sonnet                   # Set default model (alias or full name)
 
 # 2. Initialize project context (optional)
 codineer init
@@ -245,12 +245,13 @@ Set an ordered list of fallback models in `settings.json`. If the primary model 
 
 ```json
 {
-  "model": "claude-sonnet-4-6",
+  "model": "sonnet",
+  "modelAliases": { "sonnet": "claude-sonnet-4-6" },
   "fallbackModels": ["ollama/qwen3-coder", "groq/llama-3.3-70b-versatile"]
 }
 ```
 
-This is especially useful for zero-cost setups: set a cloud model as primary and local models as fallback. Model names in `model` and `fallbackModels` support your custom aliases from `modelAliases`.
+`model` and `fallbackModels` both support your custom aliases from `modelAliases`. This is especially useful for zero-cost setups: set a cloud model as primary and local models as fallback.
 
 ### OpenClaw Zero Token (Free Access to Major AI Models)
 
@@ -423,7 +424,7 @@ All files use the same schema. `env`, `providers`, and `mcpServers` objects are 
 
 ```json
 {
-  "model": "claude-sonnet-4-6",
+  "model": "sonnet",
   "modelAliases": {
     "sonnet": "claude-sonnet-4-6",
     "flash": "gemini/gemini-2.5-flash"
@@ -445,7 +446,7 @@ All files use the same schema. `env`, `providers`, and `mcpServers` objects are 
 
 | Key              | Type     | Description                                                                                                                                                                                                        |
 | ---------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `model`          | string   | Default model (e.g. `"claude-sonnet-4-6"`, `"ollama/qwen3-coder"`)                                                                                                                                                 |
+| `model`          | string   | Default model — alias or full name (e.g. `"sonnet"`, `"claude-sonnet-4-6"`, `"ollama/qwen3-coder"`)                                                                                                                 |
 | `modelAliases`   | object   | Custom short names mapping to full model IDs (e.g. `{"sonnet": "claude-sonnet-4-6"}`)                                                                                                                              |
 | `fallbackModels` | string[] | Ordered list of fallback models when the primary is unavailable                                                                                                                                                    |
 | `permissionMode` | string   | `"read-only"`, `"workspace-write"`, or `"danger-full-access"`                                                                                                                                                      |

@@ -115,7 +115,7 @@ ollama serve                                      # 本地 AI（无需 Key）
 codineer login                                    # 或 OAuth 登录（默认 Provider）
 codineer login anthropic --source claude-code     # 使用 Claude Code 凭据
 codineer status                                   # 查看认证状态
-codineer config set model claude-sonnet-4-6        # 设置默认模型
+codineer config set model sonnet                   # 设置默认模型（别名或全名）
 
 # 2. 初始化项目上下文（可选）
 codineer init
@@ -245,14 +245,13 @@ codineer models ollama        # 显示本地 Ollama 模型
 
 ```json
 {
-  "model": "claude-sonnet-4-6",
+  "model": "sonnet",
+  "modelAliases": { "sonnet": "claude-sonnet-4-6" },
   "fallbackModels": ["ollama/qwen3-coder", "groq/llama-3.3-70b-versatile"]
 }
 ```
 
-`model` 和 `fallbackModels` 中的模型名支持 `modelAliases` 中定义的自定义别名。
-
-零成本设置特别有用：将云端模型设为主模型，本地模型设为回退。
+`model` 和 `fallbackModels` 都支持 `modelAliases` 中定义的自定义别名。零成本设置特别有用：将云端模型设为主模型，本地模型设为回退。
 
 ### OpenClaw Zero Token（免费使用主流 AI 模型）
 
@@ -425,7 +424,7 @@ Codineer 从多个 JSON 文件合并设置（优先级从高到低）：
 
 ```json
 {
-  "model": "claude-sonnet-4-6",
+  "model": "sonnet",
   "modelAliases": {
     "sonnet": "claude-sonnet-4-6",
     "flash": "gemini/gemini-2.5-flash"
@@ -451,7 +450,7 @@ Codineer 从多个 JSON 文件合并设置（优先级从高到低）：
 
 | 字段             | 类型     | 说明                                                                                                                                                                                                                                |
 | ---------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `model`          | string   | 默认模型（如 `"claude-sonnet-4-6"`、`"ollama/qwen3-coder"`）                                                                                                                                                                        |
+| `model`          | string   | 默认模型——别名或全名（如 `"sonnet"`、`"claude-sonnet-4-6"`、`"ollama/qwen3-coder"`）                                                                                                                                                 |
 | `modelAliases`   | object   | 自定义模型短名映射到完整模型 ID（如 `{"sonnet": "claude-sonnet-4-6"}`）                                                                                                                                                              |
 | `fallbackModels` | string[] | 主模型不可用时依序尝试的回退模型列表                                                                                                                                                                                                |
 | `permissionMode` | string   | `"read-only"`、`"workspace-write"` 或 `"danger-full-access"`                                                                                                                                                                        |

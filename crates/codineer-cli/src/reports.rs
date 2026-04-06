@@ -45,8 +45,8 @@ pub(crate) fn format_model_report(
 
     let aliases_section = if user_aliases.is_empty() {
         format!(
-            "\n{}  (none — configure in settings.json: {{\"modelAliases\": {{\"name\": \"model-id\"}}}})",
-            p.title("Aliases\n"),
+            "{}\n  (none — configure in settings.json: {{\"modelAliases\": {{\"name\": \"model-id\"}}}})",
+            p.title("Aliases"),
         )
     } else {
         let mut lines = vec![format!("{}", p.title("Aliases"))];

@@ -195,7 +195,7 @@ pub(crate) fn print_help_to(out: &mut impl io::Write) -> io::Result<()> {
         out,
         "Examples",
         &[
-            "  codineer --model claude-sonnet-4-6 \"summarize this repo\"",
+            "  codineer --model sonnet \"summarize this repo\"",
             "  codineer --output-format json prompt \"explain src/main.rs\"",
             "  codineer --allowedTools read,glob \"summarize Cargo.toml\"",
             "  codineer --resume session.json /status /diff /export notes.txt",
@@ -205,7 +205,7 @@ pub(crate) fn print_help_to(out: &mut impl io::Write) -> io::Result<()> {
             "  codineer login anthropic --source claude-code",
             "  codineer status",
             "  codineer models anthropic",
-            "  codineer config set model claude-sonnet-4-6",
+            "  codineer config set model sonnet",
             "  codineer config set fallbackModels '[\"ollama/qwen3-coder\"]'",
             "  codineer init",
         ],
