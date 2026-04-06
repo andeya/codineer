@@ -64,6 +64,9 @@ pub enum InputContentBlock {
     Text {
         text: String,
     },
+    Image {
+        source: ImageSource,
+    },
     ToolUse {
         id: String,
         name: String,
@@ -77,11 +80,21 @@ pub enum InputContentBlock {
     },
 }
 
+/// Base64-encoded image payload matching the Anthropic Messages API format.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ImageSource {
+    #[serde(rename = "type")]
+    pub source_type: String,
+    pub media_type: String,
+    pub data: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ToolResultContentBlock {
     Text { text: String },
     Json { value: Value },
+    Image { source: ImageSource },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -260,6 +273,13 @@ mod tests {
         let text = InputContentBlock::Text {
             text: "hello".to_string(),
         };
+        let image = InputContentBlock::Image {
+            source: ImageSource {
+                source_type: "base64".to_string(),
+                media_type: "image/png".to_string(),
+                data: "iVBOR...".to_string(),
+            },
+        };
         let tool_use = InputContentBlock::ToolUse {
             id: "t1".to_string(),
             name: "bash".to_string(),
@@ -272,12 +292,43 @@ mod tests {
             }],
             is_error: false,
         };
-        for block in [text, tool_use, tool_result] {
+        for block in [text, image, tool_use, tool_result] {
             let json = serde_json::to_value(&block).expect("serialize");
             let deserialized: InputContentBlock =
                 serde_json::from_value(json).expect("deserialize");
             assert_eq!(deserialized, block);
         }
+    }
+
+    #[test]
+    fn image_source_serializes_to_anthropic_format() {
+        let block = InputContentBlock::Image {
+            source: ImageSource {
+                source_type: "base64".to_string(),
+                media_type: "image/jpeg".to_string(),
+                data: "abc123".to_string(),
+            },
+        };
+        let json = serde_json::to_value(&block).expect("serialize");
+        assert_eq!(json["type"], "image");
+        assert_eq!(json["source"]["type"], "base64");
+        assert_eq!(json["source"]["media_type"], "image/jpeg");
+        assert_eq!(json["source"]["data"], "abc123");
+    }
+
+    #[test]
+    fn tool_result_image_variant_round_trips() {
+        let block = ToolResultContentBlock::Image {
+            source: ImageSource {
+                source_type: "base64".to_string(),
+                media_type: "image/png".to_string(),
+                data: "data==".to_string(),
+            },
+        };
+        let json = serde_json::to_value(&block).expect("serialize");
+        let deserialized: ToolResultContentBlock =
+            serde_json::from_value(json).expect("deserialize");
+        assert_eq!(deserialized, block);
     }
 
     #[test]

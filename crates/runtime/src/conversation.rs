@@ -158,11 +158,22 @@ where
     pub fn run_turn(
         &mut self,
         user_input: impl Into<String>,
+        prompter: Option<&mut dyn PermissionPrompter>,
+    ) -> Result<TurnSummary, RuntimeError> {
+        let blocks = vec![ContentBlock::Text {
+            text: user_input.into(),
+        }];
+        self.run_turn_with_blocks(blocks, prompter)
+    }
+
+    pub fn run_turn_with_blocks(
+        &mut self,
+        blocks: Vec<ContentBlock>,
         mut prompter: Option<&mut dyn PermissionPrompter>,
     ) -> Result<TurnSummary, RuntimeError> {
         self.session
             .messages
-            .push(ConversationMessage::user_text(user_input.into()));
+            .push(ConversationMessage::user_blocks(blocks));
 
         let mut assistant_messages = Vec::new();
         let mut tool_results = Vec::new();

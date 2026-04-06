@@ -400,7 +400,7 @@ fn translate_message(message: &InputMessage) -> Vec<Value> {
                             "arguments": serde_json::to_string(input).unwrap_or_default(),
                         }
                     })),
-                    InputContentBlock::ToolResult { .. } => {}
+                    InputContentBlock::Image { .. } | InputContentBlock::ToolResult { .. } => {}
                 }
             }
             if text.is_empty() && tool_calls.is_empty() {
@@ -418,36 +418,67 @@ fn translate_message(message: &InputMessage) -> Vec<Value> {
                 vec![msg]
             }
         }
-        _ => message
-            .content
-            .iter()
-            .filter_map(|block| match block {
-                InputContentBlock::Text { text } => Some(json!({
-                    "role": "user",
-                    "content": text,
-                })),
-                InputContentBlock::ToolResult {
-                    tool_use_id,
-                    content,
-                    is_error,
-                } => Some(json!({
-                    "role": "tool",
-                    "tool_call_id": tool_use_id,
-                    "content": flatten_tool_result_content(content),
-                    "is_error": is_error,
-                })),
-                InputContentBlock::ToolUse { .. } => None,
-            })
-            .collect(),
+        _ => {
+            let has_image = message
+                .content
+                .iter()
+                .any(|b| matches!(b, InputContentBlock::Image { .. }));
+            let mut result = Vec::new();
+            let mut user_parts: Vec<Value> = Vec::new();
+
+            for block in &message.content {
+                match block {
+                    InputContentBlock::Text { text } => {
+                        if has_image {
+                            user_parts.push(json!({ "type": "text", "text": text }));
+                        } else {
+                            result.push(json!({ "role": "user", "content": text }));
+                        }
+                    }
+                    InputContentBlock::Image { source } => {
+                        let data_url = format!("data:{};base64,{}", source.media_type, source.data);
+                        user_parts.push(json!({
+                            "type": "image_url",
+                            "image_url": { "url": data_url }
+                        }));
+                    }
+                    InputContentBlock::ToolResult {
+                        tool_use_id,
+                        content,
+                        is_error,
+                    } => {
+                        flush_user_parts(&mut user_parts, &mut result);
+                        result.push(json!({
+                            "role": "tool",
+                            "tool_call_id": tool_use_id,
+                            "content": flatten_tool_result_content(content),
+                            "is_error": is_error,
+                        }));
+                    }
+                    InputContentBlock::ToolUse { .. } => {}
+                }
+            }
+            flush_user_parts(&mut user_parts, &mut result);
+            result
+        }
     }
+}
+
+fn flush_user_parts(parts: &mut Vec<Value>, result: &mut Vec<Value>) {
+    if parts.is_empty() {
+        return;
+    }
+    let content = Value::Array(std::mem::take(parts));
+    result.push(json!({ "role": "user", "content": content }));
 }
 
 fn flatten_tool_result_content(content: &[ToolResultContentBlock]) -> String {
     content
         .iter()
-        .map(|block| match block {
-            ToolResultContentBlock::Text { text } => text.clone(),
-            ToolResultContentBlock::Json { value } => value.to_string(),
+        .filter_map(|block| match block {
+            ToolResultContentBlock::Text { text } => Some(text.clone()),
+            ToolResultContentBlock::Json { value } => Some(value.to_string()),
+            ToolResultContentBlock::Image { .. } => None,
         })
         .collect::<Vec<_>>()
         .join("\n")
@@ -746,6 +777,44 @@ mod openai_compat_inner_tests {
                 text: "think".to_string()
             }]
         );
+    }
+
+    #[test]
+    fn translate_user_message_with_image_produces_content_array() {
+        use crate::types::ImageSource;
+        let msg = InputMessage {
+            role: "user".to_string(),
+            content: vec![
+                InputContentBlock::Text {
+                    text: "describe this".to_string(),
+                },
+                InputContentBlock::Image {
+                    source: ImageSource {
+                        source_type: "base64".to_string(),
+                        media_type: "image/png".to_string(),
+                        data: "abc123".to_string(),
+                    },
+                },
+            ],
+        };
+        let result = translate_message(&msg);
+        assert_eq!(result.len(), 1);
+        let content = &result[0]["content"];
+        assert!(content.is_array(), "content should be an array");
+        let arr = content.as_array().unwrap();
+        assert_eq!(arr.len(), 2);
+        assert_eq!(arr[0]["type"], "text");
+        assert_eq!(arr[0]["text"], "describe this");
+        assert_eq!(arr[1]["type"], "image_url");
+        assert_eq!(arr[1]["image_url"]["url"], "data:image/png;base64,abc123");
+    }
+
+    #[test]
+    fn translate_text_only_user_message_stays_string() {
+        let msg = InputMessage::user_text("hello");
+        let result = translate_message(&msg);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0]["content"], "hello");
     }
 }
 

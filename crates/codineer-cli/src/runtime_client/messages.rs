@@ -1,4 +1,4 @@
-use api::{InputContentBlock, InputMessage, ToolResultContentBlock};
+use api::{ImageSource, InputContentBlock, InputMessage, ToolResultContentBlock};
 use runtime::ConversationMessage;
 
 pub(crate) fn convert_messages(messages: &[ConversationMessage]) -> Vec<InputMessage> {
@@ -17,6 +17,13 @@ pub(crate) fn convert_messages(messages: &[ConversationMessage]) -> Vec<InputMes
                 .iter()
                 .map(|block| match block {
                     ContentBlock::Text { text } => InputContentBlock::Text { text: text.clone() },
+                    ContentBlock::Image { media_type, data } => InputContentBlock::Image {
+                        source: ImageSource {
+                            source_type: "base64".to_string(),
+                            media_type: media_type.clone(),
+                            data: data.clone(),
+                        },
+                    },
                     ContentBlock::ToolUse { id, name, input } => InputContentBlock::ToolUse {
                         id: id.clone(),
                         name: name.clone(),

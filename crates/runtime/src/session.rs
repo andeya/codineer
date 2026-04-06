@@ -23,6 +23,10 @@ pub enum ContentBlock {
     Text {
         text: String,
     },
+    Image {
+        media_type: String,
+        data: String,
+    },
     ToolUse {
         id: String,
         name: String,
@@ -156,6 +160,15 @@ impl ConversationMessage {
     }
 
     #[must_use]
+    pub fn user_blocks(blocks: Vec<ContentBlock>) -> Self {
+        Self {
+            role: MessageRole::User,
+            blocks,
+            usage: None,
+        }
+    }
+
+    #[must_use]
     pub fn assistant(blocks: Vec<ContentBlock>) -> Self {
         Self {
             role: MessageRole::Assistant,
@@ -261,6 +274,14 @@ impl ContentBlock {
                 object.insert("type".to_string(), JsonValue::String("text".to_string()));
                 object.insert("text".to_string(), JsonValue::String(text.clone()));
             }
+            Self::Image { media_type, data } => {
+                object.insert("type".to_string(), JsonValue::String("image".to_string()));
+                object.insert(
+                    "media_type".to_string(),
+                    JsonValue::String(media_type.clone()),
+                );
+                object.insert("data".to_string(), JsonValue::String(data.clone()));
+            }
             Self::ToolUse { id, name, input } => {
                 object.insert(
                     "type".to_string(),
@@ -306,6 +327,10 @@ impl ContentBlock {
         {
             "text" => Ok(Self::Text {
                 text: required_string(object, "text")?,
+            }),
+            "image" => Ok(Self::Image {
+                media_type: required_string(object, "media_type")?,
+                data: required_string(object, "data")?,
             }),
             "tool_use" => Ok(Self::ToolUse {
                 id: required_string(object, "id")?,
@@ -498,5 +523,38 @@ mod tests {
 
         let fmt_err = super::SessionError::Format("bad format".into());
         assert!(fmt_err.to_string().contains("bad format"));
+    }
+
+    #[test]
+    fn round_trips_image_content_block() {
+        let mut session = Session::new();
+        session.messages.push(ConversationMessage::user_blocks(vec![
+            ContentBlock::Text {
+                text: "describe this image".to_string(),
+            },
+            ContentBlock::Image {
+                media_type: "image/png".to_string(),
+                data: "iVBOR...".to_string(),
+            },
+        ]));
+
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time should be after epoch")
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!("runtime-session-img-{nanos}.json"));
+        session.save_to_path(&path).expect("session should save");
+        let restored = Session::load_from_path(&path).expect("session should load");
+        fs::remove_file(&path).expect("temp file should be removable");
+
+        assert_eq!(restored, session);
+        assert_eq!(restored.messages[0].blocks.len(), 2);
+        match &restored.messages[0].blocks[1] {
+            ContentBlock::Image { media_type, data } => {
+                assert_eq!(media_type, "image/png");
+                assert_eq!(data, "iVBOR...");
+            }
+            other => panic!("expected Image block, got: {other:?}"),
+        }
     }
 }
