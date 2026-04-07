@@ -11,6 +11,7 @@ use runtime::{
 };
 
 mod agent;
+pub mod tool_output;
 mod collab;
 mod config_tool;
 mod cron;
