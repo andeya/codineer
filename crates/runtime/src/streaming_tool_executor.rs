@@ -6,7 +6,7 @@
 
 use std::collections::VecDeque;
 
-use crate::conversation::{ToolError, ToolExecutor};
+use crate::conversation::ToolExecutor;
 use crate::tool_orchestration::{ToolCall, ToolSlot};
 
 /// Status of a queued tool call.
@@ -164,6 +164,7 @@ pub struct CompletedToolCall {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::conversation::ToolError;
 
     struct EchoExecutor;
 

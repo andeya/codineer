@@ -14,7 +14,8 @@ mod types;
 #[cfg(test)]
 mod tests;
 
-pub(crate) use hooks::PluginHookRunner;
+// PluginHookRunner is preserved in hooks.rs for reference but not re-exported;
+// its functionality is superseded by HookDispatcher in the runtime crate.
 pub use runtime::{HookEvent, HookRunResult};
 
 pub use definition::builtin_plugins;

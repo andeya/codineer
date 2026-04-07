@@ -4,7 +4,7 @@ use std::fmt::{Display, Formatter};
 pub use codineer_core::error::RuntimeError;
 
 use codineer_core::events::RuntimeEvent;
-use codineer_core::observer::{EventDirective, RuntimeObserver};
+use codineer_core::observer::RuntimeObserver;
 
 use crate::compact::{
     compact_session, estimate_session_tokens, CompactionConfig, CompactionResult,

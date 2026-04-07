@@ -37,12 +37,10 @@ pub struct EventDirective {
 }
 
 impl EventDirective {
-    #[must_use]
     pub fn allow() -> Self {
         Self::default()
     }
 
-    #[must_use]
     pub fn deny(reason: impl Into<String>) -> Self {
         Self {
             decision: Decision::Deny(reason.into()),
@@ -152,7 +150,7 @@ mod tests {
     fn tuple_composition_both_called() {
         let mut composed = (CountingObserver(0), CountingObserver(0));
         let event = RuntimeEvent::TurnStart { iteration: 0, turn: 0 };
-        composed.on_event(&event);
+        let _ = composed.on_event(&event);
         assert_eq!(composed.0 .0, 1);
         assert_eq!(composed.1 .0, 1);
     }

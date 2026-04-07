@@ -229,7 +229,7 @@ fn parse_optional_hooks_config(root: &JsonValue) -> Result<RuntimeHookConfig, Co
     };
     let hooks = expect_object(hooks_value, "merged settings.hooks")?;
     let mut commands = std::collections::BTreeMap::new();
-    for (key, _value) in hooks {
+    for key in hooks.keys() {
         if let Some(cmds) = optional_string_array(hooks, key, "merged settings.hooks")? {
             if !cmds.is_empty() {
                 commands.insert(key.clone(), cmds);

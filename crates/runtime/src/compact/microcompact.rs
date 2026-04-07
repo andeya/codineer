@@ -50,7 +50,7 @@ impl MicrocompactStrategy {
     ///
     /// `tool_results` is `(tool_name, tool_result_content)` pairs.
     /// Results from the last `keep_recent` entries are never cleared.
-    pub fn apply(&self, tool_results: &mut Vec<(String, String)>) -> usize {
+    pub fn apply(&self, tool_results: &mut [(String, String)]) -> usize {
         if tool_results.len() <= self.keep_recent {
             return 0;
         }

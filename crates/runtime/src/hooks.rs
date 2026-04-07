@@ -332,7 +332,7 @@ impl CommandWithStdin {
 ///
 /// Routes [`RuntimeEvent`]s to shell commands via `HashMap<EventKind>` for O(1) lookup.
 /// Bridges the old `HookRunner` mechanism with the new observer pattern.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct HookDispatcher {
     commands: HashMap<EventKind, Vec<String>>,
 }
@@ -372,14 +372,6 @@ impl HookDispatcher {
     #[must_use]
     pub fn registered_count(&self) -> usize {
         self.commands.len()
-    }
-}
-
-impl Default for HookDispatcher {
-    fn default() -> Self {
-        Self {
-            commands: HashMap::new(),
-        }
     }
 }
 

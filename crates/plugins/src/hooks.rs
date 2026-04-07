@@ -13,10 +13,12 @@ impl HookCommandSource for PluginHooks {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(dead_code)]
 pub struct PluginHookRunner {
     inner: HookRunner<PluginHooks>,
 }
 
+#[allow(dead_code)]
 impl PluginHookRunner {
     #[must_use]
     pub fn new(source: PluginHooks) -> Self {
