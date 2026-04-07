@@ -180,6 +180,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         CliAction::Status { provider } => run_status(provider.as_deref())?,
         CliAction::Models { provider } => models_cmd::run_models(provider.as_deref())?,
+        CliAction::Providers => models_cmd::run_providers()?,
         CliAction::ConfigSet { key, value } => run_config_set(&key, &value)?,
         CliAction::ConfigGet { key } => run_config_get(key.as_deref())?,
         CliAction::ConfigList => run_config_list()?,

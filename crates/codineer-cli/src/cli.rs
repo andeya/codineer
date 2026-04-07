@@ -54,6 +54,7 @@ pub(crate) enum CliAction {
     Models {
         provider: Option<String>,
     },
+    Providers,
     ConfigSet {
         key: String,
         value: String,
@@ -227,8 +228,13 @@ const SUBCOMMAND_HELP: &[(&str, &str, &str)] = &[
     ),
     (
         "models",
-        "List available models across providers.",
+        "List available models (fetched dynamically via v1/models).",
         "codineer models [<provider>]",
+    ),
+    (
+        "providers",
+        "List all configured providers.",
+        "codineer providers",
     ),
     (
         "config",
@@ -326,6 +332,7 @@ pub(crate) fn parse_args(args: &[String]) -> Result<CliAction, String> {
         "models" => Ok(CliAction::Models {
             provider: parse_positional_arg(&rest[1..]),
         }),
+        "providers" => Ok(CliAction::Providers),
         "config" => parse_config_args(&rest[1..]),
         "init" => Ok(CliAction::Init),
         "prompt" => {
@@ -373,6 +380,8 @@ pub(crate) fn parse_direct_slash_cli_action(rest: &[String]) -> Result<CliAction
         Some(SlashCommand::Help) => Ok(CliAction::Help),
         Some(SlashCommand::Agents { args }) => Ok(CliAction::Agents { args }),
         Some(SlashCommand::Skills { args }) => Ok(CliAction::Skills { args }),
+        Some(SlashCommand::Models { provider }) => Ok(CliAction::Models { provider }),
+        Some(SlashCommand::Providers) => Ok(CliAction::Providers),
         Some(command) => Err(format_direct_slash_command_error(
             match &command {
                 SlashCommand::Unknown(name) => format!("/{name}"),
