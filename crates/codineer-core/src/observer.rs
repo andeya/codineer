@@ -64,7 +64,7 @@ impl EventDirective {
 
 /// Trait for observing runtime lifecycle events.
 ///
-/// Implement this trait to hook into the runtime at any of the 23+ event points.
+/// Implement this trait to hook into the runtime at any of the 35 event points.
 pub trait RuntimeObserver {
     fn on_event(&mut self, event: &RuntimeEvent<'_>) -> EventDirective;
 }
@@ -117,7 +117,10 @@ mod tests {
     #[test]
     fn unit_observer_allows_everything() {
         let mut obs = ();
-        let event = RuntimeEvent::TurnStart { iteration: 0, turn: 0 };
+        let event = RuntimeEvent::TurnStart {
+            iteration: 0,
+            turn: 0,
+        };
         let directive = obs.on_event(&event);
         assert!(!directive.is_denied());
         assert_eq!(directive.decision, Decision::Allow);
@@ -141,7 +144,10 @@ mod tests {
     #[test]
     fn tuple_composition_deny_propagates() {
         let mut composed = (DenyAllObserver, CountingObserver(0));
-        let event = RuntimeEvent::TurnStart { iteration: 0, turn: 0 };
+        let event = RuntimeEvent::TurnStart {
+            iteration: 0,
+            turn: 0,
+        };
         let directive = composed.on_event(&event);
         assert!(directive.is_denied());
     }
@@ -149,7 +155,10 @@ mod tests {
     #[test]
     fn tuple_composition_both_called() {
         let mut composed = (CountingObserver(0), CountingObserver(0));
-        let event = RuntimeEvent::TurnStart { iteration: 0, turn: 0 };
+        let event = RuntimeEvent::TurnStart {
+            iteration: 0,
+            turn: 0,
+        };
         let _ = composed.on_event(&event);
         assert_eq!(composed.0 .0, 1);
         assert_eq!(composed.1 .0, 1);

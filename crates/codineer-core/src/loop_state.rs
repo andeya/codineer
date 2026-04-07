@@ -25,6 +25,12 @@ pub enum Transition {
     StreamingFallbackRetry,
 }
 
+impl std::fmt::Display for Transition {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Debug::fmt(self, f)
+    }
+}
+
 /// Why the loop terminated.
 #[derive(Debug, Clone)]
 pub enum StopReason {
@@ -48,8 +54,14 @@ pub enum StopReason {
     ModelError(String),
 }
 
+impl std::fmt::Display for StopReason {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Debug::fmt(self, f)
+    }
+}
+
 /// Accumulated state carried across loop iterations.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct LoopState {
     pub iteration: usize,
     pub turn: usize,
@@ -76,12 +88,6 @@ impl LoopState {
 
     pub fn advance_turn(&mut self) {
         self.turn += 1;
-    }
-}
-
-impl Default for LoopState {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
@@ -115,7 +121,9 @@ mod tests {
             Transition::CollapseDrainRetry { committed: 5 },
             Transition::MaxOutputEscalation { escalated_to: 8192 },
             Transition::MaxOutputRecovery { attempt: 1 },
-            Transition::TokenBudgetContinuation { continuation_count: 2 },
+            Transition::TokenBudgetContinuation {
+                continuation_count: 2,
+            },
             Transition::StreamingFallbackRetry,
         ];
         assert_eq!(transitions.len(), 8);
@@ -130,7 +138,9 @@ mod tests {
             StopReason::HookPrevented("test".into()),
             StopReason::Aborted,
             StopReason::PromptTooLong,
-            StopReason::TokenBudgetExhausted { diminishing_returns: true },
+            StopReason::TokenBudgetExhausted {
+                diminishing_returns: true,
+            },
             StopReason::MaxOutputRecoveryExhausted { attempts: 3 },
             StopReason::ModelError("test".into()),
         ];

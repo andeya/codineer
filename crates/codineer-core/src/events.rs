@@ -10,7 +10,7 @@ use strum::{AsRefStr, EnumString};
 ///
 /// `Copy` + `Hash` + `Eq` enables O(1) `HashMap` lookups.
 /// `strum` derives enable bidirectional string conversion for config files.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, AsRefStr, EnumString)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, AsRefStr, EnumString, strum::Display)]
 pub enum EventKind {
     SessionStart,
     SessionEnd,
@@ -37,6 +37,16 @@ pub enum EventKind {
     ToolResultPersisted,
     SlashCommandStart,
     SlashCommandComplete,
+    Notification,
+    CwdChanged,
+    ConfigChange,
+    FileChanged,
+    Setup,
+    WorktreeCreate,
+    WorktreeRemove,
+    InstructionsLoaded,
+    TaskCreated,
+    TaskCompleted,
 }
 
 /// Rich event payload with borrowed data for zero-copy emission.
@@ -138,6 +148,38 @@ pub enum RuntimeEvent<'a> {
         command: &'a str,
         success: bool,
     },
+    Notification {
+        message: Cow<'a, str>,
+    },
+    CwdChanged {
+        old: &'a str,
+        new: &'a str,
+    },
+    ConfigChange {
+        key: &'a str,
+    },
+    FileChanged {
+        path: &'a str,
+    },
+    Setup {
+        stage: &'a str,
+    },
+    WorktreeCreate {
+        path: &'a str,
+    },
+    WorktreeRemove {
+        path: &'a str,
+    },
+    InstructionsLoaded {
+        count: usize,
+    },
+    TaskCreated {
+        task_id: &'a str,
+    },
+    TaskCompleted {
+        task_id: &'a str,
+        success: bool,
+    },
 }
 
 impl RuntimeEvent<'_> {
@@ -170,6 +212,16 @@ impl RuntimeEvent<'_> {
             Self::ToolResultPersisted { .. } => EventKind::ToolResultPersisted,
             Self::SlashCommandStart { .. } => EventKind::SlashCommandStart,
             Self::SlashCommandComplete { .. } => EventKind::SlashCommandComplete,
+            Self::Notification { .. } => EventKind::Notification,
+            Self::CwdChanged { .. } => EventKind::CwdChanged,
+            Self::ConfigChange { .. } => EventKind::ConfigChange,
+            Self::FileChanged { .. } => EventKind::FileChanged,
+            Self::Setup { .. } => EventKind::Setup,
+            Self::WorktreeCreate { .. } => EventKind::WorktreeCreate,
+            Self::WorktreeRemove { .. } => EventKind::WorktreeRemove,
+            Self::InstructionsLoaded { .. } => EventKind::InstructionsLoaded,
+            Self::TaskCreated { .. } => EventKind::TaskCreated,
+            Self::TaskCompleted { .. } => EventKind::TaskCompleted,
         }
     }
 }
@@ -196,28 +248,61 @@ mod tests {
 
     #[test]
     fn runtime_event_kind_mapping() {
-        let event = RuntimeEvent::TurnStart { iteration: 1, turn: 1 };
+        let event = RuntimeEvent::TurnStart {
+            iteration: 1,
+            turn: 1,
+        };
         assert_eq!(event.kind(), EventKind::TurnStart);
 
-        let event = RuntimeEvent::Stop { reason: "test".into() };
+        let event = RuntimeEvent::Stop {
+            reason: "test".into(),
+        };
         assert_eq!(event.kind(), EventKind::Stop);
     }
 
     #[test]
     fn all_event_kinds_parseable() {
         let kinds = [
-            "SessionStart", "SessionEnd", "UserPromptSubmit", "TurnStart", "TurnEnd",
-            "ApiStreamStart", "ApiStreamEnd", "PreToolUse", "PostToolUse",
-            "PostToolUseFailure", "PermissionRequest", "PermissionDenied",
-            "PreCompact", "PostCompact", "SubagentStart", "SubagentStop",
-            "RecoveryAttempt", "Stop", "MaxTurnsReached", "TokenBudgetContinue",
-            "StreamingFallback", "MicrocompactApplied", "ToolResultPersisted",
-            "SlashCommandStart", "SlashCommandComplete",
+            "SessionStart",
+            "SessionEnd",
+            "UserPromptSubmit",
+            "TurnStart",
+            "TurnEnd",
+            "ApiStreamStart",
+            "ApiStreamEnd",
+            "PreToolUse",
+            "PostToolUse",
+            "PostToolUseFailure",
+            "PermissionRequest",
+            "PermissionDenied",
+            "PreCompact",
+            "PostCompact",
+            "SubagentStart",
+            "SubagentStop",
+            "RecoveryAttempt",
+            "Stop",
+            "MaxTurnsReached",
+            "TokenBudgetContinue",
+            "StreamingFallback",
+            "MicrocompactApplied",
+            "ToolResultPersisted",
+            "SlashCommandStart",
+            "SlashCommandComplete",
+            "Notification",
+            "CwdChanged",
+            "ConfigChange",
+            "FileChanged",
+            "Setup",
+            "WorktreeCreate",
+            "WorktreeRemove",
+            "InstructionsLoaded",
+            "TaskCreated",
+            "TaskCompleted",
         ];
         for kind_str in &kinds {
             let parsed: Result<EventKind, _> = kind_str.parse();
             assert!(parsed.is_ok(), "Failed to parse: {kind_str}");
         }
-        assert_eq!(kinds.len(), 25);
+        assert_eq!(kinds.len(), 35);
     }
 }

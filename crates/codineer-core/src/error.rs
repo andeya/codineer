@@ -28,6 +28,8 @@ pub enum RuntimeError {
     Api(String),
     #[error("tool error: {0}")]
     Tool(String),
+    #[error("recovery exhausted ({kind}): {reason}")]
+    RecoveryExhausted { kind: String, reason: String },
     #[error("{0}")]
     Other(String),
 }
@@ -62,7 +64,9 @@ mod tests {
         let err = RuntimeError::MaxIterations { iterations: 100 };
         assert_eq!(err.to_string(), "max iterations exceeded (100)");
 
-        let err = RuntimeError::ContextOverflow { message: "too long".into() };
+        let err = RuntimeError::ContextOverflow {
+            message: "too long".into(),
+        };
         assert_eq!(err.to_string(), "context overflow: too long");
 
         let err = RuntimeError::Cancelled;
@@ -71,7 +75,10 @@ mod tests {
 
     #[test]
     fn error_classification() {
-        assert!(RuntimeError::ContextOverflow { message: "x".into() }.is_context_overflow());
+        assert!(RuntimeError::ContextOverflow {
+            message: "x".into()
+        }
+        .is_context_overflow());
         assert!(!RuntimeError::Cancelled.is_context_overflow());
         assert!(RuntimeError::Cancelled.is_cancelled());
     }
