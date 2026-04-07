@@ -228,12 +228,15 @@ fn parse_optional_hooks_config(root: &JsonValue) -> Result<RuntimeHookConfig, Co
         return Ok(RuntimeHookConfig::default());
     };
     let hooks = expect_object(hooks_value, "merged settings.hooks")?;
-    Ok(RuntimeHookConfig {
-        pre_tool_use: optional_string_array(hooks, "PreToolUse", "merged settings.hooks")?
-            .unwrap_or_default(),
-        post_tool_use: optional_string_array(hooks, "PostToolUse", "merged settings.hooks")?
-            .unwrap_or_default(),
-    })
+    let mut commands = std::collections::BTreeMap::new();
+    for (key, value) in hooks {
+        if let Some(cmds) = optional_string_array(hooks, key, "merged settings.hooks")? {
+            if !cmds.is_empty() {
+                commands.insert(key.clone(), cmds);
+            }
+        }
+    }
+    Ok(RuntimeHookConfig::from_map(commands))
 }
 
 fn parse_optional_plugin_config(root: &JsonValue) -> Result<RuntimePluginConfig, ConfigError> {

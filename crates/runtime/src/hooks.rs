@@ -339,14 +339,18 @@ pub struct HookDispatcher {
 
 impl HookDispatcher {
     /// Build from a `RuntimeHookConfig`.
+    ///
+    /// Uses strum's `EventKind::from_str` to parse event names from the config map.
+    /// Unrecognized event names are silently ignored.
     #[must_use]
     pub fn from_hook_config(config: &RuntimeHookConfig) -> Self {
         let mut commands = HashMap::new();
-        if !config.pre_tool_use().is_empty() {
-            commands.insert(EventKind::PreToolUse, config.pre_tool_use().to_vec());
-        }
-        if !config.post_tool_use().is_empty() {
-            commands.insert(EventKind::PostToolUse, config.post_tool_use().to_vec());
+        for (event_name, cmds) in config.commands() {
+            if let Ok(kind) = event_name.parse::<EventKind>() {
+                if !cmds.is_empty() {
+                    commands.insert(kind, cmds.clone());
+                }
+            }
         }
         Self { commands }
     }

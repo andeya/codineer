@@ -111,8 +111,7 @@ pub struct CustomProviderConfig {
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct RuntimeHookConfig {
-    pub(crate) pre_tool_use: Vec<String>,
-    pub(crate) post_tool_use: Vec<String>,
+    pub(crate) commands: BTreeMap<String, Vec<String>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -483,22 +482,43 @@ impl RuntimePluginConfig {
 }
 
 impl RuntimeHookConfig {
+    /// Backward-compatible constructor for PreToolUse/PostToolUse commands.
     #[must_use]
     pub fn new(pre_tool_use: Vec<String>, post_tool_use: Vec<String>) -> Self {
-        Self {
-            pre_tool_use,
-            post_tool_use,
+        let mut commands = BTreeMap::new();
+        if !pre_tool_use.is_empty() {
+            commands.insert("PreToolUse".to_string(), pre_tool_use);
         }
+        if !post_tool_use.is_empty() {
+            commands.insert("PostToolUse".to_string(), post_tool_use);
+        }
+        Self { commands }
+    }
+
+    /// Build from an arbitrary map of event-name → commands.
+    #[must_use]
+    pub fn from_map(commands: BTreeMap<String, Vec<String>>) -> Self {
+        Self { commands }
+    }
+
+    /// All registered event-name → commands.
+    #[must_use]
+    pub fn commands(&self) -> &BTreeMap<String, Vec<String>> {
+        &self.commands
     }
 
     #[must_use]
     pub fn pre_tool_use(&self) -> &[String] {
-        &self.pre_tool_use
+        self.commands
+            .get("PreToolUse")
+            .map_or(&[] as &[String], Vec::as_slice)
     }
 
     #[must_use]
     pub fn post_tool_use(&self) -> &[String] {
-        &self.post_tool_use
+        self.commands
+            .get("PostToolUse")
+            .map_or(&[] as &[String], Vec::as_slice)
     }
 
     #[must_use]
@@ -509,8 +529,10 @@ impl RuntimeHookConfig {
     }
 
     pub fn extend(&mut self, other: &Self) {
-        extend_unique(&mut self.pre_tool_use, other.pre_tool_use());
-        extend_unique(&mut self.post_tool_use, other.post_tool_use());
+        for (event, cmds) in &other.commands {
+            let entry = self.commands.entry(event.clone()).or_default();
+            extend_unique(entry, cmds);
+        }
     }
 }
 
