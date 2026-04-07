@@ -4,8 +4,6 @@
 //! are written to disk, and the in-memory representation is replaced with a
 //! truncated preview. Per-message aggregate budgets prevent context overflow.
 
-#![allow(dead_code)]
-
 use std::borrow::Cow;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};

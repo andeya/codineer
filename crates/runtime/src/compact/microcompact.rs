@@ -4,8 +4,6 @@
 //! tools known to produce ephemeral output (e.g., bash, grep_search) while
 //! preserving results from tools with persistent effects (e.g., write_file).
 
-#![allow(dead_code)]
-
 use std::collections::HashSet;
 
 /// Which tools' results can be safely cleared during microcompact.

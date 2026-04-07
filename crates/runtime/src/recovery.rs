@@ -4,8 +4,6 @@
 //! strategy, mirroring Claude Code's multi-layer error handling:
 //! fallback → compact → collapse → escalate.
 
-#![allow(dead_code)]
-
 use codineer_core::loop_state::Transition;
 
 /// Classification of an API error for recovery routing.

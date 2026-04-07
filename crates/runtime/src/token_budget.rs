@@ -4,8 +4,6 @@
 //! max_output_tokens without a stop_sequence, the runtime can automatically
 //! continue if a budget remains and output isn't showing diminishing returns.
 
-#![allow(dead_code)]
-
 use std::time::Instant;
 
 /// Fraction of max_output_tokens that counts as "hitting the cap".

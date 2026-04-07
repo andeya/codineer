@@ -4,8 +4,6 @@
 //! is only invoked when an API call fails with a context-too-long error.
 //! It attempts a more aggressive compaction and only fires once per session.
 
-#![allow(dead_code)]
-
 /// State for the reactive compaction strategy.
 #[derive(Debug, Default)]
 pub struct ReactiveCompactStrategy {

@@ -4,8 +4,6 @@
 //! This allows tool execution to overlap with model output generation,
 //! reducing overall latency for multi-tool responses.
 
-#![allow(dead_code)]
-
 use std::collections::VecDeque;
 
 use crate::conversation::{ToolError, ToolExecutor};

@@ -4,8 +4,6 @@
 //! This module enables the conversation loop to delegate tool execution
 //! without embedding the logic directly.
 
-#![allow(dead_code)]
-
 use crate::conversation::{ToolError, ToolExecutor};
 
 /// Classification of how a tool call should be processed.

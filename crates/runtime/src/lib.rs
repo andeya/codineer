@@ -1,5 +1,5 @@
 mod bash;
-mod compact;
+pub mod compact;
 mod config;
 mod conversation;
 pub mod credentials;
@@ -16,12 +16,12 @@ mod prompt;
 mod remote;
 pub mod sandbox;
 mod session;
-mod recovery;
-mod streaming_tool_executor;
-mod token_budget;
+pub mod recovery;
+pub mod streaming_tool_executor;
+pub mod token_budget;
 mod tool;
-mod tool_orchestration;
-mod tool_result;
+pub mod tool_orchestration;
+pub mod tool_result;
 mod usage;
 
 pub use bash::{execute_bash, BashCommandInput, BashCommandOutput};
@@ -72,7 +72,7 @@ pub use permissions::{
     PermissionPrompter, PermissionRequest,
 };
 pub use prompt::{
-    load_system_prompt, load_system_prompt_with_lsp, ContextFile, ProjectContext,
+    load_system_prompt, load_system_prompt_with_lsp, ContextFile, ProjectContext, PromptCache,
     SystemPromptBuilder,
 };
 pub use remote::{
