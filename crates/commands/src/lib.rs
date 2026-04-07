@@ -1,3 +1,5 @@
+//! Slash command parsing, help rendering, and command dispatch.
+
 mod discovery;
 mod git;
 mod plugins_cmd;
@@ -50,7 +52,7 @@ pub fn handle_slash_command(
     observer: &mut impl RuntimeObserver,
 ) -> Option<SlashCommandResult> {
     let parsed = SlashCommand::parse(input)?;
-    let cmd_name = parsed.name();
+    let cmd_name = parsed.name().to_owned();
     let _ = observer.on_event(&RuntimeEvent::SlashCommandStart { command: &cmd_name });
 
     let result = dispatch_slash_command(parsed, session, compaction);
@@ -125,6 +127,7 @@ fn dispatch_slash_command(
         | SlashCommand::Providers
         | SlashCommand::Agents { .. }
         | SlashCommand::Skills { .. }
+        | SlashCommand::Doctor
         | SlashCommand::Unknown(_) => None,
     }
 }

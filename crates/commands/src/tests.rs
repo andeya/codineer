@@ -358,8 +358,9 @@ fn renders_help_from_shared_specs() {
     assert!(help.contains("/providers"));
     assert!(help.contains("/agents"));
     assert!(help.contains("/skills"));
-    assert_eq!(slash_command_specs().len(), 30);
-    assert_eq!(resume_supported_slash_commands().len(), 15);
+    assert!(help.contains("/doctor"));
+    assert_eq!(slash_command_specs().len(), 31);
+    assert_eq!(resume_supported_slash_commands().len(), 16);
 }
 
 #[test]
@@ -411,14 +412,26 @@ fn help_command_is_non_mutating() {
 #[test]
 fn ignores_unknown_or_runtime_bound_slash_commands() {
     let session = Session::new();
-    assert!(handle_slash_command_simple("/unknown", &session, CompactionConfig::default()).is_none());
-    assert!(handle_slash_command_simple("/status", &session, CompactionConfig::default()).is_none());
-    assert!(handle_slash_command_simple("/branch list", &session, CompactionConfig::default()).is_none());
-    assert!(handle_slash_command_simple("/bughunter", &session, CompactionConfig::default()).is_none());
     assert!(
-        handle_slash_command_simple("/worktree list", &session, CompactionConfig::default()).is_none()
+        handle_slash_command_simple("/unknown", &session, CompactionConfig::default()).is_none()
     );
-    assert!(handle_slash_command_simple("/commit", &session, CompactionConfig::default()).is_none());
+    assert!(
+        handle_slash_command_simple("/status", &session, CompactionConfig::default()).is_none()
+    );
+    assert!(
+        handle_slash_command_simple("/branch list", &session, CompactionConfig::default())
+            .is_none()
+    );
+    assert!(
+        handle_slash_command_simple("/bughunter", &session, CompactionConfig::default()).is_none()
+    );
+    assert!(
+        handle_slash_command_simple("/worktree list", &session, CompactionConfig::default())
+            .is_none()
+    );
+    assert!(
+        handle_slash_command_simple("/commit", &session, CompactionConfig::default()).is_none()
+    );
     assert!(handle_slash_command_simple(
         "/commit-push-pr review notes",
         &session,
@@ -427,12 +440,21 @@ fn ignores_unknown_or_runtime_bound_slash_commands() {
     .is_none());
     assert!(handle_slash_command_simple("/pr", &session, CompactionConfig::default()).is_none());
     assert!(handle_slash_command_simple("/issue", &session, CompactionConfig::default()).is_none());
-    assert!(handle_slash_command_simple("/ultraplan", &session, CompactionConfig::default()).is_none());
-    assert!(handle_slash_command_simple("/teleport foo", &session, CompactionConfig::default()).is_none());
     assert!(
-        handle_slash_command_simple("/debug-tool-call", &session, CompactionConfig::default()).is_none()
+        handle_slash_command_simple("/ultraplan", &session, CompactionConfig::default()).is_none()
     );
-    assert!(handle_slash_command_simple("/model sonnet", &session, CompactionConfig::default()).is_none());
+    assert!(
+        handle_slash_command_simple("/teleport foo", &session, CompactionConfig::default())
+            .is_none()
+    );
+    assert!(
+        handle_slash_command_simple("/debug-tool-call", &session, CompactionConfig::default())
+            .is_none()
+    );
+    assert!(
+        handle_slash_command_simple("/model sonnet", &session, CompactionConfig::default())
+            .is_none()
+    );
     assert!(handle_slash_command_simple(
         "/permissions read-only",
         &session,
@@ -441,7 +463,8 @@ fn ignores_unknown_or_runtime_bound_slash_commands() {
     .is_none());
     assert!(handle_slash_command_simple("/clear", &session, CompactionConfig::default()).is_none());
     assert!(
-        handle_slash_command_simple("/clear --confirm", &session, CompactionConfig::default()).is_none()
+        handle_slash_command_simple("/clear --confirm", &session, CompactionConfig::default())
+            .is_none()
     );
     assert!(handle_slash_command_simple("/cost", &session, CompactionConfig::default()).is_none());
     assert!(handle_slash_command_simple(
@@ -450,15 +473,28 @@ fn ignores_unknown_or_runtime_bound_slash_commands() {
         CompactionConfig::default()
     )
     .is_none());
-    assert!(handle_slash_command_simple("/config", &session, CompactionConfig::default()).is_none());
-    assert!(handle_slash_command_simple("/config env", &session, CompactionConfig::default()).is_none());
-    assert!(handle_slash_command_simple("/diff", &session, CompactionConfig::default()).is_none());
-    assert!(handle_slash_command_simple("/version", &session, CompactionConfig::default()).is_none());
     assert!(
-        handle_slash_command_simple("/export note.txt", &session, CompactionConfig::default()).is_none()
+        handle_slash_command_simple("/config", &session, CompactionConfig::default()).is_none()
     );
-    assert!(handle_slash_command_simple("/session list", &session, CompactionConfig::default()).is_none());
-    assert!(handle_slash_command_simple("/plugins list", &session, CompactionConfig::default()).is_none());
+    assert!(
+        handle_slash_command_simple("/config env", &session, CompactionConfig::default()).is_none()
+    );
+    assert!(handle_slash_command_simple("/diff", &session, CompactionConfig::default()).is_none());
+    assert!(
+        handle_slash_command_simple("/version", &session, CompactionConfig::default()).is_none()
+    );
+    assert!(
+        handle_slash_command_simple("/export note.txt", &session, CompactionConfig::default())
+            .is_none()
+    );
+    assert!(
+        handle_slash_command_simple("/session list", &session, CompactionConfig::default())
+            .is_none()
+    );
+    assert!(
+        handle_slash_command_simple("/plugins list", &session, CompactionConfig::default())
+            .is_none()
+    );
 }
 
 #[test]

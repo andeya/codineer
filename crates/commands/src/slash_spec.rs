@@ -274,6 +274,14 @@ const SLASH_COMMAND_SPECS: &[SlashCommandSpec] = &[
         resume_supported: true,
         category: SlashCommandCategory::Automation,
     },
+    SlashCommandSpec {
+        name: "doctor",
+        aliases: &[],
+        summary: "Run environment diagnostics",
+        argument_hint: None,
+        resume_supported: true,
+        category: SlashCommandCategory::Core,
+    },
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -351,44 +359,50 @@ pub enum SlashCommand {
     Skills {
         args: Option<String>,
     },
+    Doctor,
     Unknown(String),
 }
 
 impl SlashCommand {
+    /// Returns the canonical command name.
+    ///
+    /// For built-in commands this is a zero-allocation `&'static str`.
+    /// For unknown commands it borrows the stored name.
     #[must_use]
-    pub fn name(&self) -> String {
+    pub fn name(&self) -> &str {
         match self {
-            Self::Help => "help".to_string(),
-            Self::Status => "status".to_string(),
-            Self::Compact => "compact".to_string(),
-            Self::Branch { .. } => "branch".to_string(),
-            Self::Bughunter { .. } => "bughunter".to_string(),
-            Self::Worktree { .. } => "worktree".to_string(),
-            Self::Commit => "commit".to_string(),
-            Self::CommitPushPr { .. } => "commit-push-pr".to_string(),
-            Self::Pr { .. } => "pr".to_string(),
-            Self::Issue { .. } => "issue".to_string(),
-            Self::Ultraplan { .. } => "ultraplan".to_string(),
-            Self::Teleport { .. } => "teleport".to_string(),
-            Self::DebugToolCall => "debug-tool-call".to_string(),
-            Self::Model { .. } => "model".to_string(),
-            Self::Permissions { .. } => "permissions".to_string(),
-            Self::Clear { .. } => "clear".to_string(),
-            Self::Cost => "cost".to_string(),
-            Self::Resume { .. } => "resume".to_string(),
-            Self::Config { .. } => "config".to_string(),
-            Self::Memory => "memory".to_string(),
-            Self::Init => "init".to_string(),
-            Self::Diff => "diff".to_string(),
-            Self::Version => "version".to_string(),
-            Self::Export { .. } => "export".to_string(),
-            Self::Session { .. } => "session".to_string(),
-            Self::Plugins { .. } => "plugins".to_string(),
-            Self::Models { .. } => "models".to_string(),
-            Self::Providers => "providers".to_string(),
-            Self::Agents { .. } => "agents".to_string(),
-            Self::Skills { .. } => "skills".to_string(),
-            Self::Unknown(name) => name.clone(),
+            Self::Help => "help",
+            Self::Status => "status",
+            Self::Compact => "compact",
+            Self::Branch { .. } => "branch",
+            Self::Bughunter { .. } => "bughunter",
+            Self::Worktree { .. } => "worktree",
+            Self::Commit => "commit",
+            Self::CommitPushPr { .. } => "commit-push-pr",
+            Self::Pr { .. } => "pr",
+            Self::Issue { .. } => "issue",
+            Self::Ultraplan { .. } => "ultraplan",
+            Self::Teleport { .. } => "teleport",
+            Self::DebugToolCall => "debug-tool-call",
+            Self::Model { .. } => "model",
+            Self::Permissions { .. } => "permissions",
+            Self::Clear { .. } => "clear",
+            Self::Cost => "cost",
+            Self::Resume { .. } => "resume",
+            Self::Config { .. } => "config",
+            Self::Memory => "memory",
+            Self::Init => "init",
+            Self::Diff => "diff",
+            Self::Version => "version",
+            Self::Export { .. } => "export",
+            Self::Session { .. } => "session",
+            Self::Plugins { .. } => "plugins",
+            Self::Models { .. } => "models",
+            Self::Providers => "providers",
+            Self::Agents { .. } => "agents",
+            Self::Skills { .. } => "skills",
+            Self::Doctor => "doctor",
+            Self::Unknown(name) => name,
         }
     }
 
@@ -478,6 +492,7 @@ impl SlashCommand {
             "skills" => Self::Skills {
                 args: remainder_after_command(trimmed, command),
             },
+            "doctor" => Self::Doctor,
             other => Self::Unknown(other.to_string()),
         })
     }
