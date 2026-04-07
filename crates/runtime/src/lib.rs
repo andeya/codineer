@@ -16,6 +16,7 @@ mod prompt;
 mod remote;
 pub mod sandbox;
 mod session;
+mod token_budget;
 mod tool;
 mod usage;
 
