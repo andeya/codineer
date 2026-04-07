@@ -14,7 +14,7 @@ mod types;
 #[cfg(test)]
 mod tests;
 
-pub use hooks::PluginHookRunner;
+pub(crate) use hooks::PluginHookRunner;
 pub use runtime::{HookEvent, HookRunResult};
 
 pub use definition::builtin_plugins;
