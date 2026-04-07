@@ -12,6 +12,7 @@ categories.workspace = true
 
 [dependencies]
 strum.workspace = true
+thiserror.workspace = true
 
 [lints]
 workspace = true
