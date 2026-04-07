@@ -71,9 +71,36 @@ pub(crate) fn parse_sse_frame(frame: &str) -> Result<Option<ChatCompletionChunk>
     if payload == "[DONE]" {
         return Ok(None);
     }
+
+    // Detect upstream error events embedded in the SSE stream before
+    // attempting to deserialize as ChatCompletionChunk.
+    if let Ok(err) = serde_json::from_str::<SseErrorEnvelope>(&payload) {
+        if let Some(inner) = err.error {
+            let msg = inner
+                .message
+                .unwrap_or_else(|| "upstream error".to_string());
+            return Err(ApiError::StreamApplicationError {
+                error_type: inner.error_type,
+                message: msg,
+            });
+        }
+    }
+
     serde_json::from_str(&payload)
         .map(Some)
         .map_err(ApiError::from)
+}
+
+#[derive(Deserialize)]
+struct SseErrorEnvelope {
+    error: Option<SseErrorBody>,
+}
+
+#[derive(Deserialize)]
+struct SseErrorBody {
+    message: Option<String>,
+    #[serde(rename = "type")]
+    error_type: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
