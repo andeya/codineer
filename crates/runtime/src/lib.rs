@@ -16,6 +16,7 @@ mod prompt;
 mod remote;
 pub mod sandbox;
 mod session;
+mod tool;
 mod usage;
 
 pub use bash::{execute_bash, BashCommandInput, BashCommandOutput};
@@ -33,12 +34,12 @@ pub use config::{
 };
 pub use conversation::{
     ApiClient, ApiRequest, AssistantEvent, ConversationRuntime, RuntimeError, StaticToolExecutor,
-    ToolError, ToolExecutor, TurnSummary,
+    ToolError, ToolErrorCode, ToolExecutor, TurnSummary,
 };
 pub use file_ops::{
-    edit_file, glob_search, grep_search, read_file, write_file, EditFileOutput, GlobSearchOutput,
-    GrepOutputMode, GrepSearchInput, GrepSearchOutput, ReadFileOutput, StructuredPatchHunk,
-    TextFilePayload, WriteFileOutput,
+    edit_file, glob_search, grep_search, read_file, workspace_safe_path, write_file,
+    EditFileOutput, GlobSearchOutput, GrepOutputMode, GrepSearchInput, GrepSearchOutput,
+    ReadFileOutput, StructuredPatchHunk, TextFilePayload, WriteFileOutput,
 };
 pub use hooks::{HookCommandSource, HookEvent, HookRunResult, HookRunner};
 pub use json::JsonValue;
@@ -72,6 +73,7 @@ pub use prompt::{
 pub use remote::{
     inherited_upstream_proxy_env, RemoteSessionContext, UpstreamProxyBootstrap, UpstreamProxyState,
 };
+pub use tool::{Tool, ToolResult};
 
 pub use credentials::{
     ClaudeCodeResolver, CodineerOAuthResolver, CredentialChain, CredentialError,

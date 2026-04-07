@@ -35,10 +35,52 @@ pub trait ApiClient {
 
 pub trait ToolExecutor {
     fn execute(&mut self, tool_name: &str, input: &str) -> Result<String, ToolError>;
+
+    /// Returns `true` if `tool_name` can safely run concurrently with other tools
+    /// (i.e. it is read-only and has no ordering dependencies).
+    /// Defaults to `false` (conservative: sequential execution).
+    fn is_concurrency_safe(&self, _tool_name: &str) -> bool {
+        false
+    }
+
+    /// Execute a batch of concurrency-safe tools in parallel.
+    ///
+    /// Each element of `calls` is `(tool_name, json_input)`. The return vec has
+    /// the same length and order as `calls`.
+    ///
+    /// Returns `None` when parallel execution is not supported by this executor,
+    /// in which case the caller falls back to sequential `execute` calls.
+    fn execute_batch(&self, _calls: &[(&str, &str)]) -> Option<Vec<Result<String, ToolError>>> {
+        None
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ToolErrorCode {
+    InvalidInput,
+    PermissionDenied,
+    NotFound,
+    Conflict,
+    Timeout,
+    InternalError,
+}
+
+impl Display for ToolErrorCode {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::InvalidInput => f.write_str("invalid_input"),
+            Self::PermissionDenied => f.write_str("permission_denied"),
+            Self::NotFound => f.write_str("not_found"),
+            Self::Conflict => f.write_str("conflict"),
+            Self::Timeout => f.write_str("timeout"),
+            Self::InternalError => f.write_str("internal_error"),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ToolError {
+    code: ToolErrorCode,
     message: String,
 }
 
@@ -46,8 +88,27 @@ impl ToolError {
     #[must_use]
     pub fn new(message: impl Into<String>) -> Self {
         Self {
+            code: ToolErrorCode::InternalError,
             message: message.into(),
         }
+    }
+
+    #[must_use]
+    pub fn with_code(code: ToolErrorCode, message: impl Into<String>) -> Self {
+        Self {
+            code,
+            message: message.into(),
+        }
+    }
+
+    #[must_use]
+    pub fn code(&self) -> ToolErrorCode {
+        self.code
+    }
+
+    #[must_use]
+    pub fn message(&self) -> &str {
+        &self.message
     }
 }
 
@@ -214,55 +275,138 @@ where
                 break;
             }
 
-            for (tool_use_id, tool_name, input) in pending_tool_uses {
+            // ── Phase A: Sequential permission checks + pre-hooks ────────────
+            // Each element is either:
+            //   Ok(pre_hook)  → approved, ready to execute
+            //   Err(msg)      → already resolved (denied / hook blocked)
+            let mut slot_status: Vec<Result<HookRunResult, ConversationMessage>> =
+                Vec::with_capacity(pending_tool_uses.len());
+
+            for (tool_use_id, tool_name, input) in &pending_tool_uses {
                 let permission_outcome = if let Some(prompt) = prompter.as_mut() {
                     self.permission_policy
-                        .authorize(&tool_name, &input, Some(*prompt))
+                        .authorize(tool_name, input, Some(*prompt))
                 } else {
-                    self.permission_policy.authorize(&tool_name, &input, None)
+                    self.permission_policy.authorize(tool_name, input, None)
                 };
 
-                let result_message = match permission_outcome {
+                match permission_outcome {
+                    PermissionOutcome::Deny { reason } => {
+                        slot_status.push(Err(ConversationMessage::tool_result(
+                            tool_use_id.clone(),
+                            tool_name.clone(),
+                            reason,
+                            true,
+                        )));
+                    }
                     PermissionOutcome::Allow => {
-                        let pre_hook_result = self.hook_runner.run_pre_tool_use(&tool_name, &input);
-                        if pre_hook_result.is_denied() {
-                            let deny_message = format!("PreToolUse hook denied tool `{tool_name}`");
-                            ConversationMessage::tool_result(
-                                tool_use_id,
-                                tool_name,
-                                format_hook_message(&pre_hook_result, &deny_message),
-                                true,
-                            )
-                        } else {
-                            let (mut output, mut is_error) =
-                                match self.tool_executor.execute(&tool_name, &input) {
-                                    Ok(output) => (output, false),
-                                    Err(error) => (error.to_string(), true),
-                                };
-                            output = merge_hook_feedback(pre_hook_result.messages(), output, false);
-
-                            let post_hook_result = self
-                                .hook_runner
-                                .run_post_tool_use(&tool_name, &input, &output, is_error);
-                            if post_hook_result.is_denied() {
-                                is_error = true;
-                            }
-                            output = merge_hook_feedback(
-                                post_hook_result.messages(),
-                                output,
-                                post_hook_result.is_denied(),
+                        let pre_hook = self.hook_runner.run_pre_tool_use(tool_name, input);
+                        if pre_hook.is_denied() {
+                            let deny_msg = format_hook_message(
+                                &pre_hook,
+                                &format!("PreToolUse hook denied tool `{tool_name}`"),
                             );
-
-                            ConversationMessage::tool_result(
-                                tool_use_id,
-                                tool_name,
-                                output,
-                                is_error,
-                            )
+                            slot_status.push(Err(ConversationMessage::tool_result(
+                                tool_use_id.clone(),
+                                tool_name.clone(),
+                                deny_msg,
+                                true,
+                            )));
+                        } else {
+                            slot_status.push(Ok(pre_hook));
                         }
                     }
-                    PermissionOutcome::Deny { reason } => {
-                        ConversationMessage::tool_result(tool_use_id, tool_name, reason, true)
+                }
+            }
+
+            // Indices of tools that passed permission + pre-hook.
+            let ready_indices: Vec<usize> = slot_status
+                .iter()
+                .enumerate()
+                .filter_map(|(i, s)| s.is_ok().then_some(i))
+                .collect();
+
+            // ── Phase B: Tool execution (concurrent when safe, else sequential) ──
+            //
+            // exec_outputs[j]  corresponds to  ready_indices[j].
+            let exec_outputs: Vec<Result<String, ToolError>> = {
+                let all_concurrent = ready_indices.len() > 1
+                    && ready_indices.iter().all(|&i| {
+                        self.tool_executor
+                            .is_concurrency_safe(&pending_tool_uses[i].1)
+                    });
+
+                if all_concurrent {
+                    // Build the slice of (name, input) pairs for the batch call.
+                    let calls: Vec<(&str, &str)> = ready_indices
+                        .iter()
+                        .map(|&i| {
+                            (
+                                pending_tool_uses[i].1.as_str(),
+                                pending_tool_uses[i].2.as_str(),
+                            )
+                        })
+                        .collect();
+
+                    // Try executor's parallel batch; fall back to sequential
+                    // if it returns None (e.g. StaticToolExecutor in tests).
+                    if let Some(batch) = self.tool_executor.execute_batch(&calls) {
+                        batch
+                    } else {
+                        let mut out = Vec::with_capacity(ready_indices.len());
+                        for &i in &ready_indices {
+                            out.push(
+                                self.tool_executor
+                                    .execute(&pending_tool_uses[i].1, &pending_tool_uses[i].2),
+                            );
+                        }
+                        out
+                    }
+                } else {
+                    let mut out = Vec::with_capacity(ready_indices.len());
+                    for &i in &ready_indices {
+                        out.push(
+                            self.tool_executor
+                                .execute(&pending_tool_uses[i].1, &pending_tool_uses[i].2),
+                        );
+                    }
+                    out
+                }
+            };
+
+            // Map slot-index → execution result for Phase C lookup.
+            let mut exec_lookup: BTreeMap<usize, Result<String, ToolError>> =
+                ready_indices.into_iter().zip(exec_outputs).collect();
+
+            // ── Phase C: Post-hooks + session update (sequential, order preserved) ──
+            for (i, ((tool_use_id, tool_name, input), slot)) in
+                pending_tool_uses.into_iter().zip(slot_status).enumerate()
+            {
+                let result_message = match slot {
+                    Err(resolved) => resolved,
+                    Ok(pre_hook) => {
+                        let (mut output, mut is_error) = match exec_lookup
+                            .remove(&i)
+                            .expect("execution result must exist for every approved slot")
+                        {
+                            Ok(o) => (o, false),
+                            Err(e) => (e.to_string(), true),
+                        };
+                        output = merge_hook_feedback(pre_hook.messages(), output, false);
+
+                        let post_hook = self
+                            .hook_runner
+                            .run_post_tool_use(&tool_name, &input, &output, is_error);
+                        if post_hook.is_denied() {
+                            is_error = true;
+                        }
+                        output = merge_hook_feedback(
+                            post_hook.messages(),
+                            output,
+                            post_hook.is_denied(),
+                        );
+
+                        ConversationMessage::tool_result(tool_use_id, tool_name, output, is_error)
                     }
                 };
                 self.session.messages.push(result_message.clone());

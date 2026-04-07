@@ -2,14 +2,15 @@ use std::cmp::Reverse;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
-use std::time::Instant;
+use std::time::{Instant, UNIX_EPOCH};
 
 use std::fmt;
 
 use glob::Pattern;
-use regex::RegexBuilder;
+use grep_regex::RegexMatcherBuilder;
+use grep_searcher::{Searcher, SearcherBuilder, Sink, SinkContext, SinkMatch};
+use ignore::WalkBuilder;
 use serde::{Deserialize, Serialize};
-use walkdir::WalkDir;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -45,9 +46,18 @@ pub struct TextFilePayload {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ReadFileOutput {
+    /// `"text"` for plain text, `"image"` for binary images, `"pdf"` for PDFs.
     #[serde(rename = "type")]
     pub kind: String,
     pub file: TextFilePayload,
+    /// Nanoseconds since UNIX epoch at the time the file was read.
+    /// Pass this value as `last_modified_at` to `edit_file` to enable
+    /// write-conflict detection.
+    #[serde(rename = "lastModifiedAt", skip_serializing_if = "Option::is_none")]
+    pub last_modified_at: Option<u64>,
+    /// MIME type for image files (e.g. `"image/png"`).
+    #[serde(rename = "mediaType", skip_serializing_if = "Option::is_none")]
+    pub media_type: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -76,6 +86,9 @@ pub struct WriteFileOutput {
     pub original_file: Option<String>,
     #[serde(rename = "gitDiff")]
     pub git_diff: Option<serde_json::Value>,
+    /// Nanoseconds since UNIX epoch at the time of this write.
+    #[serde(rename = "lastModifiedAt", skip_serializing_if = "Option::is_none")]
+    pub last_modified_at: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -96,6 +109,9 @@ pub struct EditFileOutput {
     pub replace_all: bool,
     #[serde(rename = "gitDiff")]
     pub git_diff: Option<serde_json::Value>,
+    /// Nanoseconds since UNIX epoch after this edit was written.
+    #[serde(rename = "lastModifiedAt", skip_serializing_if = "Option::is_none")]
+    pub last_modified_at: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -150,12 +166,75 @@ pub struct GrepSearchOutput {
     pub applied_offset: Option<usize>,
 }
 
+/// Resolve and validate `path` against the workspace root.
+///
+/// Returns the canonical absolute path, or `PermissionDenied` if the resolved
+/// path escapes the workspace, or `NotFound` if the path does not exist.
+/// Use this for any tool that reads or writes files at caller-supplied paths.
+pub fn workspace_safe_path(path: &str) -> io::Result<PathBuf> {
+    normalize_path(path)
+}
+
+/// Maximum file size accepted by `read_file`, `write_file`, and `edit_file`.
+const MAX_FILE_SIZE: u64 = 10 * 1024 * 1024; // 10 MiB
+
 pub fn read_file(
     path: &str,
     offset: Option<usize>,
     limit: Option<usize>,
 ) -> io::Result<ReadFileOutput> {
     let absolute_path = normalize_path(path)?;
+    let metadata = fs::metadata(&absolute_path)?;
+    let last_modified_at = mtime_nanos(&metadata).ok();
+    let file_path_str = absolute_path.to_string_lossy().into_owned();
+
+    let ext = absolute_path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(str::to_ascii_lowercase);
+
+    // ── Image files ──────────────────────────────────────────────────────────
+    if let Some(media_type) = ext.as_deref().and_then(image_media_type) {
+        let bytes = fs::read(&absolute_path)?;
+        let b64 = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &bytes);
+        return Ok(ReadFileOutput {
+            kind: String::from("image"),
+            file: TextFilePayload {
+                file_path: file_path_str,
+                content: b64,
+                num_lines: 0,
+                start_line: 1,
+                total_lines: 0,
+            },
+            last_modified_at,
+            media_type: Some(media_type.to_owned()),
+        });
+    }
+
+    // ── PDF files ─────────────────────────────────────────────────────────────
+    if ext.as_deref() == Some("pdf") {
+        let text = extract_pdf_text(&absolute_path)?;
+        let lines: Vec<&str> = text.lines().collect();
+        let start_index = offset.unwrap_or(0).min(lines.len());
+        let end_index = limit.map_or(lines.len(), |limit| {
+            start_index.saturating_add(limit).min(lines.len())
+        });
+        let selected = lines[start_index..end_index].join("\n");
+        return Ok(ReadFileOutput {
+            kind: String::from("pdf"),
+            file: TextFilePayload {
+                file_path: file_path_str,
+                content: selected,
+                num_lines: end_index.saturating_sub(start_index),
+                start_line: start_index.saturating_add(1),
+                total_lines: lines.len(),
+            },
+            last_modified_at,
+            media_type: None,
+        });
+    }
+
+    // ── Text files (default) ──────────────────────────────────────────────────
     let content = fs::read_to_string(&absolute_path)?;
     let lines: Vec<&str> = content.lines().collect();
     let start_index = offset.unwrap_or(0).min(lines.len());
@@ -167,22 +246,72 @@ pub fn read_file(
     Ok(ReadFileOutput {
         kind: String::from("text"),
         file: TextFilePayload {
-            file_path: absolute_path.to_string_lossy().into_owned(),
+            file_path: file_path_str,
             content: selected,
             num_lines: end_index.saturating_sub(start_index),
             start_line: start_index.saturating_add(1),
             total_lines: lines.len(),
         },
+        last_modified_at,
+        media_type: None,
     })
 }
 
+/// Returns the MIME type string for recognized image extensions, or `None`.
+fn image_media_type(ext: &str) -> Option<&'static str> {
+    match ext {
+        "png" => Some("image/png"),
+        "jpg" | "jpeg" => Some("image/jpeg"),
+        "gif" => Some("image/gif"),
+        "webp" => Some("image/webp"),
+        "bmp" => Some("image/bmp"),
+        "svg" => Some("image/svg+xml"),
+        _ => None,
+    }
+}
+
+/// Extract plain text from a PDF file using lopdf.
+fn extract_pdf_text(path: &Path) -> io::Result<String> {
+    use lopdf::Document;
+
+    let doc = Document::load(path).map_err(|e| io::Error::other(format!("PDF load error: {e}")))?;
+
+    let pages: Vec<u32> = doc.get_pages().keys().copied().collect();
+    let mut out = String::new();
+    for page_num in pages {
+        match doc.extract_text(&[page_num]) {
+            Ok(text) => {
+                out.push_str(&text);
+                out.push('\n');
+            }
+            Err(e) => {
+                out.push_str(&format!("[page {page_num} extraction failed: {e}]\n"));
+            }
+        }
+    }
+    Ok(out)
+}
+
 pub fn write_file(path: &str, content: &str) -> io::Result<WriteFileOutput> {
+    if content.len() as u64 > MAX_FILE_SIZE {
+        return Err(io::Error::other(format!(
+            "content is too large to write ({} bytes exceeds the {} MiB limit)",
+            content.len(),
+            MAX_FILE_SIZE / (1024 * 1024)
+        )));
+    }
+
     let absolute_path = normalize_path_allow_missing(path)?;
     let original_file = fs::read_to_string(&absolute_path).ok();
     if let Some(parent) = absolute_path.parent() {
         fs::create_dir_all(parent)?;
     }
-    fs::write(&absolute_path, content)?;
+
+    // Atomic write: write to sibling temp file then rename.
+    atomic_write(&absolute_path, content.as_bytes())?;
+    let last_modified_at = fs::metadata(&absolute_path)
+        .ok()
+        .and_then(|m| mtime_nanos(&m).ok());
 
     Ok(WriteFileOutput {
         kind: if original_file.is_some() {
@@ -195,36 +324,106 @@ pub fn write_file(path: &str, content: &str) -> io::Result<WriteFileOutput> {
         structured_patch: make_patch(original_file.as_deref().unwrap_or(""), content),
         original_file,
         git_diff: None,
+        last_modified_at,
     })
 }
 
+/// Edit `old_string` → `new_string` inside the file at `path`.
+///
+/// `expected_mtime_nanos` — when supplied, the function checks that the file's
+/// current mtime matches this value (nanoseconds since UNIX epoch).  A mismatch
+/// means the file was changed by another process since it was last read, and the
+/// call returns `Err` with `ErrorKind::Other` so the caller can re-read and retry.
 pub fn edit_file(
     path: &str,
     old_string: &str,
     new_string: &str,
     replace_all: bool,
+    expected_mtime_nanos: Option<u64>,
 ) -> io::Result<EditFileOutput> {
     let absolute_path = normalize_path(path)?;
+
+    let metadata = fs::metadata(&absolute_path)?;
+    if metadata.len() > MAX_FILE_SIZE {
+        return Err(io::Error::other(format!(
+            "file is too large to edit ({} bytes exceeds the {} MiB limit)",
+            metadata.len(),
+            MAX_FILE_SIZE / (1024 * 1024)
+        )));
+    }
+
+    // Write-conflict detection: if the caller holds a stale mtime, abort.
+    if let Some(expected) = expected_mtime_nanos {
+        let current = mtime_nanos(&metadata)?;
+        if current != expected {
+            return Err(io::Error::other(
+                "file was modified by another process since it was last read; \
+                 re-read the file and retry the edit",
+            ));
+        }
+    }
+
     let original_file = fs::read_to_string(&absolute_path)?;
+
     if old_string == new_string {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
             "old_string and new_string must differ",
         ));
     }
-    if !original_file.contains(old_string) {
+
+    // Work with LF-normalised content so edits succeed regardless of whether
+    // the file uses CRLF or LF line endings.
+    let uses_crlf = original_file.contains("\r\n");
+    let content_lf = if uses_crlf {
+        original_file.replace("\r\n", "\n")
+    } else {
+        original_file.clone()
+    };
+    let old_lf = old_string.replace("\r\n", "\n");
+    let new_lf = new_string.replace("\r\n", "\n");
+
+    if !content_lf.contains(old_lf.as_str()) {
         return Err(io::Error::new(
             io::ErrorKind::NotFound,
             "old_string not found in file",
         ));
     }
 
-    let updated = if replace_all {
-        original_file.replace(old_string, new_string)
+    // Ambiguity guard: when the caller expects a single unique replacement but
+    // old_string appears more than once, abort so the model can supply a longer,
+    // unambiguous context string rather than silently patching the wrong site.
+    if !replace_all {
+        let occurrences = content_lf.matches(old_lf.as_str()).count();
+        if occurrences > 1 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!(
+                    "old_string matches {occurrences} locations in the file; \
+                     set replace_all=true to replace all occurrences, or provide \
+                     a longer old_string that uniquely identifies the target location"
+                ),
+            ));
+        }
+    }
+
+    let updated_lf = if replace_all {
+        content_lf.replace(old_lf.as_str(), new_lf.as_str())
     } else {
-        original_file.replacen(old_string, new_string, 1)
+        content_lf.replacen(old_lf.as_str(), new_lf.as_str(), 1)
     };
-    fs::write(&absolute_path, &updated)?;
+
+    // Restore the original line-ending style.
+    let updated = if uses_crlf {
+        updated_lf.replace('\n', "\r\n")
+    } else {
+        updated_lf
+    };
+
+    atomic_write(&absolute_path, updated.as_bytes())?;
+    let last_modified_at = fs::metadata(&absolute_path)
+        .ok()
+        .and_then(|m| mtime_nanos(&m).ok());
 
     Ok(EditFileOutput {
         file_path: absolute_path.to_string_lossy().into_owned(),
@@ -235,6 +434,7 @@ pub fn edit_file(
         user_modified: false,
         replace_all,
         git_diff: None,
+        last_modified_at,
     })
 }
 
@@ -244,24 +444,55 @@ pub fn glob_search(pattern: &str, path: Option<&str>) -> io::Result<GlobSearchOu
         .map(normalize_path)
         .transpose()?
         .unwrap_or(std::env::current_dir()?);
-    let search_pattern = if Path::new(pattern).is_absolute() {
+
+    // For absolute patterns, enforce workspace boundary and match full paths.
+    // For relative patterns, match each file's path relative to base_dir.
+    let is_absolute_pattern = Path::new(pattern).is_absolute();
+    if is_absolute_pattern {
         enforce_workspace_boundary(Path::new(pattern))?;
-        pattern.to_owned()
-    } else {
-        base_dir.join(pattern).to_string_lossy().into_owned()
-    };
+    }
+
+    // Build a glob::Pattern from the raw pattern for per-entry matching.
+    // When relative, we match against the relative portion of the path.
+    let glob_pat = Pattern::new(pattern)
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e.to_string()))?;
 
     let mut matches = Vec::new();
-    let entries = glob::glob(&search_pattern)
-        .map_err(|error| io::Error::new(io::ErrorKind::InvalidInput, error.to_string()))?;
-    for entry in entries.flatten() {
-        if entry.is_file() {
-            matches.push(entry);
+
+    // WalkBuilder respects .gitignore, .ignore, and global gitignore.
+    // hidden(false) so dotfiles like .env are included; .git internals
+    // are excluded by the ignore crate's built-in special-casing.
+    for result in WalkBuilder::new(&base_dir)
+        .hidden(false)
+        .git_ignore(true)
+        .git_global(true)
+        .build()
+    {
+        let entry = result.map_err(|e| io::Error::other(e.to_string()))?;
+        if !entry.file_type().is_some_and(|ft| ft.is_file()) {
+            continue;
+        }
+        let full_path = entry.path();
+
+        // Determine what to match the pattern against.
+        let match_target: std::borrow::Cow<'_, str> = if is_absolute_pattern {
+            full_path.to_string_lossy()
+        } else {
+            // Match against the path relative to base_dir so that
+            // patterns like `**/*.rs` work without needing an absolute prefix.
+            match full_path.strip_prefix(&base_dir) {
+                Ok(rel) => rel.to_string_lossy(),
+                Err(_) => full_path.to_string_lossy(),
+            }
+        };
+
+        if glob_pat.matches(&match_target) || glob_pat.matches_path(Path::new(&*match_target)) {
+            matches.push(full_path.to_path_buf());
         }
     }
 
-    matches.sort_by_key(|path| {
-        fs::metadata(path)
+    matches.sort_by_key(|p| {
+        fs::metadata(p)
             .and_then(|metadata| metadata.modified())
             .ok()
             .map(Reverse)
@@ -271,7 +502,7 @@ pub fn glob_search(pattern: &str, path: Option<&str>) -> io::Result<GlobSearchOu
     let filenames = matches
         .into_iter()
         .take(100)
-        .map(|path| path.to_string_lossy().into_owned())
+        .map(|p| p.to_string_lossy().into_owned())
         .collect::<Vec<_>>();
 
     Ok(GlobSearchOutput {
@@ -290,82 +521,87 @@ pub fn grep_search(input: &GrepSearchInput) -> io::Result<GrepSearchOutput> {
         .transpose()?
         .unwrap_or(std::env::current_dir()?);
 
-    let regex = RegexBuilder::new(&input.pattern)
+    let multiline = input.multiline.unwrap_or(false);
+    let context = input.context.or(input.context_short).unwrap_or(0);
+    let before = input.before.unwrap_or(context);
+    let after = input.after.unwrap_or(context);
+    let output_mode = input.output_mode.unwrap_or_default();
+    let line_numbers_enabled = input.line_numbers.unwrap_or(true);
+
+    // SIMD-accelerated regex matcher from the ripgrep family.
+    // multi_line(true) enables cross-line `.` matching AND lets the regex
+    // engine match patterns that span line boundaries.
+    let matcher = RegexMatcherBuilder::new()
         .case_insensitive(input.case_insensitive.unwrap_or(false))
-        .dot_matches_new_line(input.multiline.unwrap_or(false))
-        .build()
-        .map_err(|error| io::Error::new(io::ErrorKind::InvalidInput, error.to_string()))?;
+        .multi_line(multiline)
+        .build(&input.pattern)
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e.to_string()))?;
+
+    // Streaming searcher: handles before/after context, binary detection,
+    // and mmap-based reading automatically.
+    let mut searcher = SearcherBuilder::new()
+        .multi_line(multiline)
+        .before_context(before)
+        .after_context(after)
+        .line_number(true)
+        .build();
 
     let glob_filter = input
         .glob
         .as_deref()
         .map(Pattern::new)
         .transpose()
-        .map_err(|error| io::Error::new(io::ErrorKind::InvalidInput, error.to_string()))?;
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e.to_string()))?;
     let file_type = input.file_type.as_deref();
-    let output_mode = input.output_mode.unwrap_or_default();
-    let context = input.context.or(input.context_short).unwrap_or(0);
 
-    let mut filenames = Vec::new();
-    let mut content_lines = Vec::new();
-    let mut total_matches = 0usize;
+    let mut all_filenames: Vec<String> = Vec::new();
+    let mut all_content_lines: Vec<String> = Vec::new();
+    let mut total_matches: usize = 0;
 
-    for file_path in collect_search_files(&base_path)? {
-        if !matches_optional_filters(&file_path, glob_filter.as_ref(), file_type) {
+    // WalkBuilder: respects .gitignore / .ignore, hidden files included,
+    // .git internals excluded by the crate's built-in special-casing.
+    let walker = WalkBuilder::new(&base_path)
+        .hidden(false)
+        .git_ignore(true)
+        .git_global(true)
+        .build();
+
+    for result in walker {
+        let entry = result.map_err(|e| io::Error::other(e.to_string()))?;
+        if !entry.file_type().is_some_and(|ft| ft.is_file()) {
+            continue;
+        }
+        let path = entry.path();
+
+        if !matches_optional_filters(path, glob_filter.as_ref(), file_type) {
             continue;
         }
 
-        let Ok(file_contents) = fs::read_to_string(&file_path) else {
-            continue;
+        let path_str = path.to_string_lossy().into_owned();
+        let mut sink = FileSink {
+            output_mode,
+            path: path_str.clone(),
+            line_numbers_enabled,
+            has_match: false,
+            match_count: 0,
+            content_lines: Vec::new(),
         };
 
-        if output_mode == GrepOutputMode::Count {
-            let count = regex.find_iter(&file_contents).count();
-            if count > 0 {
-                filenames.push(file_path.to_string_lossy().into_owned());
-                total_matches += count;
-            }
-            continue;
-        }
+        // Errors on individual files (binary, permissions) are silently skipped.
+        let _ = searcher.search_path(&matcher, path, &mut sink);
 
-        let lines: Vec<&str> = file_contents.lines().collect();
-        let mut matched_lines = Vec::new();
-        for (index, line) in lines.iter().enumerate() {
-            if regex.is_match(line) {
-                total_matches += 1;
-                matched_lines.push(index);
-            }
-        }
-
-        if matched_lines.is_empty() {
-            continue;
-        }
-
-        filenames.push(file_path.to_string_lossy().into_owned());
-        if output_mode == GrepOutputMode::Content {
-            let mut emitted = std::collections::BTreeSet::new();
-            for index in matched_lines {
-                let start = index.saturating_sub(input.before.unwrap_or(context));
-                let end = (index + input.after.unwrap_or(context) + 1).min(lines.len());
-                for (current, line) in lines.iter().enumerate().take(end).skip(start) {
-                    if !emitted.insert(current) {
-                        continue;
-                    }
-                    let prefix = if input.line_numbers.unwrap_or(true) {
-                        format!("{}:{}:", file_path.to_string_lossy(), current + 1)
-                    } else {
-                        format!("{}:", file_path.to_string_lossy())
-                    };
-                    content_lines.push(format!("{prefix}{line}"));
-                }
-            }
+        if sink.has_match {
+            all_filenames.push(path_str);
+            total_matches += sink.match_count;
+            all_content_lines.extend(sink.content_lines);
         }
     }
 
     let (filenames, applied_limit, applied_offset) =
-        apply_limit(filenames, input.head_limit, input.offset);
-    let content_output = if output_mode == GrepOutputMode::Content {
-        let (lines, limit, offset) = apply_limit(content_lines, input.head_limit, input.offset);
+        apply_limit(all_filenames, input.head_limit, input.offset);
+
+    if output_mode == GrepOutputMode::Content {
+        let (lines, limit, offset) = apply_limit(all_content_lines, input.head_limit, input.offset);
         return Ok(GrepSearchOutput {
             mode: Some(GrepOutputMode::Content),
             num_files: filenames.len(),
@@ -376,15 +612,13 @@ pub fn grep_search(input: &GrepSearchInput) -> io::Result<GrepSearchOutput> {
             applied_limit: limit,
             applied_offset: offset,
         });
-    } else {
-        None
-    };
+    }
 
     Ok(GrepSearchOutput {
         mode: Some(output_mode),
         num_files: filenames.len(),
         filenames,
-        content: content_output,
+        content: None,
         num_lines: None,
         num_matches: (output_mode == GrepOutputMode::Count).then_some(total_matches),
         applied_limit,
@@ -392,19 +626,62 @@ pub fn grep_search(input: &GrepSearchInput) -> io::Result<GrepSearchOutput> {
     })
 }
 
-fn collect_search_files(base_path: &Path) -> io::Result<Vec<PathBuf>> {
-    if base_path.is_file() {
-        return Ok(vec![base_path.to_path_buf()]);
+/// Per-file sink for `grep_search`. Collects match events from `grep_searcher`.
+struct FileSink {
+    output_mode: GrepOutputMode,
+    path: String,
+    line_numbers_enabled: bool,
+    has_match: bool,
+    match_count: usize,
+    content_lines: Vec<String>,
+}
+
+impl Sink for FileSink {
+    type Error = io::Error;
+
+    fn matched(&mut self, _searcher: &Searcher, mat: &SinkMatch<'_>) -> Result<bool, io::Error> {
+        self.has_match = true;
+        self.match_count += 1;
+
+        if self.output_mode == GrepOutputMode::Content {
+            let base_line = mat.line_number();
+            // mat.lines() iterates over individual lines within the match
+            // (single line in standard mode, possibly multiple in multiline mode).
+            for (i, line_bytes) in mat.lines().enumerate() {
+                let line = String::from_utf8_lossy(line_bytes);
+                let line = line.trim_end_matches('\n').trim_end_matches('\r');
+                let formatted = if self.line_numbers_enabled {
+                    if let Some(ln) = base_line {
+                        format!("{}:{}:{}", self.path, ln + i as u64, line)
+                    } else {
+                        format!("{}:{}", self.path, line)
+                    }
+                } else {
+                    format!("{}:{}", self.path, line)
+                };
+                self.content_lines.push(formatted);
+            }
+        }
+        Ok(true)
     }
 
-    let mut files = Vec::new();
-    for entry in WalkDir::new(base_path) {
-        let entry = entry.map_err(|error| io::Error::other(error.to_string()))?;
-        if entry.file_type().is_file() {
-            files.push(entry.path().to_path_buf());
+    fn context(&mut self, _searcher: &Searcher, ctx: &SinkContext<'_>) -> Result<bool, io::Error> {
+        if self.output_mode == GrepOutputMode::Content {
+            let text = String::from_utf8_lossy(ctx.bytes());
+            let line = text.trim_end_matches('\n').trim_end_matches('\r');
+            let formatted = if self.line_numbers_enabled {
+                if let Some(ln) = ctx.line_number() {
+                    format!("{}:{}:{}", self.path, ln, line)
+                } else {
+                    format!("{}:{}", self.path, line)
+                }
+            } else {
+                format!("{}:{}", self.path, line)
+            };
+            self.content_lines.push(formatted);
         }
+        Ok(true)
     }
-    Ok(files)
 }
 
 fn matches_optional_filters(
@@ -412,16 +689,23 @@ fn matches_optional_filters(
     glob_filter: Option<&Pattern>,
     file_type: Option<&str>,
 ) -> bool {
-    if let Some(glob_filter) = glob_filter {
-        let path_string = path.to_string_lossy();
-        if !glob_filter.matches(&path_string) && !glob_filter.matches_path(path) {
-            return false;
+    if let Some(pat) = glob_filter {
+        let path_str = path.to_string_lossy();
+        if !pat.matches(&path_str) && !pat.matches_path(path) {
+            // Also try matching just the filename component.
+            let fname_match = path
+                .file_name()
+                .map(|n| pat.matches(&n.to_string_lossy()))
+                .unwrap_or(false);
+            if !fname_match {
+                return false;
+            }
         }
     }
 
-    if let Some(file_type) = file_type {
-        let extension = path.extension().and_then(|extension| extension.to_str());
-        if extension != Some(file_type) {
+    if let Some(ext_filter) = file_type {
+        let ext = path.extension().and_then(|e| e.to_str());
+        if ext != Some(ext_filter) {
             return false;
         }
     }
@@ -450,22 +734,87 @@ fn apply_limit<T>(
     )
 }
 
+/// Produce a unified-style structured patch (hunks with ±3 context lines)
+/// using the Myers/LCS algorithm from the `similar` crate.
+///
+/// Each `StructuredPatchHunk` is equivalent to one unified-diff `@@` section.
 fn make_patch(original: &str, updated: &str) -> Vec<StructuredPatchHunk> {
-    let mut lines = Vec::new();
-    for line in original.lines() {
-        lines.push(format!("-{line}"));
-    }
-    for line in updated.lines() {
-        lines.push(format!("+{line}"));
+    use similar::{ChangeTag, TextDiff};
+
+    const CONTEXT: usize = 3;
+
+    let diff = TextDiff::from_lines(original, updated);
+    let mut hunks = Vec::new();
+
+    for group in diff.grouped_ops(CONTEXT) {
+        if group.is_empty() {
+            continue;
+        }
+
+        // Compute hunk header ranges from the first and last op.
+        let first = group.first().expect("non-empty group");
+        let last = group.last().expect("non-empty group");
+
+        let old_start = first.old_range().start + 1; // 1-based
+        let new_start = first.new_range().start + 1;
+        let old_lines = last.old_range().end.saturating_sub(first.old_range().start);
+        let new_lines = last.new_range().end.saturating_sub(first.new_range().start);
+
+        let mut lines = Vec::new();
+        for op in &group {
+            for change in diff.iter_changes(op) {
+                let prefix = match change.tag() {
+                    ChangeTag::Equal => " ",
+                    ChangeTag::Insert => "+",
+                    ChangeTag::Delete => "-",
+                };
+                let value = change.value().trim_end_matches('\n');
+                lines.push(format!("{prefix}{value}"));
+            }
+        }
+
+        hunks.push(StructuredPatchHunk {
+            old_start,
+            old_lines,
+            new_start,
+            new_lines,
+            lines,
+        });
     }
 
-    vec![StructuredPatchHunk {
-        old_start: 1,
-        old_lines: original.lines().count(),
-        new_start: 1,
-        new_lines: updated.lines().count(),
-        lines,
-    }]
+    hunks
+}
+
+/// Return the file's modification time as nanoseconds since UNIX epoch.
+fn mtime_nanos(metadata: &fs::Metadata) -> io::Result<u64> {
+    metadata
+        .modified()?
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos() as u64)
+        .map_err(|e| io::Error::other(e.to_string()))
+}
+
+/// Write `content` to `path` atomically by writing to a sibling temp file
+/// and then renaming it.  Prevents partial-write corruption on crashes.
+fn atomic_write(path: &Path, content: &[u8]) -> io::Result<()> {
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+
+    let parent = path
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+
+    // Combine pid + monotonic counter to guarantee uniqueness across concurrent
+    // writes even within the same nanosecond.
+    let seq = COUNTER.fetch_add(1, Ordering::Relaxed);
+    let tmp_path = parent.join(format!(".codineer-tmp-{}-{}.tmp", std::process::id(), seq));
+
+    fs::write(&tmp_path, content)?;
+    fs::rename(&tmp_path, path).inspect_err(|_| {
+        let _ = fs::remove_file(&tmp_path);
+    })
 }
 
 fn workspace_root() -> io::Result<PathBuf> {
@@ -624,9 +973,73 @@ mod tests {
         let path = temp_path("edit.txt");
         write_file(path.to_string_lossy().as_ref(), "alpha beta alpha")
             .expect("initial write should succeed");
-        let output = edit_file(path.to_string_lossy().as_ref(), "alpha", "omega", true)
-            .expect("edit should succeed");
+        let output = edit_file(
+            path.to_string_lossy().as_ref(),
+            "alpha",
+            "omega",
+            true,
+            None,
+        )
+        .expect("edit should succeed");
         assert!(output.replace_all);
+    }
+
+    #[test]
+    fn edit_returns_mtime_and_conflict_check_works() {
+        allow_temp_workspace();
+        let path = temp_path("mtime-conflict.txt");
+        let written = write_file(path.to_string_lossy().as_ref(), "hello world")
+            .expect("write should succeed");
+        let mtime = written.last_modified_at.expect("mtime should be present");
+
+        // Edit with correct mtime succeeds.
+        let edited = edit_file(
+            path.to_string_lossy().as_ref(),
+            "hello",
+            "goodbye",
+            false,
+            Some(mtime),
+        )
+        .expect("edit with correct mtime should succeed");
+        assert!(edited.last_modified_at.is_some());
+
+        // Supplying the old (now stale) mtime must fail.
+        let conflict = edit_file(
+            path.to_string_lossy().as_ref(),
+            "goodbye",
+            "hello",
+            false,
+            Some(mtime), // stale
+        );
+        assert!(
+            conflict.is_err(),
+            "edit with stale mtime should be rejected"
+        );
+    }
+
+    #[test]
+    fn edit_preserves_crlf_line_endings() {
+        allow_temp_workspace();
+        let path = temp_path("crlf.txt");
+        let crlf_content = "line one\r\nline two\r\nline three\r\n";
+        write_file(path.to_string_lossy().as_ref(), crlf_content)
+            .expect("write crlf should succeed");
+        // The old_string may be given with LF endings (as the model typically sends).
+        let output = edit_file(
+            path.to_string_lossy().as_ref(),
+            "line two",
+            "LINE TWO",
+            false,
+            None,
+        )
+        .expect("edit crlf file should succeed");
+        let result = std::fs::read_to_string(path).expect("re-read should succeed");
+        assert!(
+            result.contains("\r\n"),
+            "CRLF line endings must be preserved"
+        );
+        assert!(result.contains("LINE TWO"), "replacement must be applied");
+        drop(output);
     }
 
     #[test]
@@ -720,11 +1133,55 @@ mod tests {
     }
 
     #[test]
+    fn edit_rejects_ambiguous_match_when_replace_all_false() {
+        allow_temp_workspace();
+        let path = temp_path("ambiguous.txt");
+        write_file(path.to_string_lossy().as_ref(), "foo bar\nfoo baz\nfoo qux").expect("write");
+        let result = edit_file(
+            path.to_string_lossy().as_ref(),
+            "foo",
+            "FOO",
+            false, // single replacement requested
+            None,
+        );
+        assert!(result.is_err(), "ambiguous match should be rejected");
+        let msg = result.unwrap_err().to_string();
+        assert!(
+            msg.contains("3"),
+            "error should report occurrence count: {msg}"
+        );
+    }
+
+    #[test]
+    fn edit_allows_replace_all_for_multiple_occurrences() {
+        allow_temp_workspace();
+        let path = temp_path("multi-replace.txt");
+        write_file(path.to_string_lossy().as_ref(), "foo foo foo").expect("write");
+        let output = edit_file(
+            path.to_string_lossy().as_ref(),
+            "foo",
+            "bar",
+            true, // replace_all
+            None,
+        )
+        .expect("replace_all should succeed even with multiple occurrences");
+        assert!(output.replace_all);
+        let result = std::fs::read_to_string(&path).expect("re-read");
+        assert_eq!(result, "bar bar bar");
+    }
+
+    #[test]
     fn edit_rejects_identical_old_and_new_string() {
         allow_temp_workspace();
         let path = temp_path("edit-reject.txt");
         write_file(path.to_string_lossy().as_ref(), "content").expect("write");
-        let result = edit_file(path.to_string_lossy().as_ref(), "content", "content", false);
+        let result = edit_file(
+            path.to_string_lossy().as_ref(),
+            "content",
+            "content",
+            false,
+            None,
+        );
         assert!(result.is_err());
         assert_eq!(result.unwrap_err().kind(), std::io::ErrorKind::InvalidInput);
     }
@@ -734,7 +1191,13 @@ mod tests {
         allow_temp_workspace();
         let path = temp_path("edit-missing.txt");
         write_file(path.to_string_lossy().as_ref(), "alpha beta").expect("write");
-        let result = edit_file(path.to_string_lossy().as_ref(), "gamma", "delta", false);
+        let result = edit_file(
+            path.to_string_lossy().as_ref(),
+            "gamma",
+            "delta",
+            false,
+            None,
+        );
         assert!(result.is_err());
         assert_eq!(result.unwrap_err().kind(), std::io::ErrorKind::NotFound);
     }

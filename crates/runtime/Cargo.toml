@@ -12,6 +12,7 @@ keywords.workspace = true
 categories.workspace = true
 
 [dependencies]
+async-trait = "0.1"
 futures-util = { version = "0.3", default-features = false, features = [
     "sink",
 ] }
@@ -42,6 +43,12 @@ tokio = { version = "1", features = [
 ] }
 tokio-tungstenite = { version = "0.26", features = ["rustls-tls-webpki-roots"] }
 walkdir = "2"
+grep-regex = "0.1.14"
+grep-searcher = "0.1.16"
+ignore = "0.4.25"
+lopdf = "0.36.0"
+base64.workspace = true
+similar = "2.7.0"
 
 [lints]
 workspace = true
