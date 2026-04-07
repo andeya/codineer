@@ -17,6 +17,7 @@ mod remote;
 pub mod sandbox;
 mod session;
 mod recovery;
+mod streaming_tool_executor;
 mod token_budget;
 mod tool;
 mod tool_orchestration;
