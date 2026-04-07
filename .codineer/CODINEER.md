@@ -9,18 +9,23 @@ This file provides persistent context to Codineer when working with this reposit
 
 - Binary crate: `codineer-cli` → produces the `codineer` executable
 - Workspace root: repo root (`Cargo.toml` with `members = ["crates/*"]`)
-- Current version: `0.6.7` (shared across all crates via `workspace.package.version`)
+- Current version: `0.6.9` (shared across all crates via `workspace.package.version`)
 
 ## Repository layout
 
 ```
 crates/
   api/          # HTTP client, provider abstractions (Anthropic, OpenAI-compat, codineer-provider)
-  runtime/      # Core engine: config, session, permissions, sandbox, MCP, prompts, hooks
-  tools/        # Built-in tool implementations (read/write/edit/bash/agent/todo/skill…)
+  runtime/      # Core engine: config, session, permissions, sandbox, MCP, prompts, hooks,
+                #   file ops (ripgrep-core grep/glob, PDF/image, atomic writes, mtime conflict)
+  tools/        # Built-in tool implementations:
+                #   file I/O, bash/PowerShell/REPL, web fetch/search, notebook editing,
+                #   sub-agent orchestration, LSP bridge, task management, plan mode,
+                #   git worktree, cron jobs, MCP resources, agent collaboration
   plugins/      # Plugin system: manifest, discovery, install, bundled embedding
   commands/     # Slash-command specs, discovery (skills, agents), git helpers
-  lsp/          # LSP integration for workspace diagnostics
+  lsp/          # LSP client: JSON-RPC transport, hover, completion, go-to-definition,
+                #   references, symbols, rename, formatting, diagnostics polling
   codineer-cli/ # CLI entry point, REPL, banner, init, session store, bootstrap
 .codineer/      # Project config committed to repo (settings.json, CODINEER.md, .gitignore)
 ```
@@ -54,6 +59,10 @@ cargo test --workspace
   `.codineer/settings.json`; the global config is always `~/.codineer/settings.json`.
 - **Plugin manifests**: `plugin.json` lives at the plugin directory root (not in `.codineer-plugin/`).
 - **No `.codineer.json` flat config** — only directory-based `settings.json` is supported.
+- **Async bridging**: use dedicated tokio runtimes (`OnceLock<Runtime>`) for subsystems that
+  need async (LSP, web). Bridge with `block_on` / `block_in_place`; never nest runtimes.
+- **File safety**: all writes go through `atomic_write`; edits use mtime-based conflict detection;
+  file size limits apply to reads and writes.
 - Comments should explain _why_, not _what_. Avoid narrating obvious code.
 - Commit messages in English; code comments in English.
 

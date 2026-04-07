@@ -605,27 +605,47 @@ Skill 搜索路径：项目 `.codineer/skills/`（未初始化时退到 `~/.codi
 
 ### 内置工具
 
-| 工具               | 说明                            |
-| ------------------ | ------------------------------- |
-| `bash`             | 执行 Shell 命令                 |
-| `PowerShell`       | 执行 PowerShell 命令（Windows） |
-| `read_file`        | 读取文件内容                    |
-| `write_file`       | 创建或覆盖文件                  |
-| `edit_file`        | 精准字符串替换                  |
-| `glob_search`      | 按 Glob 模式查找文件            |
-| `grep_search`      | 正则搜索文件内容                |
-| `WebFetch`         | 抓取并摘要网页                  |
-| `WebSearch`        | DuckDuckGo 搜索                 |
-| `NotebookEdit`     | 编辑 Jupyter Notebook           |
-| `TodoWrite`        | 管理任务列表                    |
-| `Agent`            | 启动子 Agent                    |
-| `Skill`            | 执行 Skill 模板                 |
-| `REPL`             | 运行 Python、Node 或 Shell      |
-| `ToolSearch`       | 搜索可用工具                    |
-| `Sleep`            | 暂停执行指定时长                |
-| `SendUserMessage`  | 向用户发送消息                  |
-| `Config`           | 读写配置值                      |
-| `StructuredOutput` | 返回结构化 JSON                 |
+| 分类 | 工具 | 说明 |
+| ---- | ---- | ---- |
+| **文件 I/O** | `read_file` | 读取文件内容（文本、PDF 文本提取、图片 base64） |
+| | `write_file` | 创建或覆盖文件（原子写入，mtime 追踪） |
+| | `edit_file` | 精准字符串替换，支持冲突检测 |
+| | `glob_search` | 按 Glob 模式查找文件（.gitignore 感知） |
+| | `grep_search` | 正则搜索文件内容（基于 ripgrep 核心） |
+| **Shell** | `bash` | 执行 Shell 命令（超时、后台执行） |
+| | `PowerShell` | 执行 PowerShell 命令（Windows / 跨平台） |
+| | `REPL` | 运行 Python、Node 或 Shell 代码 |
+| **Web** | `WebFetch` | 抓取并摘要网页 |
+| | `WebSearch` | DuckDuckGo 搜索 |
+| **Notebook** | `NotebookEdit` | 编辑 Jupyter Notebook |
+| **Agent** | `Agent` | 启动子 Agent 进行并行任务 |
+| | `SendUserMessage` | 向用户发送消息 |
+| **LSP** | `Lsp` | 语言服务器操作（悬浮、补全、跳转定义、引用、符号、重命名、格式化、诊断） |
+| **任务管理** | `TaskCreate` | 创建后台任务（可选命令） |
+| | `TaskGet` | 获取任务状态和输出 |
+| | `TaskList` | 列出所有任务 |
+| | `TaskUpdate` | 更新任务标题、描述或状态 |
+| | `TaskStop` | 停止运行中的任务 |
+| **规划模式** | `EnterPlanMode` | 进入只读规划模式 |
+| | `ExitPlanMode` | 退出规划模式 |
+| **Git Worktree** | `EnterWorktree` | 创建并进入隔离的 git worktree |
+| | `ExitWorktree` | 退出并可选清理 worktree |
+| **定时任务** | `CronCreate` | 创建托管的 cron 任务 |
+| | `CronDelete` | 删除托管的 cron 任务 |
+| | `CronList` | 列出托管的 cron 任务 |
+| **MCP 资源** | `ListMcpResources` | 列出可用的 MCP 资源 |
+| | `ReadMcpResource` | 按 URI 读取 MCP 资源 |
+| | `MCPSearch` | 全文搜索 MCP 资源 |
+| **协作** | `TeamCreate` | 创建命名 Agent 团队 |
+| | `TeamDelete` | 删除 Agent 团队 |
+| | `SendMessage` | 向 Agent 或团队发送消息 |
+| | `SlashCommand` | 调用已注册的 slash 命令 |
+| **其他** | `TodoWrite` | 管理结构化任务列表 |
+| | `Skill` | 执行 Skill 模板 |
+| | `ToolSearch` | 搜索可用工具 |
+| | `Config` | 读写配置值 |
+| | `StructuredOutput` | 返回结构化 JSON |
+| | `Sleep` | 暂停执行指定时长 |
 
 ### Crate 结构
 

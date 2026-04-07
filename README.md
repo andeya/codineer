@@ -601,27 +601,47 @@ Skills are discovered from the project's `.codineer/skills/` (or `~/.codineer/sk
 
 ### Built-in tools
 
-| Tool               | Description                           |
-| ------------------ | ------------------------------------- |
-| `bash`             | Execute shell commands                |
-| `PowerShell`       | Execute PowerShell commands (Windows) |
-| `read_file`        | Read file contents                    |
-| `write_file`       | Create or overwrite files             |
-| `edit_file`        | Targeted string replacement           |
-| `glob_search`      | Find files by glob pattern            |
-| `grep_search`      | Search file contents with regex       |
-| `WebFetch`         | Fetch and summarize web pages         |
-| `WebSearch`        | Web search via DuckDuckGo             |
-| `NotebookEdit`     | Edit Jupyter notebook cells           |
-| `TodoWrite`        | Manage structured task lists          |
-| `Agent`            | Launch sub-agents                     |
-| `Skill`            | Execute skill prompts                 |
-| `REPL`             | Run code in Python, Node, or shell    |
-| `ToolSearch`       | Search available tools                |
-| `Sleep`            | Pause execution for a duration        |
-| `SendUserMessage`  | Send a message to the user            |
-| `Config`           | Read/write config values              |
-| `StructuredOutput` | Return structured JSON                |
+| Category | Tool | Description |
+| -------- | ---- | ----------- |
+| **File I/O** | `read_file` | Read file contents (text, PDF text extraction, image base64) |
+| | `write_file` | Create or overwrite files (atomic writes, mtime tracking) |
+| | `edit_file` | Targeted string replacement with conflict detection |
+| | `glob_search` | Find files by glob pattern (.gitignore-aware) |
+| | `grep_search` | Search file contents with regex (ripgrep-powered) |
+| **Shell** | `bash` | Execute shell commands with timeout and background support |
+| | `PowerShell` | Execute PowerShell commands (Windows / cross-platform) |
+| | `REPL` | Run code in Python, Node, or shell |
+| **Web** | `WebFetch` | Fetch and summarize web pages |
+| | `WebSearch` | Web search via DuckDuckGo |
+| **Notebook** | `NotebookEdit` | Edit Jupyter notebook cells |
+| **Agent** | `Agent` | Launch sub-agents for parallel tasks |
+| | `SendUserMessage` | Send a message to the user |
+| **LSP** | `Lsp` | Language server operations (hover, completion, go-to-definition, references, symbols, rename, formatting, diagnostics) |
+| **Task management** | `TaskCreate` | Create a background task with optional command |
+| | `TaskGet` | Get task status and output |
+| | `TaskList` | List all tasks |
+| | `TaskUpdate` | Update task title, description, or status |
+| | `TaskStop` | Stop a running task |
+| **Plan mode** | `EnterPlanMode` | Enter read-only planning mode |
+| | `ExitPlanMode` | Exit planning mode |
+| **Git worktree** | `EnterWorktree` | Create and enter an isolated git worktree |
+| | `ExitWorktree` | Exit and optionally clean up worktree |
+| **Cron** | `CronCreate` | Create a managed cron job |
+| | `CronDelete` | Delete a managed cron job |
+| | `CronList` | List managed cron jobs |
+| **MCP resources** | `ListMcpResources` | List available MCP resources |
+| | `ReadMcpResource` | Read an MCP resource by URI |
+| | `MCPSearch` | Full-text search across MCP resources |
+| **Collaboration** | `TeamCreate` | Create a named agent team |
+| | `TeamDelete` | Delete an agent team |
+| | `SendMessage` | Send a message to an agent or team |
+| | `SlashCommand` | Invoke a registered slash command |
+| **Misc** | `TodoWrite` | Manage structured task lists |
+| | `Skill` | Execute skill prompts |
+| | `ToolSearch` | Search available tools |
+| | `Config` | Read/write config values |
+| | `StructuredOutput` | Return structured JSON |
+| | `Sleep` | Pause execution for a duration |
 
 ### Crate structure
 
