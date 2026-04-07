@@ -243,6 +243,22 @@ const SLASH_COMMAND_SPECS: &[SlashCommandSpec] = &[
         category: SlashCommandCategory::Automation,
     },
     SlashCommandSpec {
+        name: "models",
+        aliases: &[],
+        summary: "List available models (fetched dynamically via v1/models)",
+        argument_hint: Some("[provider]"),
+        resume_supported: true,
+        category: SlashCommandCategory::Core,
+    },
+    SlashCommandSpec {
+        name: "providers",
+        aliases: &[],
+        summary: "List all configured providers",
+        argument_hint: None,
+        resume_supported: true,
+        category: SlashCommandCategory::Core,
+    },
+    SlashCommandSpec {
         name: "agents",
         aliases: &[],
         summary: "List configured agents",
@@ -325,6 +341,10 @@ pub enum SlashCommand {
         action: Option<String>,
         target: Option<String>,
     },
+    Models {
+        provider: Option<String>,
+    },
+    Providers,
     Agents {
         args: Option<String>,
     },
@@ -411,6 +431,10 @@ impl SlashCommand {
                     (!remainder.is_empty()).then_some(remainder)
                 },
             },
+            "models" => Self::Models {
+                provider: parts.next().map(ToOwned::to_owned),
+            },
+            "providers" => Self::Providers,
             "agents" => Self::Agents {
                 args: remainder_after_command(trimmed, command),
             },

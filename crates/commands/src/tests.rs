@@ -354,10 +354,12 @@ fn renders_help_from_shared_specs() {
         "/plugin [list|install <path>|enable <name>|disable <name>|uninstall <id>|update <id>]"
     ));
     assert!(help.contains("aliases: /plugins, /marketplace"));
+    assert!(help.contains("/models [provider]"));
+    assert!(help.contains("/providers"));
     assert!(help.contains("/agents"));
     assert!(help.contains("/skills"));
-    assert_eq!(slash_command_specs().len(), 28);
-    assert_eq!(resume_supported_slash_commands().len(), 13);
+    assert_eq!(slash_command_specs().len(), 30);
+    assert_eq!(resume_supported_slash_commands().len(), 15);
 }
 
 #[test]
