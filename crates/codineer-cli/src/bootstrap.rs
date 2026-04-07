@@ -11,20 +11,10 @@ pub(crate) fn build_runtime_plugin_state(
     let cwd = env::current_dir()?;
     let loader = ConfigLoader::default_for(&cwd);
     let runtime_config = loader.load()?;
-    apply_config_env(&runtime_config);
+    runtime_config.apply_env();
     let plugin_manager = build_plugin_manager(&cwd, &loader, &runtime_config);
     let tool_registry = GlobalToolRegistry::with_plugin_tools(plugin_manager.aggregated_tools()?)?;
     Ok((runtime_config, tool_registry))
-}
-
-/// Apply the `"env"` section from config to process environment variables.
-/// Only sets variables not already present so explicit shell exports take precedence.
-fn apply_config_env(config: &runtime::RuntimeConfig) {
-    for (key, value) in config.env_section() {
-        if env::var_os(&key).is_none() {
-            env::set_var(&key, &value);
-        }
-    }
 }
 
 pub(crate) fn build_plugin_manager(
