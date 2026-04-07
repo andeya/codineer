@@ -20,6 +20,7 @@ mod session_store;
 mod style;
 mod terminal_width;
 mod tool_display;
+pub(crate) mod tracing_observer;
 mod turn_helpers;
 mod workspace;
 
@@ -112,10 +113,21 @@ pub(crate) fn logo_ascii(color: bool) -> String {
 }
 
 fn main() {
+    init_tracing();
     if let Err(error) = run() {
         eprintln!("{}", render_cli_error(&error.to_string()));
         std::process::exit(1);
     }
+}
+
+fn init_tracing() {
+    use tracing_subscriber::EnvFilter;
+    let filter = EnvFilter::try_from_env("CODINEER_LOG")
+        .unwrap_or_else(|_| EnvFilter::new("warn"));
+    tracing_subscriber::fmt()
+        .with_env_filter(filter)
+        .with_writer(std::io::stderr)
+        .init();
 }
 
 fn render_cli_error(problem: &str) -> String {
