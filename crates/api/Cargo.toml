@@ -19,6 +19,7 @@ reqwest = { version = "0.12", default-features = false, features = [
 runtime.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+thiserror.workspace = true
 tokio = { version = "1", features = [
     "io-util",
     "macros",

@@ -1,19 +1,29 @@
 use std::env::VarError;
-use std::fmt::{Display, Formatter};
 use std::time::Duration;
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum ApiError {
+    #[error(
+        "missing {provider} credentials; export {} before calling the {provider} API",
+        env_vars.join(" or ")
+    )]
     MissingCredentials {
         provider: &'static str,
         env_vars: &'static [&'static str],
     },
+    #[error("saved OAuth token is expired and no refresh token is available")]
     ExpiredOAuthToken,
+    #[error("auth error: {0}")]
     Auth(String),
-    InvalidApiKeyEnv(VarError),
-    Http(reqwest::Error),
-    Io(std::io::Error),
-    Json(serde_json::Error),
+    #[error("failed to read credential environment variable: {0}")]
+    InvalidApiKeyEnv(#[from] VarError),
+    #[error("http error: {0}")]
+    Http(#[from] reqwest::Error),
+    #[error("io error: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("json error: {0}")]
+    Json(#[from] serde_json::Error),
+    #[error("{}", fmt_api_error(status, error_type, message, body, url))]
     Api {
         status: reqwest::StatusCode,
         error_type: Option<String>,
@@ -22,23 +32,55 @@ pub enum ApiError {
         url: Option<String>,
         retryable: bool,
     },
+    #[error("api failed after {attempts} attempts: {last_error}")]
     RetriesExhausted {
         attempts: u32,
+        #[source]
         last_error: Box<ApiError>,
     },
+    #[error("invalid sse frame: {0}")]
     InvalidSseFrame(&'static str),
+    #[error(
+        "retry backoff overflowed on attempt {attempt} with base delay {base_delay:?}"
+    )]
     BackoffOverflow {
         attempt: u32,
         base_delay: Duration,
     },
-    ResponsePayloadTooLarge {
-        limit: usize,
-    },
+    #[error("response payload exceeded {limit} byte limit")]
+    ResponsePayloadTooLarge { limit: usize },
     /// In-stream error object from the Anthropic Messages SSE protocol (`type: "error"`).
+    #[error("{}", fmt_stream_app_error(error_type, message))]
     StreamApplicationError {
         error_type: Option<String>,
         message: String,
     },
+}
+
+fn fmt_api_error(
+    status: &reqwest::StatusCode,
+    error_type: &Option<String>,
+    message: &Option<String>,
+    body: &String,
+    url: &Option<String>,
+) -> String {
+    let mut s = match (error_type.as_deref(), message.as_deref()) {
+        (Some(et), Some(msg)) => format!("api returned {status} ({et}): {msg}"),
+        _ if body.is_empty() => format!("api returned {status} (no response body)"),
+        _ => format!("api returned {status}: {body}"),
+    };
+    if let Some(url) = url {
+        use std::fmt::Write;
+        let _ = write!(s, "\n  request url: {url}");
+    }
+    s
+}
+
+fn fmt_stream_app_error(error_type: &Option<String>, message: &String) -> String {
+    match error_type.as_deref() {
+        Some(t) => format!("stream error ({t}): {message}"),
+        None => format!("stream error: {message}"),
+    }
 }
 
 impl ApiError {
@@ -70,102 +112,5 @@ impl ApiError {
                 Some("overloaded_error" | "rate_limit_error")
             ),
         }
-    }
-}
-
-impl Display for ApiError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::MissingCredentials { provider, env_vars } => write!(
-                f,
-                "missing {provider} credentials; export {} before calling the {provider} API",
-                env_vars.join(" or ")
-            ),
-            Self::ExpiredOAuthToken => {
-                write!(
-                    f,
-                    "saved OAuth token is expired and no refresh token is available"
-                )
-            }
-            Self::Auth(message) => write!(f, "auth error: {message}"),
-            Self::InvalidApiKeyEnv(error) => {
-                write!(f, "failed to read credential environment variable: {error}")
-            }
-            Self::Http(error) => write!(f, "http error: {error}"),
-            Self::Io(error) => write!(f, "io error: {error}"),
-            Self::Json(error) => write!(f, "json error: {error}"),
-            Self::Api {
-                status,
-                error_type,
-                message,
-                body,
-                url,
-                ..
-            } => {
-                match (error_type, message) {
-                    (Some(error_type), Some(message)) => {
-                        write!(f, "api returned {status} ({error_type}): {message}")?;
-                    }
-                    _ if body.is_empty() => {
-                        write!(f, "api returned {status} (no response body)")?;
-                    }
-                    _ => {
-                        write!(f, "api returned {status}: {body}")?;
-                    }
-                }
-                if let Some(url) = url {
-                    write!(f, "\n  request url: {url}")?;
-                }
-                Ok(())
-            }
-            Self::RetriesExhausted {
-                attempts,
-                last_error,
-            } => write!(f, "api failed after {attempts} attempts: {last_error}"),
-            Self::InvalidSseFrame(message) => write!(f, "invalid sse frame: {message}"),
-            Self::BackoffOverflow {
-                attempt,
-                base_delay,
-            } => write!(
-                f,
-                "retry backoff overflowed on attempt {attempt} with base delay {base_delay:?}"
-            ),
-            Self::ResponsePayloadTooLarge { limit } => {
-                write!(f, "response payload exceeded {limit} byte limit")
-            }
-            Self::StreamApplicationError {
-                error_type,
-                message,
-            } => match error_type {
-                Some(t) => write!(f, "stream error ({t}): {message}"),
-                None => write!(f, "stream error: {message}"),
-            },
-        }
-    }
-}
-
-impl std::error::Error for ApiError {}
-
-impl From<reqwest::Error> for ApiError {
-    fn from(value: reqwest::Error) -> Self {
-        Self::Http(value)
-    }
-}
-
-impl From<std::io::Error> for ApiError {
-    fn from(value: std::io::Error) -> Self {
-        Self::Io(value)
-    }
-}
-
-impl From<serde_json::Error> for ApiError {
-    fn from(value: serde_json::Error) -> Self {
-        Self::Json(value)
-    }
-}
-
-impl From<VarError> for ApiError {
-    fn from(value: VarError) -> Self {
-        Self::InvalidApiKeyEnv(value)
     }
 }
