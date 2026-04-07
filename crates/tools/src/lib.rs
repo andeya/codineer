@@ -59,6 +59,14 @@ use crate::types::{
 };
 
 pub fn execute_tool(name: &str, input: &Value) -> Result<String, String> {
+    // Try trait-based dispatch first (migrated tools)
+    if let Some(tool) = builtin::find_builtin(name) {
+        return tool
+            .dispatch(input)
+            .map(|o| o.content)
+            .map_err(|e| e.to_string());
+    }
+    // Fallback: legacy match (tools not yet migrated to BuiltinTool trait)
     match name {
         "bash" => from_value::<BashCommandInput>(input).and_then(run_bash),
         "read_file" => from_value::<ReadFileInput>(input).and_then(run_read_file),
@@ -73,12 +81,8 @@ pub fn execute_tool(name: &str, input: &Value) -> Result<String, String> {
         "Agent" => from_value::<AgentInput>(input).and_then(run_agent),
         "ToolSearch" => from_value::<ToolSearchInput>(input).and_then(run_tool_search),
         "NotebookEdit" => from_value::<NotebookEditInput>(input).and_then(run_notebook_edit),
-        "Sleep" => from_value::<SleepInput>(input).and_then(run_sleep),
         "SendUserMessage" | "Brief" => from_value::<BriefInput>(input).and_then(run_brief),
         "Config" => from_value::<ConfigInput>(input).and_then(run_config),
-        "StructuredOutput" => {
-            from_value::<StructuredOutputInput>(input).and_then(run_structured_output)
-        }
         "REPL" => from_value::<ReplInput>(input).and_then(run_repl),
         "PowerShell" => from_value::<PowerShellInput>(input).and_then(run_powershell),
         "MultiEdit" => from_value::<MultiEditInput>(input).and_then(run_multi_edit),
@@ -186,20 +190,12 @@ fn run_notebook_edit(input: NotebookEditInput) -> Result<String, String> {
     to_pretty_json(crate::notebook::execute_notebook_edit(input)?)
 }
 
-fn run_sleep(input: SleepInput) -> Result<String, String> {
-    to_pretty_json(execute_sleep(input))
-}
-
 fn run_brief(input: BriefInput) -> Result<String, String> {
     to_pretty_json(execute_brief(input)?)
 }
 
 fn run_config(input: ConfigInput) -> Result<String, String> {
     to_pretty_json(crate::config_tool::execute_config(input)?)
-}
-
-fn run_structured_output(input: StructuredOutputInput) -> Result<String, String> {
-    to_pretty_json(execute_structured_output(input))
 }
 
 fn run_repl(input: ReplInput) -> Result<String, String> {
