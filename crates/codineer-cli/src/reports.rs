@@ -8,6 +8,7 @@ use std::process::Command;
 
 use runtime::RemoteSessionContext;
 
+use crate::error::CliResult;
 use crate::style::Palette;
 use crate::workspace::{self, parse_git_status_metadata};
 use crate::{current_date, BUILD_TARGET, GIT_SHA, VERSION};
@@ -212,9 +213,7 @@ pub(crate) fn format_compact_report(
     }
 }
 
-pub(crate) fn status_context(
-    session_path: Option<&Path>,
-) -> Result<StatusContext, Box<dyn std::error::Error>> {
+pub(crate) fn status_context(session_path: Option<&Path>) -> CliResult<StatusContext> {
     let cwd = env::current_dir()?;
     let loader = ConfigLoader::default_for(&cwd);
     let discovered_config_files = loader.discover().len();
@@ -318,9 +317,7 @@ pub(crate) fn format_status_report(
     )
 }
 
-pub(crate) fn render_config_report(
-    section: Option<&str>,
-) -> Result<String, Box<dyn std::error::Error>> {
+pub(crate) fn render_config_report(section: Option<&str>) -> CliResult<String> {
     let p = Palette::for_stdout();
     let cwd = env::current_dir()?;
     let loader = ConfigLoader::default_for(&cwd);
@@ -402,7 +399,7 @@ pub(crate) fn render_config_report(
     ))
 }
 
-pub(crate) fn render_memory_report() -> Result<String, Box<dyn std::error::Error>> {
+pub(crate) fn render_memory_report() -> CliResult<String> {
     let p = Palette::for_stdout();
     let cwd = env::current_dir()?;
     let date = current_date();
@@ -453,7 +450,7 @@ pub(crate) fn normalize_permission_mode(mode: &str) -> Option<&'static str> {
     }
 }
 
-pub(crate) fn render_diff_report() -> Result<String, Box<dyn std::error::Error>> {
+pub(crate) fn render_diff_report() -> CliResult<String> {
     let p = Palette::for_stdout();
     let output = std::process::Command::new("git")
         .args(["diff", "--", ":(exclude).omx"])
@@ -473,7 +470,7 @@ pub(crate) fn render_diff_report() -> Result<String, Box<dyn std::error::Error>>
     Ok(format!("{title}\n\n{}", diff.trim_end()))
 }
 
-pub(crate) fn render_teleport_report(target: &str) -> Result<String, Box<dyn std::error::Error>> {
+pub(crate) fn render_teleport_report(target: &str) -> CliResult<String> {
     let cwd = env::current_dir()?;
 
     if !crate::workspace::command_exists("rg") {
@@ -523,9 +520,7 @@ pub(crate) fn render_teleport_report(target: &str) -> Result<String, Box<dyn std
     Ok(lines.join("\n"))
 }
 
-pub(crate) fn render_last_tool_debug_report(
-    session: &Session,
-) -> Result<String, Box<dyn std::error::Error>> {
+pub(crate) fn render_last_tool_debug_report(session: &Session) -> CliResult<String> {
     let last_tool_use = session
         .messages
         .iter()
@@ -674,7 +669,7 @@ pub(crate) fn default_export_filename(session: &Session) -> String {
 pub(crate) fn resolve_export_path(
     requested_path: Option<&str>,
     session: &Session,
-) -> Result<PathBuf, Box<dyn std::error::Error>> {
+) -> CliResult<PathBuf> {
     let cwd = env::current_dir()?;
     let file_name =
         requested_path.map_or_else(|| default_export_filename(session), ToOwned::to_owned);

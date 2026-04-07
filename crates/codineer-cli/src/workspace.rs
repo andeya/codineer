@@ -5,6 +5,8 @@ use std::process::Command;
 
 use runtime::{ContentBlock, MessageRole, Session};
 
+use crate::error::CliResult;
+
 pub(crate) fn parse_git_status_metadata(status: Option<&str>) -> (Option<PathBuf>, Option<String>) {
     let Some(status) = status else {
         return (None, None);
@@ -23,7 +25,7 @@ pub(crate) fn parse_git_status_metadata(status: Option<&str>) -> (Option<PathBuf
     (project_root, branch)
 }
 
-pub(crate) fn find_git_root() -> Result<PathBuf, Box<dyn std::error::Error>> {
+pub(crate) fn find_git_root() -> CliResult<PathBuf> {
     let output = std::process::Command::new("git")
         .args(["rev-parse", "--show-toplevel"])
         .current_dir(env::current_dir()?)
@@ -38,7 +40,7 @@ pub(crate) fn find_git_root() -> Result<PathBuf, Box<dyn std::error::Error>> {
     Ok(PathBuf::from(path))
 }
 
-pub(crate) fn git_output(args: &[&str]) -> Result<String, Box<dyn std::error::Error>> {
+pub(crate) fn git_output(args: &[&str]) -> CliResult<String> {
     let output = Command::new("git")
         .args(args)
         .current_dir(env::current_dir()?)
@@ -50,7 +52,7 @@ pub(crate) fn git_output(args: &[&str]) -> Result<String, Box<dyn std::error::Er
     Ok(String::from_utf8(output.stdout)?)
 }
 
-pub(crate) fn git_status_ok(args: &[&str]) -> Result<(), Box<dyn std::error::Error>> {
+pub(crate) fn git_status_ok(args: &[&str]) -> CliResult<()> {
     let output = Command::new("git")
         .args(args)
         .current_dir(env::current_dir()?)
@@ -72,10 +74,7 @@ pub(crate) fn command_exists(name: &str) -> bool {
         .is_ok_and(|status| status.success())
 }
 
-pub(crate) fn write_temp_text_file(
-    filename: &str,
-    contents: &str,
-) -> Result<PathBuf, Box<dyn std::error::Error>> {
+pub(crate) fn write_temp_text_file(filename: &str, contents: &str) -> CliResult<PathBuf> {
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()

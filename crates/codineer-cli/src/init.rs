@@ -1,6 +1,8 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use crate::error::CliResult;
+
 /// Content for `.codineer/.gitignore`.
 /// Lines starting with `!` are negated (i.e. explicitly tracked).
 const CODINEER_GITIGNORE: &str = "\
@@ -99,7 +101,7 @@ impl RepoDetection {
     }
 }
 
-pub(crate) fn initialize_repo(cwd: &Path) -> Result<InitReport, Box<dyn std::error::Error>> {
+pub(crate) fn initialize_repo(cwd: &Path) -> CliResult<InitReport> {
     let mut artifacts = ensure_codineer_scaffold(cwd)?;
 
     let content = render_init_codineer_md(cwd);

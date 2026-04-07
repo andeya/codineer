@@ -7,7 +7,7 @@ use crossterm::terminal::{Clear, ClearType};
 use crossterm::{execute, queue};
 use pulldown_cmark::{CodeBlockKind, Event, Options, Parser, Tag, TagEnd};
 use syntect::easy::HighlightLines;
-use syntect::highlighting::{Theme, ThemeSet};
+use syntect::highlighting::{Theme as SyntectTheme, ThemeSet};
 use syntect::parsing::SyntaxSet;
 use syntect::util::{as_24_bit_terminal_escaped, LinesWithEndings};
 
@@ -39,6 +39,29 @@ fn styled_underlined(text: &str, color: Color) -> String {
     }
 }
 
+/// Trait for terminal color themes.
+///
+/// Implement this trait to create custom themes for the terminal renderer.
+#[allow(dead_code)]
+pub trait Theme: std::fmt::Debug {
+    fn heading(&self) -> Color;
+    fn emphasis(&self) -> Color;
+    fn strong(&self) -> Color;
+    fn inline_code(&self) -> Color;
+    fn link(&self) -> Color;
+    fn quote(&self) -> Color;
+    fn table_border(&self) -> Color;
+    fn code_block_border(&self) -> Color;
+    fn spinner_active(&self) -> Color;
+    fn spinner_done(&self) -> Color;
+    fn spinner_failed(&self) -> Color;
+
+    fn name(&self) -> &'static str;
+    fn syntect_theme(&self) -> &'static str {
+        "base16-ocean.dark"
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ColorTheme {
     heading: Color,
@@ -52,10 +75,59 @@ pub struct ColorTheme {
     spinner_active: Color,
     spinner_done: Color,
     spinner_failed: Color,
+    name: &'static str,
+}
+
+impl Theme for ColorTheme {
+    fn heading(&self) -> Color {
+        self.heading
+    }
+    fn emphasis(&self) -> Color {
+        self.emphasis
+    }
+    fn strong(&self) -> Color {
+        self.strong
+    }
+    fn inline_code(&self) -> Color {
+        self.inline_code
+    }
+    fn link(&self) -> Color {
+        self.link
+    }
+    fn quote(&self) -> Color {
+        self.quote
+    }
+    fn table_border(&self) -> Color {
+        self.table_border
+    }
+    fn code_block_border(&self) -> Color {
+        self.code_block_border
+    }
+    fn spinner_active(&self) -> Color {
+        self.spinner_active
+    }
+    fn spinner_done(&self) -> Color {
+        self.spinner_done
+    }
+    fn spinner_failed(&self) -> Color {
+        self.spinner_failed
+    }
+    fn name(&self) -> &'static str {
+        self.name
+    }
 }
 
 impl Default for ColorTheme {
     fn default() -> Self {
+        Self::dark()
+    }
+}
+
+#[allow(dead_code)]
+impl ColorTheme {
+    /// Default dark theme (Ocean Dark).
+    #[must_use]
+    pub fn dark() -> Self {
         Self {
             heading: Color::Cyan,
             emphasis: Color::Magenta,
@@ -68,7 +140,254 @@ impl Default for ColorTheme {
             spinner_active: Color::Blue,
             spinner_done: Color::Green,
             spinner_failed: Color::Red,
+            name: "dark",
         }
+    }
+
+    /// Light theme for light terminal backgrounds.
+    #[must_use]
+    pub fn light() -> Self {
+        Self {
+            heading: Color::DarkBlue,
+            emphasis: Color::DarkMagenta,
+            strong: Color::DarkRed,
+            inline_code: Color::DarkGreen,
+            link: Color::DarkBlue,
+            quote: Color::Grey,
+            table_border: Color::DarkCyan,
+            code_block_border: Color::Grey,
+            spinner_active: Color::DarkBlue,
+            spinner_done: Color::DarkGreen,
+            spinner_failed: Color::DarkRed,
+            name: "light",
+        }
+    }
+
+    /// Solarized-inspired theme.
+    #[must_use]
+    pub fn solarized() -> Self {
+        Self {
+            heading: Color::Rgb {
+                r: 38,
+                g: 139,
+                b: 210,
+            },
+            emphasis: Color::Rgb {
+                r: 211,
+                g: 54,
+                b: 130,
+            },
+            strong: Color::Rgb {
+                r: 203,
+                g: 75,
+                b: 22,
+            },
+            inline_code: Color::Rgb {
+                r: 133,
+                g: 153,
+                b: 0,
+            },
+            link: Color::Rgb {
+                r: 42,
+                g: 161,
+                b: 152,
+            },
+            quote: Color::Rgb {
+                r: 147,
+                g: 161,
+                b: 161,
+            },
+            table_border: Color::Rgb {
+                r: 88,
+                g: 110,
+                b: 117,
+            },
+            code_block_border: Color::Rgb {
+                r: 88,
+                g: 110,
+                b: 117,
+            },
+            spinner_active: Color::Rgb {
+                r: 38,
+                g: 139,
+                b: 210,
+            },
+            spinner_done: Color::Rgb {
+                r: 133,
+                g: 153,
+                b: 0,
+            },
+            spinner_failed: Color::Rgb {
+                r: 220,
+                g: 50,
+                b: 47,
+            },
+            name: "solarized",
+        }
+    }
+
+    /// Monochrome/plain theme (no color role differentiation).
+    #[must_use]
+    pub fn mono() -> Self {
+        Self {
+            heading: Color::White,
+            emphasis: Color::White,
+            strong: Color::White,
+            inline_code: Color::White,
+            link: Color::White,
+            quote: Color::DarkGrey,
+            table_border: Color::DarkGrey,
+            code_block_border: Color::DarkGrey,
+            spinner_active: Color::White,
+            spinner_done: Color::White,
+            spinner_failed: Color::White,
+            name: "mono",
+        }
+    }
+
+    /// Nord-inspired theme.
+    #[must_use]
+    pub fn nord() -> Self {
+        Self {
+            heading: Color::Rgb {
+                r: 136,
+                g: 192,
+                b: 208,
+            },
+            emphasis: Color::Rgb {
+                r: 180,
+                g: 142,
+                b: 173,
+            },
+            strong: Color::Rgb {
+                r: 235,
+                g: 203,
+                b: 139,
+            },
+            inline_code: Color::Rgb {
+                r: 163,
+                g: 190,
+                b: 140,
+            },
+            link: Color::Rgb {
+                r: 129,
+                g: 161,
+                b: 193,
+            },
+            quote: Color::Rgb {
+                r: 76,
+                g: 86,
+                b: 106,
+            },
+            table_border: Color::Rgb {
+                r: 67,
+                g: 76,
+                b: 94,
+            },
+            code_block_border: Color::Rgb {
+                r: 67,
+                g: 76,
+                b: 94,
+            },
+            spinner_active: Color::Rgb {
+                r: 136,
+                g: 192,
+                b: 208,
+            },
+            spinner_done: Color::Rgb {
+                r: 163,
+                g: 190,
+                b: 140,
+            },
+            spinner_failed: Color::Rgb {
+                r: 191,
+                g: 97,
+                b: 106,
+            },
+            name: "nord",
+        }
+    }
+
+    /// Dracula-inspired theme.
+    #[must_use]
+    pub fn dracula() -> Self {
+        Self {
+            heading: Color::Rgb {
+                r: 139,
+                g: 233,
+                b: 253,
+            },
+            emphasis: Color::Rgb {
+                r: 255,
+                g: 121,
+                b: 198,
+            },
+            strong: Color::Rgb {
+                r: 241,
+                g: 250,
+                b: 140,
+            },
+            inline_code: Color::Rgb {
+                r: 80,
+                g: 250,
+                b: 123,
+            },
+            link: Color::Rgb {
+                r: 189,
+                g: 147,
+                b: 249,
+            },
+            quote: Color::Rgb {
+                r: 98,
+                g: 114,
+                b: 164,
+            },
+            table_border: Color::Rgb {
+                r: 68,
+                g: 71,
+                b: 90,
+            },
+            code_block_border: Color::Rgb {
+                r: 68,
+                g: 71,
+                b: 90,
+            },
+            spinner_active: Color::Rgb {
+                r: 139,
+                g: 233,
+                b: 253,
+            },
+            spinner_done: Color::Rgb {
+                r: 80,
+                g: 250,
+                b: 123,
+            },
+            spinner_failed: Color::Rgb {
+                r: 255,
+                g: 85,
+                b: 85,
+            },
+            name: "dracula",
+        }
+    }
+
+    /// Get a named theme.
+    #[must_use]
+    pub fn by_name(name: &str) -> Option<Self> {
+        match name {
+            "dark" | "default" => Some(Self::dark()),
+            "light" => Some(Self::light()),
+            "solarized" => Some(Self::solarized()),
+            "mono" | "monochrome" => Some(Self::mono()),
+            "nord" => Some(Self::nord()),
+            "dracula" => Some(Self::dracula()),
+            _ => None,
+        }
+    }
+
+    /// List all available theme names.
+    pub fn available_themes() -> &'static [&'static str] {
+        &["dark", "light", "solarized", "mono", "nord", "dracula"]
     }
 }
 
@@ -282,7 +601,7 @@ impl RenderState {
 #[derive(Debug)]
 pub struct TerminalRenderer {
     syntax_set: SyntaxSet,
-    syntax_theme: Theme,
+    syntax_theme: SyntectTheme,
     color_theme: ColorTheme,
 }
 

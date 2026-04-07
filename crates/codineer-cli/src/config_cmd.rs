@@ -4,12 +4,14 @@ use std::path::PathBuf;
 
 use runtime::JsonValue;
 
+use crate::error::CliResult;
+
 fn global_settings_path() -> PathBuf {
     // Respect CODINEER_CONFIG_HOME just like the runtime config loader does.
     runtime::default_config_home().join("settings.json")
 }
 
-fn load_global_settings() -> Result<BTreeMap<String, JsonValue>, Box<dyn std::error::Error>> {
+fn load_global_settings() -> CliResult<BTreeMap<String, JsonValue>> {
     let path = global_settings_path();
     if !path.exists() {
         return Ok(BTreeMap::new());
@@ -21,9 +23,7 @@ fn load_global_settings() -> Result<BTreeMap<String, JsonValue>, Box<dyn std::er
     ))
 }
 
-fn save_global_settings(
-    settings: &BTreeMap<String, JsonValue>,
-) -> Result<(), Box<dyn std::error::Error>> {
+fn save_global_settings(settings: &BTreeMap<String, JsonValue>) -> CliResult<()> {
     let path = global_settings_path();
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
@@ -38,7 +38,7 @@ fn save_global_settings(
 /// defaulting to `~/.codineer/settings.json`).
 ///
 /// Supports dotted keys: `credentials.defaultSource` → `{ "credentials": { "defaultSource": ... } }`
-pub fn run_config_set(key: &str, value: &str) -> Result<(), Box<dyn std::error::Error>> {
+pub fn run_config_set(key: &str, value: &str) -> CliResult<()> {
     let mut settings = load_global_settings()?;
     let parsed_value = parse_value(value);
 
@@ -51,7 +51,7 @@ pub fn run_config_set(key: &str, value: &str) -> Result<(), Box<dyn std::error::
     Ok(())
 }
 
-fn load_merged_config() -> Result<runtime::RuntimeConfig, Box<dyn std::error::Error>> {
+fn load_merged_config() -> CliResult<runtime::RuntimeConfig> {
     let cwd = std::env::current_dir()?;
     Ok(runtime::ConfigLoader::default_for(&cwd).load()?)
 }
@@ -64,7 +64,7 @@ fn print_scalar(value: &JsonValue) {
 }
 
 /// Get a config value. If no key, show the merged config.
-pub fn run_config_get(key: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
+pub fn run_config_get(key: Option<&str>) -> CliResult<()> {
     let config = load_merged_config()?;
 
     match key {
@@ -78,7 +78,7 @@ pub fn run_config_get(key: Option<&str>) -> Result<(), Box<dyn std::error::Error
 }
 
 /// List all settings.
-pub fn run_config_list() -> Result<(), Box<dyn std::error::Error>> {
+pub fn run_config_list() -> CliResult<()> {
     let config = load_merged_config()?;
 
     println!("Configuration (merged from all sources):");

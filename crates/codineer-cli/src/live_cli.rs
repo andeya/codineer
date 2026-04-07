@@ -3,6 +3,7 @@ use std::fs;
 use std::process::Command;
 use std::sync::Arc;
 
+use crate::error::CliResult;
 use crate::input;
 use crate::models_cmd;
 use commands::{
@@ -14,6 +15,7 @@ use runtime::{
     CompactionConfig, ConfigLoader, ConversationRuntime, LspContextEnrichment, LspManager,
     PermissionMode, Session,
 };
+
 use serde_json::json;
 
 use crate::cli::{
@@ -31,7 +33,8 @@ use crate::reports::{
     StatusUsage,
 };
 use crate::runtime_client::{
-    build_runtime, CliPermissionPrompter, CliToolExecutor, DefaultRuntimeClient, RuntimeParams,
+    build_runtime, CliObserver, CliPermissionPrompter, CliToolExecutor, DefaultRuntimeClient,
+    RuntimeParams,
 };
 use crate::session_store::{
     create_managed_session_handle, render_session_list, resolve_session_reference, SessionHandle,
@@ -46,13 +49,14 @@ use crate::{
     build_plugin_manager, build_system_prompt, build_system_prompt_with_lsp, run_init,
     terminal_width::start_resize_monitor,
 };
+
 pub(crate) struct LiveCli {
     model: String,
     model_aliases: std::collections::BTreeMap<String, String>,
     allowed_tools: Option<AllowedToolSet>,
     permission_mode: PermissionMode,
-    system_prompt: Vec<String>,
-    runtime: ConversationRuntime<DefaultRuntimeClient, CliToolExecutor>,
+    system_prompt: Vec<api::SystemBlock>,
+    runtime: ConversationRuntime<DefaultRuntimeClient, CliToolExecutor, CliObserver>,
     session: SessionHandle,
     mcp_manager: SharedMcpManager,
     lsp_manager: Option<LspManager>,
@@ -78,7 +82,7 @@ impl LiveCli {
         enable_tools: bool,
         allowed_tools: Option<AllowedToolSet>,
         permission_mode: PermissionMode,
-    ) -> Result<Self, Box<dyn std::error::Error>> {
+    ) -> CliResult<Self> {
         let system_prompt = build_system_prompt()?;
         let session = create_managed_session_handle()?;
         let mcp_manager = create_mcp_manager();
@@ -160,26 +164,39 @@ impl LiveCli {
         }
     }
 
+    /// Returns `true` if the runtime switched to a different model (e.g. via fallback).
+    pub(crate) fn sync_model_from_runtime(&mut self) -> bool {
+        let active = self.runtime.active_model();
+        if active != self.model {
+            self.model = active.to_owned();
+            true
+        } else {
+            false
+        }
+    }
+
     pub(crate) fn run_turn_with_output(
         &mut self,
         input: &str,
         output_format: CliOutputFormat,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    ) -> CliResult<()> {
         match output_format {
             CliOutputFormat::Text => {
                 self.run_turn(input);
                 Ok(())
             }
             CliOutputFormat::Json => self.run_prompt_json(input),
+            CliOutputFormat::StreamJson => self.run_prompt_stream_json(input),
         }
     }
 
-    fn run_prompt_json(&mut self, input: &str) -> Result<(), Box<dyn std::error::Error>> {
+    fn run_prompt_json(&mut self, input: &str) -> CliResult<()> {
         let session = self.runtime.session().clone();
         let mut runtime = build_runtime(self.runtime_params(session, false))?.runtime;
         let mut permission_prompter = CliPermissionPrompter::new(self.permission_mode);
         let summary = runtime.run_turn(input, Some(&mut permission_prompter))?;
         self.runtime = runtime;
+        self.sync_model_from_runtime();
         self.persist_session()?;
         println!(
             "{}",
@@ -200,10 +217,55 @@ impl LiveCli {
         Ok(())
     }
 
-    fn handle_repl_command(
-        &mut self,
-        command: SlashCommand,
-    ) -> Result<bool, Box<dyn std::error::Error>> {
+    fn run_prompt_stream_json(&mut self, input: &str) -> CliResult<()> {
+        let session = self.runtime.session().clone();
+        let mut runtime = build_runtime(self.runtime_params(session, false))?.runtime;
+        let mut permission_prompter = CliPermissionPrompter::new(self.permission_mode);
+
+        emit_json_event("turn_start", json!({"prompt": input}));
+
+        let summary = runtime.run_turn(input, Some(&mut permission_prompter))?;
+        self.runtime = runtime;
+        self.sync_model_from_runtime();
+        self.persist_session()?;
+
+        for msg in &summary.assistant_messages {
+            emit_json_event(
+                "assistant_message",
+                json!({
+                    "role": format!("{:?}", msg.role),
+                    "blocks": msg.blocks.iter().map(|b| json!(format!("{b:?}"))).collect::<Vec<_>>(),
+                }),
+            );
+        }
+        for result in &summary.tool_results {
+            emit_json_event(
+                "tool_result",
+                json!({
+                    "role": format!("{:?}", result.role),
+                    "blocks": result.blocks.iter().map(|b| json!(format!("{b:?}"))).collect::<Vec<_>>(),
+                }),
+            );
+        }
+
+        emit_json_event(
+            "turn_end",
+            json!({
+                "message": final_assistant_text(&summary),
+                "model": self.model,
+                "iterations": summary.iterations,
+                "usage": {
+                    "input_tokens": summary.usage.input_tokens,
+                    "output_tokens": summary.usage.output_tokens,
+                    "cache_creation_input_tokens": summary.usage.cache_creation_input_tokens,
+                    "cache_read_input_tokens": summary.usage.cache_read_input_tokens,
+                }
+            }),
+        );
+        Ok(())
+    }
+
+    fn handle_repl_command(&mut self, command: SlashCommand) -> CliResult<bool> {
         Ok(match command {
             SlashCommand::Help => {
                 println!("{}", render_repl_help());
@@ -300,11 +362,7 @@ impl LiveCli {
                 self.handle_plugins_command(action.as_deref(), target.as_deref())?
             }
             SlashCommand::Branch { action, target } => {
-                let cwd = env::current_dir()?;
-                println!(
-                    "{}",
-                    handle_branch_slash_command(action.as_deref(), target.as_deref(), &cwd)?
-                );
+                self.print_branch_slash(action.as_deref(), target.as_deref())?;
                 false
             }
             SlashCommand::Worktree {
@@ -312,21 +370,16 @@ impl LiveCli {
                 path,
                 branch,
             } => {
-                let cwd = env::current_dir()?;
-                println!(
-                    "{}",
-                    handle_worktree_slash_command(
-                        action.as_deref(),
-                        path.as_deref(),
-                        branch.as_deref(),
-                        &cwd,
-                    )?
-                );
+                self.print_worktree_slash(action.as_deref(), path.as_deref(), branch.as_deref())?;
                 false
             }
             SlashCommand::CommitPushPr { context } => {
                 self.run_commit_push_pr(context.as_deref())?;
                 true
+            }
+            SlashCommand::Doctor => {
+                self.run_doctor();
+                false
             }
             SlashCommand::Unknown(name) => {
                 eprintln!("{}", render_unknown_repl_command(&name));
@@ -335,7 +388,27 @@ impl LiveCli {
         })
     }
 
-    fn persist_session(&self) -> Result<(), Box<dyn std::error::Error>> {
+    fn print_branch_slash(&self, action: Option<&str>, target: Option<&str>) -> CliResult<()> {
+        let cwd = env::current_dir()?;
+        println!("{}", handle_branch_slash_command(action, target, &cwd)?);
+        Ok(())
+    }
+
+    fn print_worktree_slash(
+        &self,
+        action: Option<&str>,
+        path: Option<&str>,
+        branch: Option<&str>,
+    ) -> CliResult<()> {
+        let cwd = env::current_dir()?;
+        println!(
+            "{}",
+            handle_worktree_slash_command(action, path, branch, &cwd)?
+        );
+        Ok(())
+    }
+
+    fn persist_session(&self) -> CliResult<()> {
         self.runtime.session().save_to_path(&self.session.path)?;
         Ok(())
     }
@@ -393,7 +466,7 @@ impl LiveCli {
         );
     }
 
-    fn set_model(&mut self, model: Option<String>) -> Result<bool, Box<dyn std::error::Error>> {
+    fn set_model(&mut self, model: Option<String>) -> CliResult<bool> {
         let Some(model) = model else {
             println!(
                 "{}",
@@ -437,10 +510,7 @@ impl LiveCli {
         Ok(true)
     }
 
-    fn set_permissions(
-        &mut self,
-        mode: Option<String>,
-    ) -> Result<bool, Box<dyn std::error::Error>> {
+    fn set_permissions(&mut self, mode: Option<String>) -> CliResult<bool> {
         let Some(mode) = mode else {
             println!(
                 "{}",
@@ -471,7 +541,7 @@ impl LiveCli {
         Ok(true)
     }
 
-    fn clear_session(&mut self, confirm: bool) -> Result<bool, Box<dyn std::error::Error>> {
+    fn clear_session(&mut self, confirm: bool) -> CliResult<bool> {
         if !confirm {
             println!(
                 "clear: confirmation required; run /clear --confirm to start a fresh session."
@@ -495,10 +565,7 @@ impl LiveCli {
         println!("{}", format_cost_report(cumulative));
     }
 
-    fn activate_session(
-        &mut self,
-        handle: SessionHandle,
-    ) -> Result<usize, Box<dyn std::error::Error>> {
+    fn activate_session(&mut self, handle: SessionHandle) -> CliResult<usize> {
         let session = Session::load_from_path(&handle.path)?;
         let count = session.messages.len();
         self.runtime = build_runtime(self.runtime_params(session, true))?.runtime;
@@ -506,10 +573,7 @@ impl LiveCli {
         Ok(count)
     }
 
-    fn resume_session(
-        &mut self,
-        session_path: Option<String>,
-    ) -> Result<bool, Box<dyn std::error::Error>> {
+    fn resume_session(&mut self, session_path: Option<String>) -> CliResult<bool> {
         let Some(session_ref) = session_path else {
             println!("Usage: /resume <session-path>");
             return Ok(false);
@@ -526,29 +590,29 @@ impl LiveCli {
         Ok(true)
     }
 
-    fn print_config(section: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
+    fn print_config(section: Option<&str>) -> CliResult<()> {
         println!("{}", render_config_report(section)?);
         Ok(())
     }
 
-    fn print_memory() -> Result<(), Box<dyn std::error::Error>> {
+    fn print_memory() -> CliResult<()> {
         println!("{}", render_memory_report()?);
         Ok(())
     }
 
-    pub(crate) fn print_agents(args: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
+    pub(crate) fn print_agents(args: Option<&str>) -> CliResult<()> {
         let cwd = env::current_dir()?;
         println!("{}", handle_agents_slash_command(args, &cwd)?);
         Ok(())
     }
 
-    pub(crate) fn print_skills(args: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
+    pub(crate) fn print_skills(args: Option<&str>) -> CliResult<()> {
         let cwd = env::current_dir()?;
         println!("{}", handle_skills_slash_command(args, &cwd)?);
         Ok(())
     }
 
-    fn print_diff() -> Result<(), Box<dyn std::error::Error>> {
+    fn print_diff() -> CliResult<()> {
         println!("{}", render_diff_report()?);
         Ok(())
     }
@@ -557,10 +621,98 @@ impl LiveCli {
         println!("{}", render_version_report());
     }
 
-    fn export_session(
-        &self,
-        requested_path: Option<&str>,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    fn run_doctor(&self) {
+        let p = crate::style::Palette::for_stdout();
+        println!("{}", p.title("Codineer Doctor"));
+        println!();
+
+        let checks: Vec<(&str, bool, String)> = vec![
+            (
+                "Rust toolchain",
+                std::process::Command::new("rustc")
+                    .arg("--version")
+                    .output()
+                    .is_ok(),
+                std::process::Command::new("rustc")
+                    .arg("--version")
+                    .output()
+                    .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+                    .unwrap_or_else(|_| "not found".to_string()),
+            ),
+            (
+                "Git",
+                std::process::Command::new("git")
+                    .arg("--version")
+                    .output()
+                    .is_ok(),
+                std::process::Command::new("git")
+                    .arg("--version")
+                    .output()
+                    .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+                    .unwrap_or_else(|_| "not found".to_string()),
+            ),
+            (
+                "ANTHROPIC_API_KEY",
+                std::env::var("ANTHROPIC_API_KEY").is_ok(),
+                if std::env::var("ANTHROPIC_API_KEY").is_ok() {
+                    "set".to_string()
+                } else {
+                    "not set".to_string()
+                },
+            ),
+            (
+                "Terminal color",
+                crate::style::color_for_stdout(),
+                if crate::style::color_for_stdout() {
+                    "enabled".to_string()
+                } else {
+                    "disabled (NO_COLOR or non-TTY)".to_string()
+                },
+            ),
+            (
+                "Working directory",
+                std::env::current_dir().is_ok(),
+                std::env::current_dir()
+                    .map(|p| p.display().to_string())
+                    .unwrap_or_else(|_| "unavailable".to_string()),
+            ),
+            (
+                "Config file",
+                {
+                    let cwd = std::env::current_dir().unwrap_or_default();
+                    cwd.join(".codineer").join("settings.json").exists()
+                        || cwd.join("CODINEER.md").exists()
+                },
+                "project config detected".to_string(),
+            ),
+        ];
+
+        for (name, ok, detail) in &checks {
+            let icon = if *ok {
+                format!("{}✓{}", p.bold_green, p.r)
+            } else {
+                format!("{}✗{}", p.bold_red, p.r)
+            };
+            println!("  {icon} {name}: {}", p.dim_text(detail));
+        }
+        println!();
+
+        let passed = checks.iter().filter(|(_, ok, _)| *ok).count();
+        let total = checks.len();
+        println!(
+            "  {passed}/{total} checks passed{}",
+            if passed == total {
+                format!(" {}", p.dim_text("— environment looks good!"))
+            } else {
+                format!(
+                    " {}",
+                    p.dim_text("— some checks failed, see above for details")
+                )
+            }
+        );
+    }
+
+    fn export_session(&self, requested_path: Option<&str>) -> CliResult<()> {
         let export_path = resolve_export_path(requested_path, self.runtime.session())?;
         fs::write(&export_path, render_export_text(self.runtime.session()))?;
         println!(
@@ -575,7 +727,7 @@ impl LiveCli {
         &mut self,
         action: Option<&str>,
         target: Option<&str>,
-    ) -> Result<bool, Box<dyn std::error::Error>> {
+    ) -> CliResult<bool> {
         match action {
             None | Some("list") => {
                 println!("{}", render_session_list(&self.session.id)?);
@@ -606,7 +758,7 @@ impl LiveCli {
         &mut self,
         action: Option<&str>,
         target: Option<&str>,
-    ) -> Result<bool, Box<dyn std::error::Error>> {
+    ) -> CliResult<bool> {
         let cwd = env::current_dir()?;
         let loader = ConfigLoader::default_for(&cwd);
         let runtime_config = loader.load()?;
@@ -619,13 +771,13 @@ impl LiveCli {
         Ok(false)
     }
 
-    fn reload_runtime_features(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+    fn reload_runtime_features(&mut self) -> CliResult<()> {
         let session = self.runtime.session().clone();
         self.runtime = build_runtime(self.runtime_params(session, true))?.runtime;
         self.persist_session()
     }
 
-    fn compact(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+    fn compact(&mut self) -> CliResult<()> {
         let result = self.runtime.compact(CompactionConfig::default());
         let removed = result.removed_message_count;
         let kept = result.compacted_session.messages.len();
@@ -641,7 +793,7 @@ impl LiveCli {
         prompt: &str,
         enable_tools: bool,
         progress: Option<InternalPromptProgressReporter>,
-    ) -> Result<String, Box<dyn std::error::Error>> {
+    ) -> CliResult<String> {
         let session = self.runtime.session().clone();
         let mut params = self.runtime_params(session, false);
         params.enable_tools = enable_tools;
@@ -652,15 +804,11 @@ impl LiveCli {
         Ok(final_assistant_text(&summary).trim().to_string())
     }
 
-    fn run_internal_prompt_text(
-        &self,
-        prompt: &str,
-        enable_tools: bool,
-    ) -> Result<String, Box<dyn std::error::Error>> {
+    fn run_internal_prompt_text(&self, prompt: &str, enable_tools: bool) -> CliResult<String> {
         self.run_internal_prompt_text_with_progress(prompt, enable_tools, None)
     }
 
-    fn run_bughunter(&self, scope: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
+    fn run_bughunter(&self, scope: Option<&str>) -> CliResult<()> {
         let scope = scope.unwrap_or("the current repository");
         let prompt = format!(
             "You are /bughunter. Inspect {scope} and identify the most likely bugs or correctness issues. Prioritize concrete findings with file paths, severity, and suggested fixes. Use tools if needed."
@@ -669,7 +817,7 @@ impl LiveCli {
         Ok(())
     }
 
-    fn run_ultraplan(&self, task: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
+    fn run_ultraplan(&self, task: Option<&str>) -> CliResult<()> {
         let task = task.unwrap_or("the current repo work");
         let prompt = format!(
             "You are /ultraplan. Produce a deep multi-step execution plan for {task}. Include goals, risks, implementation sequence, verification steps, and rollback considerations. Use tools if needed."
@@ -689,7 +837,7 @@ impl LiveCli {
         }
     }
 
-    fn run_teleport(target: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
+    fn run_teleport(target: Option<&str>) -> CliResult<()> {
         let Some(target) = target.map(str::trim).filter(|value| !value.is_empty()) else {
             println!("Usage: /teleport <symbol-or-path>");
             return Ok(());
@@ -699,12 +847,12 @@ impl LiveCli {
         Ok(())
     }
 
-    fn run_debug_tool_call(&self) -> Result<(), Box<dyn std::error::Error>> {
+    fn run_debug_tool_call(&self) -> CliResult<()> {
         println!("{}", render_last_tool_debug_report(self.runtime.session())?);
         Ok(())
     }
 
-    fn run_commit(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+    fn run_commit(&mut self) -> CliResult<()> {
         let status = git_output(&["status", "--short"])?;
         if status.trim().is_empty() {
             println!("Commit\n  Result           skipped\n  Reason           no workspace changes");
@@ -742,7 +890,7 @@ impl LiveCli {
         Ok(())
     }
 
-    fn run_pr(&self, context: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
+    fn run_pr(&self, context: Option<&str>) -> CliResult<()> {
         let staged = git_output(&["diff", "--stat"])?;
         let prompt = format!(
             "Generate a pull request title and body from this conversation and diff summary. Output plain text in this format exactly:\nTITLE: <title>\nBODY:\n<body markdown>\n\nContext hint: {}\n\nDiff summary:\n{}",
@@ -774,7 +922,7 @@ impl LiveCli {
         Ok(())
     }
 
-    fn run_commit_push_pr(&self, context: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
+    fn run_commit_push_pr(&self, context: Option<&str>) -> CliResult<()> {
         let diff = git_output(&["diff", "--stat"])?;
         let prompt = format!(
             "Generate a commit message, PR title, and PR body from this conversation and diff. Output plain text in this format exactly:\nCOMMIT: <commit message>\nTITLE: <pr title>\nBODY:\n<pr body markdown>\nBRANCH_HINT: <short branch name hint>\n\nContext hint: {}\n\nDiff summary:\n{}\n\nRecent conversation:\n{}",
@@ -798,7 +946,7 @@ impl LiveCli {
         Ok(())
     }
 
-    fn run_issue(&self, context: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
+    fn run_issue(&self, context: Option<&str>) -> CliResult<()> {
         let prompt = format!(
             "Generate a GitHub issue title and body from this conversation. Output plain text in this format exactly:\nTITLE: <title>\nBODY:\n<body markdown>\n\nContext hint: {}\n\nConversation context:\n{}",
             context.unwrap_or("none"),
@@ -835,7 +983,7 @@ pub(crate) fn run_repl(
     allowed_tools: Option<AllowedToolSet>,
     permission_mode: PermissionMode,
     resume_path: Option<std::path::PathBuf>,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> CliResult<()> {
     start_resize_monitor();
     let mut cli = LiveCli::new(model, true, allowed_tools, permission_mode)?;
 
@@ -947,6 +1095,10 @@ pub(crate) fn run_repl(
                             "Run this exact shell command and show me the output: `{shell_cmd}`"
                         );
                         cli.run_turn(&prompt);
+                        if cli.sync_model_from_runtime() {
+                            *b_model.borrow_mut() = cli.model.clone();
+                            editor.set_prefix(make_prefix());
+                        }
                     }
                     continue;
                 }
@@ -981,6 +1133,10 @@ pub(crate) fn run_repl(
 
                 let enriched = process_at_mentioned_files(input, extra_images);
                 cli.run_turn_blocks(enriched.blocks);
+                if cli.sync_model_from_runtime() {
+                    *b_model.borrow_mut() = cli.model.clone();
+                    editor.set_prefix(make_prefix());
+                }
             }
             input::ReadOutcome::Exit => {
                 let _ = cli.persist_session();
@@ -1008,6 +1164,14 @@ fn print_goodbye(session_path: &std::path::Path) {
         p.r,
         resume.display()
     );
+}
+
+fn emit_json_event(event_type: &str, data: serde_json::Value) {
+    let event = json!({
+        "type": event_type,
+        "data": data,
+    });
+    println!("{}", event);
 }
 
 use crate::turn_helpers::{

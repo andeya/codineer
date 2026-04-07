@@ -2,6 +2,8 @@ use std::path::Path;
 
 use base64::Engine;
 
+use crate::error::CliResult;
+
 const MAX_IMAGE_BYTES: u64 = 20 * 1024 * 1024;
 
 pub(crate) fn is_image_path(path: &Path) -> bool {
@@ -52,9 +54,7 @@ pub(crate) fn media_type_from_extension(path: &Path) -> Option<&'static str> {
 }
 
 /// Read an image file and return a `ContentBlock::Image`.
-pub(crate) fn read_image_as_block(
-    path: &Path,
-) -> Result<runtime::ContentBlock, Box<dyn std::error::Error>> {
+pub(crate) fn read_image_as_block(path: &Path) -> CliResult<runtime::ContentBlock> {
     let file_len = std::fs::metadata(path)?.len();
     if file_len > MAX_IMAGE_BYTES {
         return Err(size_error_msg(file_len).into());
@@ -70,7 +70,7 @@ pub(crate) fn read_image_as_block(
 pub(crate) fn bytes_to_image_block(
     bytes: &[u8],
     fallback_media_type: Option<&str>,
-) -> Result<runtime::ContentBlock, Box<dyn std::error::Error>> {
+) -> CliResult<runtime::ContentBlock> {
     let len = bytes.len() as u64;
     if len > MAX_IMAGE_BYTES {
         return Err(size_error_msg(len).into());

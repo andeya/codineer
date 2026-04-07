@@ -1,12 +1,13 @@
 use std::env;
 use std::path::{Path, PathBuf};
 
+use crate::error::CliResult;
 use plugins::{PluginManager, PluginManagerConfig};
 use runtime::ConfigLoader;
 use tools::GlobalToolRegistry;
 
-pub(crate) fn build_runtime_plugin_state(
-) -> Result<(runtime::RuntimeConfig, GlobalToolRegistry), Box<dyn std::error::Error>> {
+pub(crate) fn build_runtime_plugin_state() -> CliResult<(runtime::RuntimeConfig, GlobalToolRegistry)>
+{
     crate::init::ensure_home_codineer_dirs();
     let cwd = env::current_dir()?;
     let loader = ConfigLoader::default_for(&cwd);
@@ -53,13 +54,13 @@ fn resolve_plugin_path(cwd: &Path, config_home: &Path, value: &str) -> PathBuf {
     }
 }
 
-pub(crate) fn build_system_prompt() -> Result<Vec<String>, Box<dyn std::error::Error>> {
+pub(crate) fn build_system_prompt() -> CliResult<Vec<api::SystemBlock>> {
     build_system_prompt_with_lsp(None)
 }
 
 pub(crate) fn build_system_prompt_with_lsp(
     lsp_context: Option<&runtime::LspContextEnrichment>,
-) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+) -> CliResult<Vec<api::SystemBlock>> {
     Ok(runtime::load_system_prompt_with_lsp(
         env::current_dir()?,
         super::current_date(),

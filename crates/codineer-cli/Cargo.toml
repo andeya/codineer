@@ -32,6 +32,7 @@ rustyline = "15"
 runtime.workspace = true
 plugins.workspace = true
 serde_json.workspace = true
+thiserror.workspace = true
 syntect = "5"
 tokio = { version = "1", features = ["rt-multi-thread", "time"] }
 tools.workspace = true

@@ -4,6 +4,7 @@ use api::{OpenAiCompatClient, ProviderClient};
 use runtime::CustomProviderConfig;
 
 use crate::auth::{build_credential_chain, no_credentials_error, provider_hint};
+use crate::error::{CliError, CliResult};
 
 #[derive(Debug)]
 pub(crate) struct ResolvedModel {
@@ -27,7 +28,7 @@ impl<'a> ModelResolver<'a> {
         }
     }
 
-    pub fn resolve(&self, input: &str) -> Result<ResolvedModel, Box<dyn std::error::Error>> {
+    pub fn resolve(&self, input: &str) -> CliResult<ResolvedModel> {
         let expanded = self.expand_shorthand(input)?;
         let canonical = api::resolve_model_alias(&expanded, self.config.model_aliases());
         match self.build_client(&canonical) {
@@ -39,8 +40,8 @@ impl<'a> ModelResolver<'a> {
     pub(super) fn try_fallback(
         &self,
         primary_model: &str,
-        primary_err: Box<dyn std::error::Error>,
-    ) -> Result<ResolvedModel, Box<dyn std::error::Error>> {
+        primary_err: CliError,
+    ) -> CliResult<ResolvedModel> {
         let fallbacks = self.config.fallback_models();
         if fallbacks.is_empty() {
             return Err(primary_err);
@@ -59,10 +60,7 @@ impl<'a> ModelResolver<'a> {
         Err(primary_err)
     }
 
-    pub(super) fn expand_shorthand(
-        &self,
-        input: &str,
-    ) -> Result<String, Box<dyn std::error::Error>> {
+    pub(super) fn expand_shorthand(&self, input: &str) -> CliResult<String> {
         match input {
             "auto" => self.auto_detect_model(),
             "ollama" => detect_ollama_model(self.providers)
@@ -76,7 +74,7 @@ impl<'a> ModelResolver<'a> {
         }
     }
 
-    fn auto_detect_model(&self) -> Result<String, Box<dyn std::error::Error>> {
+    fn auto_detect_model(&self) -> CliResult<String> {
         if let Some(builtin) = api::auto_detect_default_model() {
             return Ok(builtin.to_string());
         }
@@ -86,7 +84,7 @@ impl<'a> ModelResolver<'a> {
         Err(no_credentials_error().into())
     }
 
-    fn expand_bare_provider(&self, name: &str) -> Result<String, Box<dyn std::error::Error>> {
+    fn expand_bare_provider(&self, name: &str) -> CliResult<String> {
         let lower = name.to_ascii_lowercase();
         if let Some(config) = self.providers.get(&lower) {
             if let Some(default) = &config.default_model {
@@ -100,18 +98,14 @@ impl<'a> ModelResolver<'a> {
         .into())
     }
 
-    fn build_client(&self, model: &str) -> Result<ResolvedModel, Box<dyn std::error::Error>> {
+    fn build_client(&self, model: &str) -> CliResult<ResolvedModel> {
         if let Some((provider_name, _)) = api::parse_custom_provider_prefix(model) {
             return self.build_custom_client(model, provider_name);
         }
         self.build_builtin_client(model)
     }
 
-    fn build_custom_client(
-        &self,
-        model: &str,
-        provider_name: &str,
-    ) -> Result<ResolvedModel, Box<dyn std::error::Error>> {
+    fn build_custom_client(&self, model: &str, provider_name: &str) -> CliResult<ResolvedModel> {
         let lower = provider_name.to_ascii_lowercase();
 
         let client = if let Some(provider_cfg) = self.providers.get(&lower) {
@@ -144,10 +138,7 @@ impl<'a> ModelResolver<'a> {
         })
     }
 
-    fn build_builtin_client(
-        &self,
-        model: &str,
-    ) -> Result<ResolvedModel, Box<dyn std::error::Error>> {
+    fn build_builtin_client(&self, model: &str) -> CliResult<ResolvedModel> {
         let kind = api::detect_provider_kind(model);
         let chain = build_credential_chain(kind, self.config);
         let credential = chain.resolve().map_err(|err| provider_hint(model, &err))?;
@@ -163,7 +154,7 @@ impl<'a> ModelResolver<'a> {
 pub(crate) fn resolve_custom_api_key(
     provider: &CustomProviderConfig,
     config: &runtime::RuntimeConfig,
-) -> Result<String, Box<dyn std::error::Error>> {
+) -> CliResult<String> {
     if let Some(key) = &provider.api_key {
         if !key.is_empty() {
             return Ok(key.clone());
@@ -183,7 +174,7 @@ pub(crate) fn resolve_custom_api_key(
 pub(crate) fn resolve_preset_api_key(
     preset: &api::BuiltinProviderPreset,
     config: &runtime::RuntimeConfig,
-) -> Result<String, Box<dyn std::error::Error>> {
+) -> CliResult<String> {
     if preset.api_key_env.is_empty() {
         return Ok(String::new());
     }

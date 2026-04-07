@@ -681,6 +681,7 @@ fn resume_supported_command_list_matches_expected_surface() {
             "providers",
             "agents",
             "skills",
+            "doctor",
         ]
     );
 }

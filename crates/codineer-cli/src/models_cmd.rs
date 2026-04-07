@@ -3,14 +3,15 @@ use std::collections::BTreeMap;
 use api::{list_known_models, provider_kind_by_name, ProviderKind, BUILTIN_PROVIDER_PRESETS};
 use runtime::{ConfigLoader, CustomProviderConfig, RuntimeConfig};
 
+use crate::error::CliResult;
 use crate::runtime_client::{resolve_custom_api_key, resolve_preset_api_key};
 
-fn load_config() -> Result<RuntimeConfig, Box<dyn std::error::Error>> {
+fn load_config() -> CliResult<RuntimeConfig> {
     let cwd = std::env::current_dir()?;
     Ok(ConfigLoader::default_for(&cwd).load()?)
 }
 
-pub fn run_models(provider: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
+pub fn run_models(provider: Option<&str>) -> CliResult<()> {
     let config = load_config()?;
 
     let filter = provider.map(|name| {
@@ -41,7 +42,7 @@ pub fn run_models(provider: Option<&str>) -> Result<(), Box<dyn std::error::Erro
     Ok(())
 }
 
-pub fn run_providers() -> Result<(), Box<dyn std::error::Error>> {
+pub fn run_providers() -> CliResult<()> {
     let config = load_config()?;
 
     println!("Built-in providers:");

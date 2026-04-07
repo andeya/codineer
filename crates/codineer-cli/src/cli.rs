@@ -83,6 +83,7 @@ pub(crate) enum CliAction {
 pub(crate) enum CliOutputFormat {
     Text,
     Json,
+    StreamJson,
 }
 
 impl CliOutputFormat {
@@ -90,8 +91,9 @@ impl CliOutputFormat {
         match value {
             "text" => Ok(Self::Text),
             "json" => Ok(Self::Json),
+            "stream-json" => Ok(Self::StreamJson),
             other => Err(format!(
-                "unsupported value for --output-format: {other} (expected text or json)"
+                "unsupported value for --output-format: {other} (expected text, json, or stream-json)"
             )),
         }
     }
@@ -493,6 +495,7 @@ pub(crate) fn discover_mcp_tools(
                 .tool
                 .input_schema
                 .unwrap_or(json!({"type": "object"})),
+            cache_control: None,
         })
         .collect()
 }
@@ -501,7 +504,9 @@ pub(crate) fn create_mcp_manager() -> SharedMcpManager {
     let cwd = env::current_dir().unwrap_or_default();
     let loader = ConfigLoader::default_for(&cwd);
     match loader.load() {
-        Ok(config) => Arc::new(Mutex::new(McpServerManager::from_runtime_config(&config))),
+        Ok(config) => Arc::new(Mutex::new(McpServerManager::from_servers(
+            config.mcp().servers(),
+        ))),
         Err(_) => Arc::new(Mutex::new(McpServerManager::from_servers(
             &std::collections::BTreeMap::new(),
         ))),

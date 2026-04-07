@@ -171,6 +171,7 @@ pub(super) async fn stream_with_client(
     let response = client
         .send_message(&api::MessageRequest {
             stream: false,
+            thinking: None,
             ..message_request.clone()
         })
         .await

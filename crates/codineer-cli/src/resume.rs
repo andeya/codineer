@@ -5,6 +5,7 @@ use commands::{handle_agents_slash_command, handle_skills_slash_command, SlashCo
 use runtime::{compact_session, CompactionConfig, Session, UsageTracker};
 
 use crate::cli::default_permission_mode;
+use crate::error::CliResult;
 use crate::help::render_repl_help;
 use crate::reports::{
     format_compact_report, format_cost_report, format_status_report, render_config_report,
@@ -73,7 +74,7 @@ pub(crate) fn run_resume_command(
     session_path: &Path,
     session: &Session,
     command: &SlashCommand,
-) -> Result<ResumeCommandOutcome, Box<dyn std::error::Error>> {
+) -> CliResult<ResumeCommandOutcome> {
     match command {
         SlashCommand::Help => Ok(ResumeCommandOutcome::keep(session, render_repl_help())),
         SlashCommand::Compact => run_resume_compact(session_path, session),
@@ -119,7 +120,7 @@ pub(crate) fn run_resume_command(
 pub(crate) fn run_resume_compact(
     session_path: &Path,
     session: &Session,
-) -> Result<ResumeCommandOutcome, Box<dyn std::error::Error>> {
+) -> CliResult<ResumeCommandOutcome> {
     let result = compact_session(
         session,
         CompactionConfig {
@@ -141,7 +142,7 @@ pub(crate) fn run_resume_clear(
     session_path: &Path,
     session: &Session,
     confirm: bool,
-) -> Result<ResumeCommandOutcome, Box<dyn std::error::Error>> {
+) -> CliResult<ResumeCommandOutcome> {
     if !confirm {
         return Ok(ResumeCommandOutcome::keep(
             session,
@@ -162,7 +163,7 @@ pub(crate) fn run_resume_clear(
 pub(crate) fn run_resume_status(
     session_path: &Path,
     session: &Session,
-) -> Result<ResumeCommandOutcome, Box<dyn std::error::Error>> {
+) -> CliResult<ResumeCommandOutcome> {
     let tracker = UsageTracker::from_session(session);
     let usage = tracker.cumulative_usage();
     Ok(ResumeCommandOutcome::keep(
@@ -185,7 +186,7 @@ pub(crate) fn run_resume_status(
 pub(crate) fn run_resume_export(
     session: &Session,
     path: Option<&str>,
-) -> Result<ResumeCommandOutcome, Box<dyn std::error::Error>> {
+) -> CliResult<ResumeCommandOutcome> {
     let export_path = resolve_export_path(path, session)?;
     std::fs::write(&export_path, render_export_text(session))?;
     Ok(ResumeCommandOutcome::keep(

@@ -1,5 +1,6 @@
 use super::model::{pick_best_coding_model, resolve_custom_api_key, resolve_preset_api_key};
 use super::*;
+use crate::error::CliError;
 use std::collections::BTreeMap;
 use std::sync::{Mutex, OnceLock};
 
@@ -382,7 +383,7 @@ fn config_with_fallback(
 fn try_fallback_returns_primary_error_when_no_fallbacks() {
     let config = config_with_fallback(empty_providers(), vec![]);
     let resolver = ModelResolver::new(&config);
-    let err: Box<dyn std::error::Error> = "primary failure".into();
+    let err = CliError::Other("primary failure".into());
     let result = resolver.try_fallback("sonnet", err);
     assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("primary failure"));
@@ -395,7 +396,7 @@ fn try_fallback_skips_unavailable_and_returns_primary_error() {
         vec!["unknown-provider/model".to_string()],
     );
     let resolver = ModelResolver::new(&config);
-    let err: Box<dyn std::error::Error> = "primary failure".into();
+    let err = CliError::Other("primary failure".into());
     let result = resolver.try_fallback("sonnet", err);
     assert!(result.is_err());
 }
@@ -409,7 +410,7 @@ fn try_fallback_succeeds_with_available_provider() {
     );
     let config = config_with_fallback(providers, vec!["ollama/qwen3-coder:30b".to_string()]);
     let resolver = ModelResolver::new(&config);
-    let err: Box<dyn std::error::Error> = "primary failure".into();
+    let err = CliError::Other("primary failure".into());
     let result = resolver.try_fallback("sonnet", err);
     assert!(result.is_ok());
     assert_eq!(result.unwrap().model, "ollama/qwen3-coder:30b");
@@ -427,7 +428,7 @@ fn try_fallback_tries_multiple_entries() {
         vec!["unknown/model".to_string(), "ollama/llama3:8b".to_string()],
     );
     let resolver = ModelResolver::new(&config);
-    let err: Box<dyn std::error::Error> = "primary failure".into();
+    let err = CliError::Other("primary failure".into());
     let result = resolver.try_fallback("sonnet", err);
     assert!(result.is_ok());
     assert_eq!(result.unwrap().model, "ollama/llama3:8b");

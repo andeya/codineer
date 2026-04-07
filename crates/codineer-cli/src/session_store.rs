@@ -5,6 +5,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use runtime::Session;
 
+use crate::error::CliResult;
+
 #[derive(Debug, Clone)]
 pub(crate) struct SessionHandle {
     pub(crate) id: String,
@@ -19,7 +21,7 @@ pub(crate) struct ManagedSessionSummary {
     pub(crate) message_count: usize,
 }
 
-pub(crate) fn sessions_dir() -> Result<PathBuf, Box<dyn std::error::Error>> {
+pub(crate) fn sessions_dir() -> CliResult<PathBuf> {
     let cwd = env::current_dir()?;
     let path = runtime::codineer_runtime_dir(&cwd).join("sessions");
     fs::create_dir_all(&path)?;
@@ -28,7 +30,7 @@ pub(crate) fn sessions_dir() -> Result<PathBuf, Box<dyn std::error::Error>> {
 
 impl SessionHandle {
     /// Build a handle directly from an existing session file path.
-    pub(crate) fn from_path(path: PathBuf) -> Result<Self, Box<dyn std::error::Error>> {
+    pub(crate) fn from_path(path: PathBuf) -> CliResult<Self> {
         if !path.exists() {
             return Err(format!("session file not found: {}", path.display()).into());
         }
@@ -41,7 +43,7 @@ impl SessionHandle {
     }
 }
 
-pub(crate) fn create_managed_session_handle() -> Result<SessionHandle, Box<dyn std::error::Error>> {
+pub(crate) fn create_managed_session_handle() -> CliResult<SessionHandle> {
     let id = generate_session_id();
     let path = sessions_dir()?.join(format!("{id}.json"));
     Ok(SessionHandle { id, path })
@@ -55,9 +57,7 @@ pub(crate) fn generate_session_id() -> String {
     format!("session-{millis}")
 }
 
-pub(crate) fn resolve_session_reference(
-    reference: &str,
-) -> Result<SessionHandle, Box<dyn std::error::Error>> {
+pub(crate) fn resolve_session_reference(reference: &str) -> CliResult<SessionHandle> {
     let direct = PathBuf::from(reference);
     let path = if direct.exists() {
         direct
@@ -75,8 +75,7 @@ pub(crate) fn resolve_session_reference(
     Ok(SessionHandle { id, path })
 }
 
-pub(crate) fn list_managed_sessions(
-) -> Result<Vec<ManagedSessionSummary>, Box<dyn std::error::Error>> {
+pub(crate) fn list_managed_sessions() -> CliResult<Vec<ManagedSessionSummary>> {
     let mut sessions = Vec::new();
     for entry in fs::read_dir(sessions_dir()?)? {
         let entry = entry?;
@@ -127,9 +126,7 @@ pub(crate) fn format_relative_timestamp(epoch_secs: u64) -> String {
     }
 }
 
-pub(crate) fn render_session_list(
-    active_session_id: &str,
-) -> Result<String, Box<dyn std::error::Error>> {
+pub(crate) fn render_session_list(active_session_id: &str) -> CliResult<String> {
     let sessions = list_managed_sessions()?;
     let mut lines = vec![
         "Sessions".to_string(),

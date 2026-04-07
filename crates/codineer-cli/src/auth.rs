@@ -5,29 +5,15 @@ use std::process::Command;
 use std::sync::Arc;
 
 use api::{AuthSource, CodineerApiClient, ProviderKind};
+
+use crate::error::{CliError, CliResult};
 use runtime::{
-    generate_pkce_pair, generate_state, parse_oauth_callback_request_target,
-    save_oauth_credentials, ClaudeCodeResolver, CodineerOAuthResolver, ConfigLoader,
-    CredentialChain, EnvVarResolver, OAuthAuthorizationRequest, OAuthConfig, OAuthRefreshRequest,
-    OAuthTokenExchangeRequest, RuntimeConfig,
+    generate_state, save_oauth_credentials, ClaudeCodeResolver, CodineerOAuthResolver,
+    ConfigLoader, CredentialChain, EnvVarResolver, OAuthAuthorizationRequest, OAuthCallbackParams,
+    OAuthConfig, OAuthRefreshRequest, OAuthTokenExchangeRequest, PkceCodePair, RuntimeConfig,
 };
 
 const DEFAULT_OAUTH_CALLBACK_PORT: u16 = 4545;
-
-pub fn default_oauth_config() -> OAuthConfig {
-    OAuthConfig {
-        client_id: String::from("df03b862-78fe-4a2b-bb24-426ac30897b7"),
-        authorize_url: String::from("https://platform.codineer.dev/oauth/authorize"),
-        token_url: String::from("https://platform.codineer.dev/v1/oauth/token"),
-        callback_port: None,
-        manual_redirect_url: None,
-        scopes: vec![
-            String::from("user:profile"),
-            String::from("user:inference"),
-            String::from("user:sessions:codineer"),
-        ],
-    }
-}
 
 // ---------------------------------------------------------------------------
 // Provider name resolution
@@ -73,8 +59,7 @@ fn provider_display_name(kind: ProviderKind) -> &'static str {
 pub fn build_credential_chain(kind: ProviderKind, config: &RuntimeConfig) -> CredentialChain {
     match kind {
         ProviderKind::CodineerApi => {
-            let default_oauth = default_oauth_config();
-            let oauth_config = config.oauth().cloned().unwrap_or(default_oauth);
+            let oauth_config = config.oauth().cloned().unwrap_or_default();
             let cred_config = config.credentials();
 
             let refresh_fn = make_refresh_fn();
@@ -102,13 +87,17 @@ fn make_refresh_fn() -> runtime::credentials::oauth_resolver::RefreshFn {
         let client =
             CodineerApiClient::from_auth(AuthSource::None).with_base_url(api::read_base_url());
         let refresh_token = token_set.refresh_token.clone().ok_or_else(|| {
-            Box::<dyn std::error::Error + Send + Sync>::from("no refresh token available")
+            let err: Box<dyn std::error::Error + Send + Sync> =
+                Box::new(CliError::from("no refresh token available"));
+            err
         })?;
         let request =
             OAuthRefreshRequest::from_config(config, refresh_token, Some(token_set.scopes.clone()));
         let refreshed =
             client_runtime_block_on(async { client.refresh_oauth_token(config, &request).await })
-                .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
+                .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> {
+                Box::new(CliError::from(e))
+            })?;
         Ok(runtime::OAuthTokenSet {
             access_token: refreshed.access_token,
             refresh_token: refreshed.refresh_token.or(token_set.refresh_token),
@@ -136,7 +125,7 @@ where
 
 fn resolve_provider_and_chain(
     provider: Option<&str>,
-) -> Result<(ProviderKind, RuntimeConfig, CredentialChain), Box<dyn std::error::Error>> {
+) -> CliResult<(ProviderKind, RuntimeConfig, CredentialChain)> {
     let kind = match provider {
         Some(name) => resolve_provider_name(name)?,
         None => ProviderKind::CodineerApi,
@@ -150,7 +139,7 @@ fn resolve_provider_and_chain(
 fn find_source<'a>(
     chain: &'a CredentialChain,
     source_id: &str,
-) -> Result<&'a dyn runtime::CredentialResolver, Box<dyn std::error::Error>> {
+) -> CliResult<&'a dyn runtime::CredentialResolver> {
     chain.get_resolver(source_id).ok_or_else(|| {
         let available: Vec<&str> = chain.resolver_ids().collect();
         format!(
@@ -165,10 +154,7 @@ fn find_source<'a>(
     })
 }
 
-pub fn run_login(
-    provider: Option<&str>,
-    source: Option<&str>,
-) -> Result<(), Box<dyn std::error::Error>> {
+pub fn run_login(provider: Option<&str>, source: Option<&str>) -> CliResult<()> {
     let (kind, config, chain) = resolve_provider_and_chain(provider)?;
 
     if let Some(source_id) = source {
@@ -176,7 +162,7 @@ pub fn run_login(
         if !resolver.supports_login() {
             return check_auto_discover_source(resolver);
         }
-        return resolver.login();
+        return Ok(resolver.login()?);
     }
 
     if kind == ProviderKind::CodineerApi {
@@ -191,13 +177,10 @@ pub fn run_login(
         )
         .into());
     }
-    login_sources[0].login()
+    Ok(login_sources[0].login()?)
 }
 
-pub fn run_logout(
-    provider: Option<&str>,
-    source: Option<&str>,
-) -> Result<(), Box<dyn std::error::Error>> {
+pub fn run_logout(provider: Option<&str>, source: Option<&str>) -> CliResult<()> {
     let (kind, _config, chain) = resolve_provider_and_chain(provider)?;
 
     if let Some(source_id) = source {
@@ -227,7 +210,7 @@ pub fn run_logout(
     .into())
 }
 
-pub fn run_status(provider: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
+pub fn run_status(provider: Option<&str>) -> CliResult<()> {
     let cwd = env::current_dir()?;
     let config = ConfigLoader::default_for(&cwd).load()?;
 
@@ -275,9 +258,7 @@ pub fn run_status(provider: Option<&str>) -> Result<(), Box<dyn std::error::Erro
 
 /// For auto-discover sources (e.g. Claude Code) that don't support interactive
 /// login, check whether credentials are already available and print guidance.
-fn check_auto_discover_source(
-    resolver: &dyn runtime::CredentialResolver,
-) -> Result<(), Box<dyn std::error::Error>> {
+fn check_auto_discover_source(resolver: &dyn runtime::CredentialResolver) -> CliResult<()> {
     match resolver.resolve() {
         Ok(Some(_)) => {
             println!(
@@ -301,12 +282,12 @@ fn check_auto_discover_source(
 // Codineer OAuth browser login flow
 // ---------------------------------------------------------------------------
 
-fn run_codineer_oauth_login(config: &RuntimeConfig) -> Result<(), Box<dyn std::error::Error>> {
-    let default_oauth = default_oauth_config();
+fn run_codineer_oauth_login(config: &RuntimeConfig) -> CliResult<()> {
+    let default_oauth = OAuthConfig::default();
     let oauth = config.oauth().unwrap_or(&default_oauth);
     let callback_port = oauth.callback_port.unwrap_or(DEFAULT_OAUTH_CALLBACK_PORT);
     let redirect_uri = runtime::loopback_redirect_uri(callback_port);
-    let pkce = generate_pkce_pair()?;
+    let pkce = PkceCodePair::generate()?;
     let state = generate_state()?;
     let authorize_url =
         OAuthAuthorizationRequest::from_config(oauth, redirect_uri.clone(), state.clone(), &pkce)
@@ -373,9 +354,7 @@ fn open_browser(url: &str) -> io::Result<()> {
     ))
 }
 
-fn wait_for_oauth_callback(
-    port: u16,
-) -> Result<runtime::OAuthCallbackParams, Box<dyn std::error::Error>> {
+fn wait_for_oauth_callback(port: u16) -> CliResult<runtime::OAuthCallbackParams> {
     let listener = TcpListener::bind(("127.0.0.1", port))?;
     let (mut stream, _) = listener.accept()?;
     let mut buffer = [0_u8; 4096];
@@ -390,7 +369,7 @@ fn wait_for_oauth_callback(
             "missing callback request target",
         )
     })?;
-    let callback = parse_oauth_callback_request_target(target)
+    let callback = OAuthCallbackParams::from_request_target(target)
         .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
     let body = if callback.error.is_some() {
         "Codineer OAuth login failed. You can close this window."

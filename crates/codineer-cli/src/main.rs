@@ -1,8 +1,11 @@
 mod auth;
+#[allow(dead_code)]
+mod auto_update;
 mod banner;
 mod bootstrap;
 mod cli;
 mod config_cmd;
+mod error;
 mod help;
 mod image_util;
 mod init;
@@ -26,6 +29,8 @@ mod workspace;
 
 use std::env;
 use std::path::PathBuf;
+
+use crate::error::CliResult;
 
 use init::initialize_repo;
 
@@ -122,8 +127,7 @@ fn main() {
 
 fn init_tracing() {
     use tracing_subscriber::EnvFilter;
-    let filter = EnvFilter::try_from_env("CODINEER_LOG")
-        .unwrap_or_else(|_| EnvFilter::new("warn"));
+    let filter = EnvFilter::try_from_env("CODINEER_LOG").unwrap_or_else(|_| EnvFilter::new("warn"));
     tracing_subscriber::fmt()
         .with_env_filter(filter)
         .with_writer(std::io::stderr)
@@ -165,7 +169,7 @@ fn highlight_cli_hint(p: &style::Palette, line: &str) -> String {
     }
 }
 
-fn run() -> Result<(), Box<dyn std::error::Error>> {
+fn run() -> CliResult<()> {
     let args: Vec<String> = env::args().skip(1).collect();
     match parse_args(&args)? {
         CliAction::Agents { args } => LiveCli::print_agents(args.as_deref())?,
@@ -215,10 +219,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn print_system_prompt(cwd: PathBuf, date: String) -> Result<(), Box<dyn std::error::Error>> {
-    let sections =
-        runtime::load_system_prompt_with_lsp(cwd, date, env::consts::OS, "unknown", None)?;
-    println!("{}", sections.join("\n\n"));
+fn print_system_prompt(cwd: PathBuf, date: String) -> CliResult<()> {
+    let blocks = runtime::load_system_prompt_with_lsp(cwd, date, env::consts::OS, "unknown", None)?;
+    let text: Vec<&str> = blocks.iter().map(|b| b.text.as_str()).collect();
+    println!("{}", text.join("\n\n"));
     Ok(())
 }
 
@@ -226,12 +230,12 @@ fn print_version() {
     println!("{}", render_version_report());
 }
 
-pub(crate) fn init_codineer_md() -> Result<String, Box<dyn std::error::Error>> {
+pub(crate) fn init_codineer_md() -> CliResult<String> {
     let cwd = env::current_dir()?;
     Ok(initialize_repo(&cwd)?.render())
 }
 
-fn run_init() -> Result<(), Box<dyn std::error::Error>> {
+fn run_init() -> CliResult<()> {
     println!("{}", init_codineer_md()?);
     Ok(())
 }
