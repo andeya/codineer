@@ -18,6 +18,7 @@ pub mod sandbox;
 mod session;
 mod token_budget;
 mod tool;
+mod tool_result;
 mod usage;
 
 pub use bash::{execute_bash, BashCommandInput, BashCommandOutput};
