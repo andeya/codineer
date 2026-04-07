@@ -1,13 +1,17 @@
 use std::collections::BTreeMap;
 
 use api::{list_known_models, provider_kind_by_name, ProviderKind, BUILTIN_PROVIDER_PRESETS};
-use runtime::{ConfigLoader, CustomProviderConfig};
+use runtime::{ConfigLoader, CustomProviderConfig, RuntimeConfig};
+
+use crate::runtime_client::{resolve_custom_api_key, resolve_preset_api_key};
+
+fn load_config() -> Result<RuntimeConfig, Box<dyn std::error::Error>> {
+    let cwd = std::env::current_dir()?;
+    Ok(ConfigLoader::default_for(&cwd).load()?)
+}
 
 pub fn run_models(provider: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
-    let cwd = std::env::current_dir()?;
-    let config = ConfigLoader::default_for(&cwd).load()?;
-    let providers_config = config.providers().clone();
-    let user_aliases = config.model_aliases();
+    let config = load_config()?;
 
     let filter = provider.map(|name| {
         provider_kind_by_name(name)
@@ -18,34 +22,68 @@ pub fn run_models(provider: Option<&str>) -> Result<(), Box<dyn std::error::Erro
     match filter {
         None => {
             print_known_models(None);
-            print_user_aliases(user_aliases);
+            print_user_aliases(config.model_aliases());
             println!();
-            print_custom_providers(&providers_config);
-            print_ollama_models(&providers_config);
+            print_dynamic_models_all(&config);
         }
         Some(FilterKind::Builtin(kind)) => {
             print_known_models(Some(kind));
         }
         Some(FilterKind::Custom(name)) => {
             if name.eq_ignore_ascii_case("ollama") {
-                print_ollama_models(&providers_config);
-            } else if let Some(preset) = api::builtin_preset(&name) {
-                println!("{} ({})", preset.name, preset.description);
-                println!("  Usage: codineer --model {}/MODEL_NAME", preset.name);
-                if !preset.api_key_env.is_empty() {
-                    println!("  API key: ${}", preset.api_key_env);
-                }
-            } else if providers_config.contains_key(&name) {
-                println!("Custom provider: {name}");
-                println!("  Usage: codineer --model {name}/MODEL_NAME");
+                print_ollama_models(config.providers());
             } else {
-                return Err(format!("unknown provider: {name}").into());
+                print_dynamic_models_for(&name, &config);
             }
         }
     }
 
     Ok(())
 }
+
+pub fn run_providers() -> Result<(), Box<dyn std::error::Error>> {
+    let config = load_config()?;
+
+    println!("Built-in providers:");
+    for preset in BUILTIN_PROVIDER_PRESETS {
+        let status = if preset.api_key_env.is_empty() {
+            "(no API key needed)".to_string()
+        } else if config.resolve_env(preset.api_key_env).is_some() {
+            format!("(${} ✓)", preset.api_key_env)
+        } else {
+            format!("(${} not set)", preset.api_key_env)
+        };
+        println!("  {:<16} {} {status}", preset.name, preset.description);
+    }
+    println!();
+
+    let providers = config.providers();
+    println!("Custom providers (from settings.json):");
+    if providers.is_empty() {
+        println!("  (none)");
+        println!("  Configure in settings.json: {{\"providers\": {{\"name\": {{\"baseUrl\": \"...\", ...}}}}}}");
+    } else {
+        for (name, cfg) in providers {
+            if api::builtin_preset(name).is_some() {
+                continue;
+            }
+            let model_count = cfg.models.len();
+            let models_hint = if model_count > 0 {
+                format!("{model_count} model(s) configured")
+            } else {
+                "no models listed".to_string()
+            };
+            println!("  {:<16} {} ({models_hint})", name, cfg.base_url);
+        }
+    }
+    println!();
+
+    println!("Usage: codineer --model PROVIDER/MODEL_NAME");
+    println!("       /models [provider]  to list available models");
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
 
 enum FilterKind {
     Builtin(ProviderKind),
@@ -85,25 +123,160 @@ fn print_user_aliases(aliases: &BTreeMap<String, String>) {
     }
 }
 
-fn print_custom_providers(providers: &BTreeMap<String, CustomProviderConfig>) {
-    println!("Custom providers (OpenAI-compatible):");
-    for preset in BUILTIN_PROVIDER_PRESETS {
-        if preset.api_key_env.is_empty() {
-            println!("  {:<16} {}", preset.name, preset.description);
+// ---------------------------------------------------------------------------
+// v1/models dynamic fetching
+// ---------------------------------------------------------------------------
+
+struct V1ModelsResult {
+    models: Vec<String>,
+    error: Option<String>,
+}
+
+fn query_v1_models(
+    base_url: &str,
+    api_key: &str,
+    headers: &BTreeMap<String, String>,
+) -> V1ModelsResult {
+    let url = format!("{}/models", base_url.trim_end_matches('/'));
+    let client = match reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_millis(5000))
+        .build()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            return V1ModelsResult {
+                models: Vec::new(),
+                error: Some(format!("HTTP client error: {e}")),
+            }
+        }
+    };
+    let mut req = client.get(&url);
+    if !api_key.is_empty() {
+        req = req.bearer_auth(api_key);
+    }
+    for (k, v) in headers {
+        req = req.header(k.as_str(), v.as_str());
+    }
+    let response = match req.send() {
+        Ok(r) => r,
+        Err(e) => {
+            return V1ModelsResult {
+                models: Vec::new(),
+                error: Some(format!("request failed: {e}")),
+            }
+        }
+    };
+    if !response.status().is_success() {
+        return V1ModelsResult {
+            models: Vec::new(),
+            error: Some(format!("HTTP {}", response.status())),
+        };
+    }
+    let body: serde_json::Value = match response.json() {
+        Ok(v) => v,
+        Err(e) => {
+            return V1ModelsResult {
+                models: Vec::new(),
+                error: Some(format!("invalid JSON: {e}")),
+            }
+        }
+    };
+    let models = body
+        .get("data")
+        .and_then(|d| d.as_array())
+        .map(|arr| {
+            let mut models: Vec<String> = arr
+                .iter()
+                .filter_map(|m| m.get("id")?.as_str().map(String::from))
+                .collect();
+            models.sort();
+            models
+        })
+        .unwrap_or_default();
+    V1ModelsResult {
+        models,
+        error: None,
+    }
+}
+
+fn query_provider_models(cfg: &CustomProviderConfig, config: &RuntimeConfig) -> V1ModelsResult {
+    let api_key = resolve_custom_api_key(cfg, config).unwrap_or_default();
+    query_v1_models(&cfg.base_url, &api_key, &cfg.headers)
+}
+
+fn query_preset_models(
+    preset: &api::BuiltinProviderPreset,
+    config: &RuntimeConfig,
+) -> V1ModelsResult {
+    match resolve_preset_api_key(preset, config) {
+        Ok(key) => query_v1_models(preset.base_url, &key, &BTreeMap::new()),
+        Err(_) => V1ModelsResult {
+            models: Vec::new(),
+            error: Some(format!("${} not set", preset.api_key_env)),
+        },
+    }
+}
+
+fn print_v1_result(name: &str, result: &V1ModelsResult) {
+    if result.models.is_empty() {
+        if let Some(ref err) = result.error {
+            println!("{name}: v1/models failed ({err})");
         } else {
-            println!(
-                "  {:<16} {} (${} required)",
-                preset.name, preset.description, preset.api_key_env
-            );
+            println!("{name}: no models found via v1/models");
+        }
+    } else {
+        println!("{name} ({} model(s) from v1/models):", result.models.len());
+        for model in &result.models {
+            println!("  {name}/{model}");
         }
     }
-    for name in providers.keys() {
-        if api::builtin_preset(name).is_none() {
-            println!("  {name:<16} (custom)");
+}
+
+fn print_dynamic_models_all(config: &RuntimeConfig) {
+    for (name, cfg) in config.providers() {
+        if name.eq_ignore_ascii_case("ollama") {
+            print_ollama_models(config.providers());
+            continue;
+        }
+        print_v1_result(name, &query_provider_models(cfg, config));
+        println!();
+    }
+
+    for preset in BUILTIN_PROVIDER_PRESETS {
+        if config.providers().contains_key(preset.name) {
+            continue;
+        }
+        let result = query_preset_models(preset, config);
+        if !result.models.is_empty() {
+            print_v1_result(preset.name, &result);
+            println!();
         }
     }
-    println!("  Usage: codineer --model PROVIDER/MODEL_NAME");
-    println!();
+}
+
+fn print_dynamic_models_for(name: &str, config: &RuntimeConfig) {
+    if let Some(cfg) = config.providers().get(name) {
+        let result = query_provider_models(cfg, config);
+        print_v1_result(name, &result);
+        if result.models.is_empty() {
+            println!("  Base URL: {}", cfg.base_url);
+            if !cfg.models.is_empty() {
+                println!("  Configured models:");
+                for m in &cfg.models {
+                    println!("    {name}/{m}");
+                }
+            }
+        }
+        return;
+    }
+
+    if let Some(preset) = api::builtin_preset(name) {
+        print_v1_result(name, &query_preset_models(preset, config));
+        return;
+    }
+
+    eprintln!("unknown provider: {name}");
+    eprintln!("  Run /providers to see available providers.");
 }
 
 fn print_ollama_models(providers: &BTreeMap<String, CustomProviderConfig>) {
@@ -181,5 +354,12 @@ mod tests {
         assert!(api::builtin_preset("groq").is_some());
         assert!(api::builtin_preset("lmstudio").is_some());
         assert!(api::builtin_preset("nonexistent").is_none());
+    }
+
+    #[test]
+    fn query_v1_models_unreachable() {
+        let result = query_v1_models("http://127.0.0.1:1/v1", "", &BTreeMap::new());
+        assert!(result.models.is_empty());
+        assert!(result.error.is_some());
     }
 }
