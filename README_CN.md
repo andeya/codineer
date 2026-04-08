@@ -32,7 +32,7 @@
 |                                                                                   |   Codineer   | Claude Code  |    Codex CLI    |   Aider    |
 | --------------------------------------------------------------------------------- | :----------: | :----------: | :-------------: | :--------: |
 | **多 Provider**（Anthropic、OpenAI、xAI、Ollama…）                                | **全部内置** | 仅 Anthropic | OpenAI + Ollama |    支持    |
-| **零 Token 成本**（[免费使用主流模型](#openclaw-zero-token免费使用主流-ai-模型)） |   **支持**   |    不支持    |     不支持      |   不支持   |
+| **零 Token 成本**（[免费使用主流模型](#token-free-gateway免费使用主流-ai-模型)） |   **支持**   |    不支持    |     不支持      |   不支持   |
 | **零配置本地 AI**（自动检测 Ollama）                                              |   **支持**   |    不支持    |  `--oss` 参数   | 需手动配置 |
 | **单一二进制**（无运行时依赖）                                                    |   **Rust**   |   Node.js    |     Node.js     |   Python   |
 | **多模态输入**（`@image.png`、剪贴板粘贴、拖拽上传）                              |   **支持**   |     支持     |      有限       |    有限    |
@@ -51,7 +51,7 @@
 **核心优势：**
 
 - **Provider 自由** — 用 `--model` 在 Claude、GPT、Grok、Ollama、LM Studio、OpenRouter、Groq 或任何 OpenAI 兼容 API 间切换。零厂商锁定。
-- **零 Token 成本** — 搭配 [OpenClaw Zero Token](https://github.com/andeya/openclaw-zero-token) 网关，免费使用 Claude、ChatGPT、Gemini、DeepSeek 等 10+ 主流模型，无需购买任何 API Key。
+- **零 Token 成本** — 搭配 [Token Free Gateway](https://github.com/andeya/token-free-gateway) 网关，免费使用 Claude、ChatGPT、Gemini、DeepSeek 等 10+ 主流模型，无需购买任何 API Key。
 - **零配置本地 AI** — 启动 Ollama，运行 `codineer`。自动检测本地模型并选择最适合编程的那个。
 - **即刻启动** — `brew install` 或 `cargo install`。一个 Rust 二进制文件，无运行时依赖。
 - **多模态输入** — 通过 `@photo.png` 附加图片、从剪贴板粘贴（`Ctrl+V` / `/image`）或将文件拖拽到终端。支持 Anthropic、OpenAI 及所有兼容多模态的 Provider。
@@ -122,7 +122,7 @@ export GROQ_API_KEY="..."                         # Groq Cloud（免费额度）
 export GEMINI_API_KEY="AIzaSy..."                  # Google Gemini（aistudio.google.com 免费申请）
 export DASHSCOPE_API_KEY="sk-..."                 # 阿里云通义 DashScope（兼容 OpenAI）
 ollama serve                                      # 本地 AI（无需 Key）
-# 或通过 OpenClaw Zero Token 网关免费使用所有主流模型（见下文）
+# 或通过 Token Free Gateway 网关免费使用所有主流模型（见下文）
 codineer login                                    # 或 OAuth 登录（默认 Provider）
 codineer login anthropic --source claude-code     # 使用 Claude Code 凭据
 codineer status                                   # 查看认证状态
@@ -215,6 +215,65 @@ codineer --model gemini/gemini-2.5-pro "审查架构设计"
 
 > **注意：** 必须使用 OpenAI 兼容端点（`/v1beta/openai`），而非 Gemini 原生 REST API（`/v1beta/models/...:generateContent`）。Codineer 会在 baseUrl 后追加 `/chat/completions`。
 
+### Token Free Gateway（免费使用主流 AI 模型）
+
+> **零 API Token 成本** — 通过浏览器登录，一键聚合 Claude、ChatGPT、Gemini、DeepSeek、Qwen、Kimi、Grok 等 10+ 主流大模型，完全免费调用。
+
+[Token Free Gateway](https://github.com/andeya/token-free-gateway) 是一个 AI 网关，它通过驱动各大模型的官方 Web 端（浏览器登录）来替代付费 API Key。只要你能在浏览器中正常使用这些模型，就可以通过 Codineer 统一调用——无需购买任何 API Token。
+
+**亮点：**
+
+| 传统方式             | Token Free Gateway 方式  |
+| -------------------- | ------------------------ |
+| 购买 API Token       | **完全免费**             |
+| 按请求付费           | 无强制配额               |
+| 需要绑定信用卡       | 仅需浏览器登录           |
+| API Token 有泄露风险 | 凭据仅本地存储           |
+
+**支持的模型：** Claude Web、ChatGPT Web、Gemini Web、DeepSeek Web、Qwen Web（国际/国内）、Kimi、Doubao、Grok Web、GLM Web、Xiaomi MiMo 等，其中 11/13 个 Web 模型支持工具调用。
+
+**配置方法：**
+
+1. 部署并启动 [Token Free Gateway](https://github.com/andeya/token-free-gateway)（默认端口 3456）
+2. 在 `settings.json` 中添加 provider：
+
+```json
+{
+  "model": "token-free-gateway/claude-sonnet-4-6",
+  "env": {
+    "TFG_API_KEY": "your-gateway-token"
+  },
+  "providers": {
+    "token-free-gateway": {
+      "baseUrl": "http://127.0.0.1:3456/v1",
+      "apiKeyEnv": "TFG_API_KEY",
+      "defaultModel": "claude-opus-4-6"
+    }
+  }
+}
+```
+
+3. 开始使用：
+
+```bash
+codineer --model token-free-gateway/claude-sonnet-4-6 "帮我重构这个模块"
+codineer --model token-free-gateway/claude-opus-4-6 "代码 review"
+codineer --model token-free-gateway/deepseek-chat "解释这段代码"
+```
+
+还可以搭配模型别名和回退模型，享受更流畅的体验：
+
+```json
+{
+  "model": "sonnet",
+  "modelAliases": {
+    "opus": "token-free-gateway/claude-opus-4-6",
+    "sonnet": "token-free-gateway/claude-sonnet-4-6"
+  },
+  "fallbackModels": ["sonnet", "flash", "qwen-plus"]
+}
+```
+
 ### 阿里云通义（DashScope，OpenAI 兼容）
 
 使用 `provider/model` 形式，并在 `settings.json` 的 `providers` 中配置 `baseUrl`（国内与国际域名以[官方文档](https://help.aliyun.com/zh/model-studio/)为准）：
@@ -263,58 +322,6 @@ codineer models ollama        # 显示本地 Ollama 模型
 ```
 
 `model` 和 `fallbackModels` 都支持 `modelAliases` 中定义的自定义别名。零成本设置特别有用：将云端模型设为主模型，本地模型设为回退。
-
-### OpenClaw Zero Token（免费使用主流 AI 模型）
-
-> **零 API Token 成本** — 通过浏览器登录，一键聚合 Claude、ChatGPT、Gemini、DeepSeek、Qwen、Kimi、Grok 等 10+ 主流大模型，完全免费调用。
-
-[OpenClaw Zero Token](https://github.com/andeya/openclaw-zero-token) 是一个 AI 网关，它通过驱动各大模型的官方 Web 端（浏览器登录）来替代付费 API Key。只要你能在浏览器中正常使用这些模型，就可以通过 Codineer 统一调用——无需购买任何 API Token。
-
-**亮点：**
-
-| 传统方式             | OpenClaw Zero Token 方式 |
-| -------------------- | ------------------------ |
-| 购买 API Token       | **完全免费**             |
-| 按请求付费           | 无强制配额               |
-| 需要绑定信用卡       | 仅需浏览器登录           |
-| API Token 有泄露风险 | 凭据仅本地存储           |
-
-**支持的模型：** Claude Web、ChatGPT Web、Gemini Web、DeepSeek Web、Qwen Web（国际/国内）、Kimi、Doubao、Grok Web、GLM Web、Xiaomi MiMo 等，其中 11/13 个 Web 模型支持工具调用。
-
-**配置方法：**
-
-1. 部署并启动 [OpenClaw Zero Token](https://github.com/andeya/openclaw-zero-token) 网关（默认端口 3001）
-2. 在 `settings.json` 中添加 provider：
-
-```json
-{
-  "model": "openclaw-zero/openclaw",
-  "env": {
-    "OPENCLAW_ZERO_API_KEY": "your-gateway-token"
-  },
-  "providers": {
-    "openclaw-zero": {
-      "baseUrl": "http://127.0.0.1:3001/v1",
-      "apiKeyEnv": "OPENCLAW_ZERO_API_KEY",
-      "defaultModel": "openclaw",
-      "models": ["openclaw"],
-      "headers": {
-        "x-openclaw-scopes": "operator.write"
-      }
-    }
-  }
-}
-```
-
-3. 开始使用：
-
-```bash
-codineer --model openclaw-zero/openclaw "帮我重构这个模块"
-codineer --model openclaw-zero/claude-web/claude-sonnet-4-6 "代码 review"
-codineer --model openclaw-zero/deepseek-web/deepseek-chat "解释这段代码"
-```
-
-> `headers` 字段为可选配置，用于向 Provider 发送的每个请求附加自定义 HTTP 头。在 OpenClaw Zero Token 场景中，`x-openclaw-scopes` 用于控制权限范围。
 
 ---
 

@@ -32,7 +32,7 @@ Most AI coding CLIs lock you into a single provider. Claude Code requires Anthro
 |                                                                                                          |     Codineer     |  Claude Code   |    Codex CLI    |    Aider     |
 | -------------------------------------------------------------------------------------------------------- | :--------------: | :------------: | :-------------: | :----------: |
 | **Multi-provider** (Anthropic, OpenAI, xAI, Ollama, …)                                                   | **All built-in** | Anthropic only | OpenAI + Ollama |     Yes      |
-| **Zero-token-cost** ([free access to major models](#openclaw-zero-token-free-access-to-major-ai-models)) |     **Yes**      |       No       |       No        |      No      |
+| **Zero-token-cost** ([free access to major models](#token-free-gateway-free-access-to-major-ai-models)) |     **Yes**      |       No       |       No        |      No      |
 | **Zero-config local AI** (auto-detect Ollama)                                                            |     **Yes**      |       No       |  `--oss` flag   | Manual setup |
 | **Single binary** (no runtime deps)                                                                      |     **Rust**     |    Node.js     |     Node.js     |    Python    |
 | **Multimodal input** (`@image.png`, clipboard paste, drag-and-drop)                                      |     **Yes**      |      Yes       |     Limited     |   Limited    |
@@ -51,7 +51,7 @@ Most AI coding CLIs lock you into a single provider. Claude Code requires Anthro
 **Key advantages:**
 
 - **Provider freedom** — switch between Claude, GPT, Grok, Ollama, LM Studio, OpenRouter, Groq, or any OpenAI-compatible API with `--model`. No vendor lock-in.
-- **Zero token cost** — pair with [OpenClaw Zero Token](https://github.com/andeya/openclaw-zero-token) to use Claude, ChatGPT, Gemini, DeepSeek, and 10+ more models for free — no API key purchase needed.
+- **Zero token cost** — pair with [Token Free Gateway](https://github.com/andeya/token-free-gateway) to use Claude, ChatGPT, Gemini, DeepSeek, and 10+ more models for free — no API key purchase needed.
 - **Zero-config local AI** — start Ollama, run `codineer`. Auto-detects local models and picks the best one.
 - **Instant setup** — `brew install` or `cargo install`. One Rust binary, no runtime dependencies.
 - **Multimodal input** — attach images via `@photo.png`, paste from clipboard (`Ctrl+V` / `/image`), or drag-and-drop into the terminal. Works with Anthropic, OpenAI, and any multimodal-capable provider.
@@ -122,7 +122,7 @@ export GROQ_API_KEY="..."                         # Groq Cloud (free tier)
 export GEMINI_API_KEY="AIzaSy..."                  # Google Gemini (free key from aistudio.google.com)
 export DASHSCOPE_API_KEY="sk-..."                 # Alibaba DashScope (OpenAI-compatible)
 ollama serve                                      # Local AI (no key needed)
-# Or use OpenClaw Zero Token gateway for free access to all major models (see below)
+# Or use Token Free Gateway for free access to all major models (see below)
 codineer login                                    # Or OAuth login (default provider)
 codineer login anthropic --source claude-code     # Use Claude Code credentials
 codineer status                                   # Check authentication status
@@ -215,6 +215,65 @@ codineer --model gemini/gemini-2.5-pro "review my architecture"
 
 > **Important:** Use the OpenAI-compatible endpoint (`/v1beta/openai`), not the native Gemini REST API (`/v1beta/models/...:generateContent`). Codineer appends `/chat/completions` to the base URL.
 
+### Token Free Gateway (Free Access to Major AI Models)
+
+> **Zero API token cost** — log in via browser once, then call Claude, ChatGPT, Gemini, DeepSeek, Qwen, Kimi, Grok, and more through a single unified gateway — completely free.
+
+[Token Free Gateway](https://github.com/andeya/token-free-gateway) is an AI gateway that drives official model web UIs (browser login) instead of paid API keys. If you can use a model in the browser, you can call it through Codineer — no API token purchase required.
+
+**Highlights:**
+
+| Traditional approach | Token Free Gateway way   |
+| -------------------- | ------------------------ |
+| Buy API tokens       | **Completely free**      |
+| Pay per request      | No enforced quota        |
+| Credit card required | Browser login only       |
+| API tokens may leak  | Credentials stored local |
+
+**Supported models:** Claude Web, ChatGPT Web, Gemini Web, DeepSeek Web, Qwen Web (intl/cn), Kimi, Doubao, Grok Web, GLM Web, Xiaomi MiMo, and more. 11 out of 13 web models support tool calling.
+
+**Setup:**
+
+1. Deploy and start the [Token Free Gateway](https://github.com/andeya/token-free-gateway) (default port 3456)
+2. Add the provider to `settings.json`:
+
+```json
+{
+  "model": "token-free-gateway/claude-sonnet-4-6",
+  "env": {
+    "TFG_API_KEY": "your-gateway-token"
+  },
+  "providers": {
+    "token-free-gateway": {
+      "baseUrl": "http://127.0.0.1:3456/v1",
+      "apiKeyEnv": "TFG_API_KEY",
+      "defaultModel": "claude-opus-4-6"
+    }
+  }
+}
+```
+
+3. Start coding:
+
+```bash
+codineer --model token-free-gateway/claude-sonnet-4-6 "refactor this module"
+codineer --model token-free-gateway/claude-opus-4-6 "code review"
+codineer --model token-free-gateway/deepseek-chat "explain this code"
+```
+
+You can also combine it with model aliases and fallback models for a seamless experience:
+
+```json
+{
+  "model": "sonnet",
+  "modelAliases": {
+    "opus": "token-free-gateway/claude-opus-4-6",
+    "sonnet": "token-free-gateway/claude-sonnet-4-6"
+  },
+  "fallbackModels": ["sonnet", "flash", "qwen-plus"]
+}
+```
+
 ### Alibaba Cloud DashScope (OpenAI-compatible)
 
 Use `provider/model` and configure `providers` in `settings.json` with the correct `baseUrl` (see [Model Studio docs](https://www.alibabacloud.com/help/en/model-studio/)):
@@ -263,58 +322,6 @@ Set an ordered list of fallback models in `settings.json`. If the primary model 
 ```
 
 `model` and `fallbackModels` both support your custom aliases from `modelAliases`. This is especially useful for zero-cost setups: set a cloud model as primary and local models as fallback.
-
-### OpenClaw Zero Token (Free Access to Major AI Models)
-
-> **Zero API token cost** — log in via browser once, then call Claude, ChatGPT, Gemini, DeepSeek, Qwen, Kimi, Grok, and more through a single unified gateway — completely free.
-
-[OpenClaw Zero Token](https://github.com/andeya/openclaw-zero-token) is an AI gateway that drives official model web UIs (browser login) instead of paid API keys. If you can use a model in the browser, you can call it through Codineer — no API token purchase required.
-
-**Highlights:**
-
-| Traditional approach | OpenClaw Zero Token way  |
-| -------------------- | ------------------------ |
-| Buy API tokens       | **Completely free**      |
-| Pay per request      | No enforced quota        |
-| Credit card required | Browser login only       |
-| API tokens may leak  | Credentials stored local |
-
-**Supported models:** Claude Web, ChatGPT Web, Gemini Web, DeepSeek Web, Qwen Web (intl/cn), Kimi, Doubao, Grok Web, GLM Web, Xiaomi MiMo, and more. 11 out of 13 web models support tool calling.
-
-**Setup:**
-
-1. Deploy and start the [OpenClaw Zero Token](https://github.com/andeya/openclaw-zero-token) gateway (default port 3001)
-2. Add the provider to `settings.json`:
-
-```json
-{
-  "model": "openclaw-zero/openclaw",
-  "env": {
-    "OPENCLAW_ZERO_API_KEY": "your-gateway-token"
-  },
-  "providers": {
-    "openclaw-zero": {
-      "baseUrl": "http://127.0.0.1:3001/v1",
-      "apiKeyEnv": "OPENCLAW_ZERO_API_KEY",
-      "defaultModel": "openclaw",
-      "models": ["openclaw"],
-      "headers": {
-        "x-openclaw-scopes": "operator.write"
-      }
-    }
-  }
-}
-```
-
-3. Start coding:
-
-```bash
-codineer --model openclaw-zero/openclaw "refactor this module"
-codineer --model openclaw-zero/claude-web/claude-sonnet-4-6 "code review"
-codineer --model openclaw-zero/deepseek-web/deepseek-chat "explain this code"
-```
-
-> The `headers` field is optional and lets you attach custom HTTP headers to every request sent to a provider. In the OpenClaw Zero Token scenario, `x-openclaw-scopes` controls the permission scope on the gateway.
 
 ---
 
