@@ -17,6 +17,9 @@ This crate provides the foundational building blocks that every other crate in t
 | `loop_state`   | `LoopState`, `Transition`, `StopReason` for conversation loop control             |
 | `elicitation`  | `ElicitationRequest`, `ElicitationHandler` trait for structured user input        |
 | `telemetry`    | `TelemetryEvent`, `TelemetrySink` trait for usage analytics                       |
+| `gemini_cache` | `GeminiCacheConfig` for Gemini `cachedContents` API integration                   |
+| `oauth`        | OAuth PKCE flow types, token storage, and provider-agnostic auth                  |
+| `credentials_types` | Shared credential chain types used across provider clients                   |
 
 ### Design principles
 

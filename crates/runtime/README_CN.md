@@ -24,6 +24,24 @@
 3. **`execute_tools`** — 执行已批准的工具（通过 `ToolExecutor` 的 `execute_batch` 安全并发，否则串行执行）。
 4. **`apply_post_hooks`** — 运行观察者后置钩子并构建会话结果消息。
 
+### 流式工具执行
+
+`StreamingToolExecutor` 在工具参数通过 SSE 流到达时立即启动执行——无需等待模型生成完毕。并发安全的工具并行运行；bash 失败时自动中止兄弟工具调用。实时进度事件回传给渲染器。
+
+### 基于模型的上下文压缩
+
+当对话上下文接近模型的输入预算时，`compact` 模块触发 LLM 总结调用来压缩历史，同时保留关键决策和文件修改记录。当总结调用本身失败时使用启发式回退。Token 预算通过 `ModelContextWindow` 按模型计算。
+
+### 精细权限规则
+
+在三种权限模式（`read-only`、`workspace-write`、`danger-full-access`）之外，`permissions` 模块支持按工具和输入的 glob 模式规则：
+
+```json
+[{ "tool": "bash", "input": "rm *", "decision": "always-deny" }]
+```
+
+规则按顺序匹配，首个命中的规则生效。支持 `always-allow`、`always-deny` 和 `always-ask` 三种决策。
+
 ## 说明
 
 本 crate 是 Codineer 项目的内部组件，作为 `codineer-cli` 的依赖发布到 crates.io，不用于独立使用。在 Codineer 工作区之外不保证 API 稳定性。

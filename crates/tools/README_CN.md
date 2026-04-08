@@ -24,6 +24,10 @@
 | **协作**         | `TeamCreate`、`TeamDelete`、`SendMessage`、`SlashCommand`                 |
 | **其他**         | `TodoWrite`、`Skill`、`ToolSearch`、`Config`、`StructuredOutput`、`Sleep` |
 
+### 工具懒加载
+
+并非所有工具都在初始提示中发送给模型。核心工具立即加载，MCP 工具和扩展工具通过 `ToolSearch` 工具按需发现。这减少了 prompt Token 消耗，让模型专注于最相关的能力。Agent 可调用 `ToolSearch` 按需查找并激活额外工具。
+
 ## 说明
 
 本 crate 是 Codineer 项目的内部组件，作为 `codineer-cli` 的依赖发布到 crates.io，不用于独立使用。在 Codineer 工作区之外不保证 API 稳定性。

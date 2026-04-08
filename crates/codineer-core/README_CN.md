@@ -19,6 +19,9 @@
 | `loop_state`   | `LoopState`、`Transition`、`StopReason`，用于对话循环控制                       |
 | `elicitation`  | `ElicitationRequest`、`ElicitationHandler` trait，用于结构化用户输入            |
 | `telemetry`    | `TelemetryEvent`、`TelemetrySink` trait，用于使用分析                           |
+| `gemini_cache` | `GeminiCacheConfig`，用于 Gemini `cachedContents` API 集成                       |
+| `oauth`        | OAuth PKCE 流程类型、Token 存储和 Provider 无关的认证                            |
+| `credentials_types` | 跨 Provider 客户端共享的凭据链类型                                          |
 
 ### 设计原则
 

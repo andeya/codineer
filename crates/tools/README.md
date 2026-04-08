@@ -22,6 +22,10 @@ This crate implements the built-in tools available to the AI agent:
 | **Collaboration**   | `TeamCreate`, `TeamDelete`, `SendMessage`, `SlashCommand`                                         |
 | **Misc**            | `TodoWrite`, `Skill`, `ToolSearch`, `Config`, `StructuredOutput`, `Sleep`                         |
 
+### Tool lazy loading
+
+Not all tools are sent to the model in the initial prompt. Core tools are loaded immediately, while MCP tools and extended tools are discovered on demand via the `ToolSearch` tool. This reduces prompt token consumption and keeps the model focused on the most relevant capabilities. Agents can call `ToolSearch` to find and activate additional tools as needed.
+
 ## Note
 
 This is an internal crate of the Codineer project. It is published to crates.io as a dependency of `codineer-cli` and is not intended for standalone use. API stability is not guaranteed outside the Codineer workspace.
