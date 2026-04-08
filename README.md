@@ -43,6 +43,10 @@ Most AI coding CLIs lock you into a single provider. Claude Code requires Anthro
 | **Git workflow** (/commit, /pr, /diff, /branch)                                                          |   **Built-in**   |   Via tools    |    Via tools    | Auto-commit  |
 | **Vim mode** in REPL                                                                                     |     **Yes**      |       No       |       No        |      No      |
 | **CI/CD ready** (JSON output, tool allowlists)                                                           |     **Yes**      |      Yes       |       Yes       |   Limited    |
+| **Context caching** (Gemini cachedContents, Anthropic prompt cache)                                      |     **Yes**      |  Anthropic only|       No        |      No      |
+| **Model-based compaction** (LLM-summarized context compression)                                          |     **Yes**      |      Yes       |       No        |      No      |
+| **Streaming tool executor** (parallel tools, sibling abort, progress events)                             |     **Yes**      |      Yes       |       No        |      No      |
+| **Permission rules** (glob-based allow/deny matrix per tool)                                             |     **Yes**      |      Yes       |    Allowlists   |      No      |
 
 **Key advantages:**
 
@@ -54,6 +58,10 @@ Most AI coding CLIs lock you into a single provider. Claude Code requires Anthro
 - **Graceful degradation** — models without function calling automatically fall back to text-only mode.
 - **Project memory** — `.codineer/CODINEER.md` gives the AI persistent context about your codebase. Commit it to share with your team.
 - **Adaptive terminal UI** — welcome panel and separator line reflow in real time as the window resizes. Ultra-narrow terminals collapse to a single-column layout; the input line redraws in place without flicker. Works on macOS, Linux, and Windows (Windows Terminal / ConPTY).
+- **Smart context caching** — Gemini's `cachedContents` API and Anthropic's prompt cache are managed automatically, reducing latency and token costs for long sessions.
+- **Model-based compaction** — when conversation context overflows, an LLM call summarizes history (with heuristic fallback), preserving key decisions and file modifications.
+- **Streaming tool execution** — tools start as soon as their parameters arrive, with parallel execution for safe tools, automatic sibling abort on bash failure, and real-time progress events.
+- **Fine-grained permission rules** — glob-pattern `always-allow`/`always-deny`/`always-ask` rules per tool and input, beyond the three permission modes.
 
 ## Table of Contents
 
@@ -65,6 +73,9 @@ Most AI coding CLIs lock you into a single provider. Claude Code requires Anthro
 - [Configuration](#configuration)
 - [Project Context](#project-context)
 - [Extending Codineer](#extending-codineer)
+- [Sessions & Resume](#sessions--resume)
+- [Self-Update](#self-update)
+- [Troubleshooting](#troubleshooting)
 - [Reference](#reference)
 - [License](#license)
 
@@ -325,6 +336,7 @@ A **framed welcome banner** shows workspace, directory, model, session, and a co
 | **Agents**      | `/agents` `/skills` `/plugin`                                            |
 | **Advanced**    | `/ultraplan` `/bughunter` `/teleport` `/debug-tool-call` `/vim`          |
 | **Diagnostics** | `/doctor`                                                                |
+| **Update**      | `/update [check\|apply\|dismiss\|status]`                               |
 | **Navigation**  | `/init` `/permissions` `/exit`                                           |
 
 **Keyboard shortcuts:**
@@ -383,7 +395,7 @@ codineer --model sonnet --permission-mode read-only "audit the codebase"
 | ---------------------------- | ---------------------------------------------------- |
 | `-p <text>`                  | One-shot prompt                                      |
 | `--model <name>`             | Choose model                                         |
-| `--output-format text\|json` | Output format                                        |
+| `--output-format text\|json\|stream-json` | Output format (`stream-json` emits newline-delimited events) |
 | `--allowedTools <list>`      | Restrict tool access (comma-separated)               |
 | `--permission-mode <mode>`   | `read-only`, `workspace-write`, `danger-full-access` |
 | `--resume <file>`            | Resume a saved session                               |
@@ -463,6 +475,8 @@ All files use the same schema. `env`, `providers`, and `mcpServers` objects are 
 | `enabledPlugins` | object   | Plugin enable/disable overrides (map of `name@marketplace` → boolean)                                                                                                                                              |
 | `plugins`        | object   | Plugin management (externalDirectories, installRoot)                                                                                                                                                               |
 | `hooks`          | object   | Shell commands for `PreToolUse` / `PostToolUse` hooks                                                                                                                                                              |
+| `geminiCache`    | object   | Gemini context caching: `{ "enabled": true, "ttlSeconds": 3600 }` — caches system prompt + tools via Google's cachedContents API                                                                                  |
+| `permissionRules`| array    | Fine-grained tool permission rules: `[{ "tool": "bash", "input": "rm *", "decision": "always-deny" }]`                                                                                                            |
 
 Inspect merged config at runtime: `/config`, `/config env`, `/config model`
 
@@ -595,6 +609,127 @@ codineer skills          # list skills
 ```
 
 Skills are discovered from the project's `.codineer/skills/` (or `~/.codineer/skills/` when no project is initialized), then `$CODINEER_CONFIG_HOME/skills/` and `~/.codineer/skills/`.
+
+---
+
+## Sessions & Resume
+
+Every conversation is saved automatically. You can resume any session later — even across reboots.
+
+```bash
+codineer --resume /path/to/session.jsonl     # Resume from CLI
+```
+
+Inside the REPL:
+
+| Command                | Action                                        |
+| ---------------------- | --------------------------------------------- |
+| `/session`             | Show current session path                     |
+| `/resume <path>`       | Load and resume a previous session            |
+| `/export [path]`       | Export the session transcript                  |
+| `/compact`             | Summarize and compress context to free tokens |
+| `/clear`               | Clear conversation history                    |
+
+The welcome banner includes a copy-paste `codineer --resume …` line so you can always return to a session.
+
+---
+
+## Self-Update
+
+Codineer can update itself. A background check runs periodically (every 24h by default) and shows a notification when a new version is available.
+
+```bash
+codineer update                   # Check for updates and auto-install
+```
+
+Inside the REPL:
+
+| Command              | Action                                                          |
+| -------------------- | --------------------------------------------------------------- |
+| `/update`            | Check for new versions                                          |
+| `/update apply`      | Download and install the latest version                         |
+| `/update dismiss`    | Suppress notification for the current version                   |
+| `/update status`     | Show current version, last check time, and dismissed versions   |
+
+The updater downloads the correct prebuilt binary for your platform (macOS, Linux, Windows) and replaces the current executable atomically with a backup. If no prebuilt binary is available for your platform, it shows manual install instructions.
+
+---
+
+## Troubleshooting
+
+<details><summary><strong>No API key / authentication errors</strong></summary>
+
+```bash
+codineer status                         # Check which credentials are detected
+codineer status anthropic               # Check a specific provider
+codineer login                          # OAuth login
+codineer login anthropic --source claude-code   # Reuse Claude Code credentials
+```
+
+Set API keys via shell exports or `settings.json` → `"env"`. See [Environment variables](#environment-variables).
+
+</details>
+
+<details><summary><strong>Model not found / unsupported model</strong></summary>
+
+```bash
+codineer models                         # List all available models
+codineer models ollama                  # Check Ollama models
+codineer --model ollama/qwen3-coder "test"   # Use explicit provider/model
+```
+
+For custom providers, make sure `baseUrl` uses the OpenAI-compatible endpoint (e.g. `/v1` or `/v1beta/openai` for Gemini).
+
+</details>
+
+<details><summary><strong>"assistant stream produced no content"</strong></summary>
+
+Some providers (DashScope, certain OpenRouter models) send responses in non-standard formats. Codineer normalizes `reasoning_content`, `thought`, and array-shaped `content`. If you still see this error, the CLI automatically retries once with a non-streaming request. Ensure you are on the latest version: `codineer update`.
+
+</details>
+
+<details><summary><strong>Permission denied when editing files</strong></summary>
+
+By default, Codineer runs in `workspace-write` mode and asks before writing outside the workspace. Change mode with:
+
+```bash
+codineer --permission-mode danger-full-access    # Unrestricted
+codineer --permission-mode read-only             # No writes at all
+```
+
+Or set permanently in `settings.json`: `"permissionMode": "danger-full-access"`
+
+</details>
+
+<details><summary><strong>Ollama not detected</strong></summary>
+
+- Ensure Ollama is running: `ollama serve`
+- Check the endpoint: `curl http://localhost:11434/v1/models`
+- For remote Ollama: `export OLLAMA_HOST=http://your-server:11434`
+
+</details>
+
+<details><summary><strong>Images not working (Ctrl+V)</strong></summary>
+
+- **macOS**: Use `Ctrl+V` (not `Cmd+V`). Terminal.app/iTerm2 intercept `Cmd+V`.
+- **Windows**: Use `/image` instead (Windows Terminal intercepts `Ctrl+V` for text paste).
+- **Linux**: Works in most terminals. Try `/image` if `Ctrl+V` fails.
+- Fallback: `@photo.png` to attach an image file directly.
+
+</details>
+
+<details><summary><strong>Context overflow / conversation too long</strong></summary>
+
+Codineer automatically compacts context when it approaches the model's limit. You can also manually trigger compaction:
+
+```
+/compact                # Summarize and compress context
+/clear                  # Start fresh
+```
+
+Configure `geminiCache` in settings for intelligent context caching with Gemini models.
+
+</details>
 
 ---
 
