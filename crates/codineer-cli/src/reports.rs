@@ -190,6 +190,113 @@ pub(crate) fn format_resume_report(session_path: &str, message_count: usize, tur
     )
 }
 
+const HISTORY_USER_TEXT_MAX: usize = 500;
+const HISTORY_ASSISTANT_TEXT_MAX: usize = 2000;
+
+/// Render a compact replay of the session conversation for display after
+/// resume.  User prompts are shown with `❯`, assistant text is rendered
+/// through the markdown engine with a gutter prefix, and tool calls/results
+/// are shown as one-line summaries.
+pub(crate) fn render_session_history(session: &Session) -> String {
+    use crate::render::TerminalRenderer;
+    use crate::tool_display::{format_tool_call_start, format_tool_result};
+
+    let p = Palette::for_stdout();
+    let renderer = TerminalRenderer::new();
+    let mut lines: Vec<String> = Vec::new();
+
+    let separator = if p.dim.is_empty() {
+        "--- Restored conversation ---".to_string()
+    } else {
+        format!("{}── Restored conversation ──{}", p.dim, p.r)
+    };
+    lines.push(separator);
+    lines.push(String::new());
+
+    let gutter_first = if p.dim.is_empty() {
+        "  ⎿  ".to_string()
+    } else {
+        format!("{}  ⎿  {}", p.dim, p.r)
+    };
+    let gutter_cont = "     ";
+
+    for message in &session.messages {
+        match message.role {
+            MessageRole::System => {}
+            MessageRole::User => {
+                for block in &message.blocks {
+                    match block {
+                        ContentBlock::Text { text } => {
+                            let display = truncate_history_text(text, HISTORY_USER_TEXT_MAX);
+                            lines.push(format!("{}❯{} {}", p.violet, p.r, display));
+                        }
+                        ContentBlock::Image { media_type, .. } => {
+                            lines.push(format!("{}❯{} [image: {media_type}]", p.violet, p.r));
+                        }
+                        _ => {}
+                    }
+                }
+                lines.push(String::new());
+            }
+            MessageRole::Assistant => {
+                for block in &message.blocks {
+                    match block {
+                        ContentBlock::Text { text } if !text.is_empty() => {
+                            let display = truncate_history_text(text, HISTORY_ASSISTANT_TEXT_MAX);
+                            let rendered = renderer.render_markdown(&display);
+                            for (i, line) in rendered.lines().enumerate() {
+                                let prefix = if i == 0 { &gutter_first } else { gutter_cont };
+                                lines.push(format!("{prefix}{line}"));
+                            }
+                        }
+                        ContentBlock::ToolUse { name, input, .. } => {
+                            let summary = format_tool_call_start(name, input);
+                            lines.push(format!("{gutter_first}{summary}"));
+                        }
+                        _ => {}
+                    }
+                }
+                lines.push(String::new());
+            }
+            MessageRole::Tool => {
+                for block in &message.blocks {
+                    if let ContentBlock::ToolResult {
+                        tool_name,
+                        output,
+                        is_error,
+                        ..
+                    } = block
+                    {
+                        let result_line = format_tool_result(tool_name, output, *is_error);
+                        if let Some(first_line) = result_line.lines().next() {
+                            lines.push(format!("{gutter_cont}{first_line}"));
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    let end_separator = if p.dim.is_empty() {
+        "--- End of restored conversation ---".to_string()
+    } else {
+        format!("{}── End of restored conversation ──{}", p.dim, p.r)
+    };
+    lines.push(end_separator);
+    lines.push(String::new());
+    lines.join("\n")
+}
+
+fn truncate_history_text(text: &str, max_chars: usize) -> String {
+    let char_count = text.chars().count();
+    if char_count <= max_chars {
+        return text.to_string();
+    }
+    let truncated: String = text.chars().take(max_chars).collect();
+    format!("{truncated}…")
+}
+
 pub(crate) fn format_compact_report(
     removed: usize,
     resulting_messages: usize,

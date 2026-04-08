@@ -29,8 +29,8 @@ use crate::reports::{
     format_permissions_report, format_permissions_switch_report, format_resume_report,
     format_status_report, normalize_permission_mode, render_config_report, render_diff_report,
     render_export_text, render_last_tool_debug_report, render_memory_report,
-    render_teleport_report, render_version_report, resolve_export_path, status_context,
-    StatusUsage,
+    render_session_history, render_teleport_report, render_version_report, resolve_export_path,
+    status_context, StatusUsage,
 };
 use crate::runtime_client::{
     build_runtime, CliObserver, CliPermissionPrompter, CliToolExecutor, DefaultRuntimeClient,
@@ -691,6 +691,9 @@ impl LiveCli {
             return Ok(false);
         };
         let count = self.activate_session(resolve_session_reference(&session_ref)?)?;
+        if count > 0 {
+            println!("{}", render_session_history(self.runtime.session()));
+        }
         println!(
             "{}",
             format_resume_report(
@@ -1111,6 +1114,9 @@ pub(crate) fn run_repl(
     if let Some(path) = resume_path {
         let handle = crate::session_store::SessionHandle::from_path(path)?;
         let count = cli.activate_session(handle)?;
+        if count > 0 {
+            println!("{}", render_session_history(cli.runtime.session()));
+        }
         println!(
             "{}",
             format_resume_report(&cli.session.path.display().to_string(), count, 0,)
