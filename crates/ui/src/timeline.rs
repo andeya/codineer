@@ -427,10 +427,19 @@ fn render_chat_card(
         .show(ui, |ui| {
             ui.set_min_width(ui.available_width());
 
+            // ── User prompt ───────────────────────────────────────────────
             ui.horizontal_wrapped(|ui| {
                 ui.label(RichText::new("User").size(12.0).strong().color(t::FG()));
             });
-            ui.label(RichText::new(&card.prompt).size(13.0).color(t::FG_SOFT()));
+            // Use selectable label so users can highlight and copy the prompt.
+            ui.add(
+                egui::Label::new(
+                    RichText::new(card.prompt.as_str())
+                        .size(13.0)
+                        .color(t::FG_SOFT()),
+                )
+                .selectable(true),
+            );
 
             if !card.context_refs.is_empty() {
                 ui.add_space(2.0);
@@ -452,6 +461,7 @@ fn render_chat_card(
                 });
             }
 
+            // ── Aineer response ───────────────────────────────────────────
             if !card.response.is_empty() || card.streaming || !card.tool_turns.is_empty() {
                 ui.add_space(6.0);
                 ui.painter().hline(
@@ -461,7 +471,7 @@ fn render_chat_card(
                 );
                 ui.add_space(6.0);
 
-                ui.horizontal_wrapped(|ui| {
+                ui.horizontal(|ui| {
                     ui.label(
                         RichText::new("Aineer")
                             .size(12.0)
@@ -470,6 +480,30 @@ fn render_chat_card(
                     );
                     if card.streaming {
                         ui.spinner();
+                    }
+
+                    // Copy button for the full AI response (right-aligned)
+                    if !card.response.is_empty() && !card.streaming {
+                        ui.with_layout(
+                            egui::Layout::right_to_left(egui::Align::Center),
+                            |ui| {
+                                if ui
+                                    .add(
+                                        egui::Button::new(
+                                            RichText::new("Copy")
+                                                .size(10.0)
+                                                .color(t::FG_DIM()),
+                                        )
+                                        .fill(egui::Color32::TRANSPARENT)
+                                        .corner_radius(t::BUTTON_CORNER_RADIUS),
+                                    )
+                                    .on_hover_text("Copy response to clipboard")
+                                    .clicked()
+                                {
+                                    ui.ctx().copy_text(card.response.clone());
+                                }
+                            },
+                        );
                     }
                 });
 
@@ -653,11 +687,14 @@ fn render_system_card(ui: &mut Ui, card: &SystemCard) {
         .inner_margin(egui::Margin::symmetric(t::CARD_INNER_MARGIN as i8, 8))
         .show(ui, |ui| {
             ui.set_min_width(ui.available_width());
-            ui.label(
-                RichText::new(&card.message)
-                    .italics()
-                    .size(12.0)
-                    .color(t::FG_DIM()),
+            ui.add(
+                egui::Label::new(
+                    RichText::new(card.message.as_str())
+                        .italics()
+                        .size(12.0)
+                        .color(t::FG_DIM()),
+                )
+                .selectable(true),
             );
         });
 }
