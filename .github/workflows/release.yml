@@ -47,18 +47,18 @@ jobs:
         run: cargo install cross --git https://github.com/cross-rs/cross
 
       - name: Build release binary
-        run: ${{ matrix.cross && 'cross' || 'cargo' }} build --release --target ${{ matrix.target }}
+        run: ${{ matrix.cross && 'cross' || 'cargo' }} build --release -p aineer --target ${{ matrix.target }}
 
       - name: Determine binary path
         id: bin
         shell: bash
         run: |
           if [[ "${{ matrix.target }}" == *windows* ]]; then
-            echo "path=target/${{ matrix.target }}/release/codineer.exe" >> "$GITHUB_OUTPUT"
-            echo "name=codineer.exe" >> "$GITHUB_OUTPUT"
+            echo "path=target/${{ matrix.target }}/release/aineer.exe" >> "$GITHUB_OUTPUT"
+            echo "name=aineer.exe" >> "$GITHUB_OUTPUT"
           else
-            echo "path=target/${{ matrix.target }}/release/codineer" >> "$GITHUB_OUTPUT"
-            echo "name=codineer" >> "$GITHUB_OUTPUT"
+            echo "path=target/${{ matrix.target }}/release/aineer" >> "$GITHUB_OUTPUT"
+            echo "name=aineer" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Package (tar.gz)
@@ -66,7 +66,7 @@ jobs:
         id: pkg_tar
         shell: bash
         run: |
-          staging="codineer-${{ github.ref_name }}-${{ matrix.target }}"
+          staging="aineer-${{ github.ref_name }}-${{ matrix.target }}"
           mkdir -p "$staging"
           cp "${{ steps.bin.outputs.path }}" "$staging/"
           cp LICENSE README.md "$staging/" 2>/dev/null || true
@@ -78,18 +78,63 @@ jobs:
         id: pkg_zip
         shell: bash
         run: |
-          staging="codineer-${{ github.ref_name }}-${{ matrix.target }}"
+          staging="aineer-${{ github.ref_name }}-${{ matrix.target }}"
           mkdir -p "$staging"
           cp "${{ steps.bin.outputs.path }}" "$staging/"
           cp LICENSE README.md "$staging/" 2>/dev/null || true
           7z a "$staging.zip" "$staging"
           echo "asset=$staging.zip" >> "$GITHUB_OUTPUT"
 
+      - name: Create macOS .dmg
+        if: matrix.target == 'aarch64-apple-darwin' || matrix.target == 'x86_64-apple-darwin'
+        id: pkg_dmg
+        shell: bash
+        run: |
+          APP_NAME="Aineer"
+          DMG_NAME="aineer-${{ github.ref_name }}-${{ matrix.target }}.dmg"
+          mkdir -p dmg_staging
+          cp "${{ steps.bin.outputs.path }}" dmg_staging/aineer
+          chmod +x dmg_staging/aineer
+          hdiutil create -volname "$APP_NAME" -srcfolder dmg_staging \
+            -ov -format UDZO "$DMG_NAME"
+          echo "asset=$DMG_NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Create Linux AppImage
+        if: matrix.target == 'x86_64-unknown-linux-gnu' && !matrix.cross
+        id: pkg_appimage
+        shell: bash
+        run: |
+          APP_NAME="Aineer"
+          APPDIR="AppDir"
+          mkdir -p "$APPDIR/usr/bin" "$APPDIR/usr/share/icons/hicolor/256x256/apps"
+          cp "${{ steps.bin.outputs.path }}" "$APPDIR/usr/bin/aineer"
+          chmod +x "$APPDIR/usr/bin/aineer"
+          cat > "$APPDIR/aineer.desktop" << 'DESKTOP'
+          [Desktop Entry]
+          Name=Aineer
+          Exec=aineer
+          Icon=aineer
+          Type=Application
+          Categories=Development;TerminalEmulator;
+          DESKTOP
+          # Placeholder icon (will use generated branding later)
+          convert -size 256x256 xc:#6366f1 "$APPDIR/usr/share/icons/hicolor/256x256/apps/aineer.png" 2>/dev/null || true
+          cp "$APPDIR/usr/share/icons/hicolor/256x256/apps/aineer.png" "$APPDIR/aineer.png" 2>/dev/null || true
+          # Download appimagetool
+          wget -q "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage" -O appimagetool
+          chmod +x appimagetool
+          ARCH=x86_64 ./appimagetool "$APPDIR" "aineer-${{ github.ref_name }}-x86_64.AppImage"
+          echo "asset=aineer-${{ github.ref_name }}-x86_64.AppImage" >> "$GITHUB_OUTPUT"
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: codineer-${{ matrix.target }}
-          path: ${{ steps.pkg_tar.outputs.asset || steps.pkg_zip.outputs.asset }}
+          name: aineer-${{ matrix.target }}
+          path: |
+            ${{ steps.pkg_tar.outputs.asset }}
+            ${{ steps.pkg_zip.outputs.asset }}
+            ${{ steps.pkg_dmg.outputs.asset }}
+            ${{ steps.pkg_appimage.outputs.asset }}
 
   release:
     name: Create GitHub Release
@@ -153,7 +198,7 @@ jobs:
           }
 
           failed=""
-          for crate in codineer-lsp codineer-runtime codineer-api codineer-plugins codineer-tools codineer-commands codineer-cli; do
+          for crate in aineer-core aineer-mcp aineer-lsp aineer-api aineer-runtime aineer-plugins aineer-tools aineer-commands aineer-cli aineer; do
             if ! publish_crate "$crate"; then
               failed="$failed $crate"
             fi
@@ -175,8 +220,8 @@ jobs:
       - name: Compute SHA256 checksums
         run: |
           for target in x86_64-apple-darwin aarch64-apple-darwin x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu; do
-            archive="codineer-${{ github.ref_name }}-${target}.tar.gz"
-            url="https://github.com/andeya/codineer/releases/download/${{ github.ref_name }}/${archive}"
+            archive="aineer-${{ github.ref_name }}-${target}.tar.gz"
+            url="https://github.com/andeya/aineer/releases/download/${{ github.ref_name }}/${archive}"
             sha=$(curl -sL "$url" | sha256sum | cut -d' ' -f1)
             key=$(echo "$target" | tr '-' '_')
             echo "sha_${key}=${sha}" >> "$GITHUB_ENV"
@@ -185,7 +230,7 @@ jobs:
       - name: Check out Homebrew tap repo
         uses: actions/checkout@v4
         with:
-          repository: andeya/homebrew-codineer
+          repository: andeya/homebrew-aineer
           token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
 
       - name: Update Formula
@@ -193,39 +238,39 @@ jobs:
           VERSION="${{ steps.version.outputs.version }}"
           TAG="${{ github.ref_name }}"
           mkdir -p Formula
-          cat > Formula/codineer.rb << FORMULA
-          class Codineer < Formula
+          cat > Formula/aineer.rb << FORMULA
+          class Aineer < Formula
             desc "Local coding-agent CLI implemented in safe Rust"
-            homepage "https://github.com/andeya/codineer"
+            homepage "https://github.com/andeya/aineer"
             version "${VERSION}"
             license "MIT"
 
             on_macos do
               if Hardware::CPU.arm?
-                url "https://github.com/andeya/codineer/releases/download/${TAG}/codineer-${TAG}-aarch64-apple-darwin.tar.gz"
+                url "https://github.com/andeya/aineer/releases/download/${TAG}/aineer-${TAG}-aarch64-apple-darwin.tar.gz"
                 sha256 "${sha_aarch64_apple_darwin}"
               else
-                url "https://github.com/andeya/codineer/releases/download/${TAG}/codineer-${TAG}-x86_64-apple-darwin.tar.gz"
+                url "https://github.com/andeya/aineer/releases/download/${TAG}/aineer-${TAG}-x86_64-apple-darwin.tar.gz"
                 sha256 "${sha_x86_64_apple_darwin}"
               end
             end
 
             on_linux do
               if Hardware::CPU.arm?
-                url "https://github.com/andeya/codineer/releases/download/${TAG}/codineer-${TAG}-aarch64-unknown-linux-gnu.tar.gz"
+                url "https://github.com/andeya/aineer/releases/download/${TAG}/aineer-${TAG}-aarch64-unknown-linux-gnu.tar.gz"
                 sha256 "${sha_aarch64_unknown_linux_gnu}"
               else
-                url "https://github.com/andeya/codineer/releases/download/${TAG}/codineer-${TAG}-x86_64-unknown-linux-gnu.tar.gz"
+                url "https://github.com/andeya/aineer/releases/download/${TAG}/aineer-${TAG}-x86_64-unknown-linux-gnu.tar.gz"
                 sha256 "${sha_x86_64_unknown_linux_gnu}"
               end
             end
 
             def install
-              bin.install "codineer"
+              bin.install "aineer"
             end
 
             test do
-              assert_match version.to_s, shell_output("#{bin}/codineer --version")
+              assert_match version.to_s, shell_output("#{bin}/aineer --version")
             end
           end
           FORMULA
@@ -234,7 +279,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add Formula/codineer.rb
+          git add Formula/aineer.rb
           git diff --cached --quiet && exit 0
           git commit -m "formula: bump to ${{ github.ref_name }}"
           git push
