@@ -331,7 +331,18 @@ impl TerminalBackend {
             for col_idx in 0..cols {
                 let point = Point::new(line, Column(col_idx));
                 let cell = &content.grid[point];
-                row.push(cell.c);
+                // Skip wide-char spacers (they produce double-width glyph artifacts).
+                if cell.flags.contains(term::cell::Flags::WIDE_CHAR_SPACER) {
+                    continue;
+                }
+                // Replace NUL / C0/C1 control codes with a space so that plain
+                // text labels don't render garbage glyphs.
+                let ch = cell.c;
+                row.push(if ch == '\0' || (ch < ' ' && ch != '\t') {
+                    ' '
+                } else {
+                    ch
+                });
             }
             result.push(row.trim_end().to_string());
         }
