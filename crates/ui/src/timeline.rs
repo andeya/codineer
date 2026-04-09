@@ -62,6 +62,13 @@ impl Timeline {
         self.auto_scroll = true;
     }
 
+    pub fn last_shell_card(&self) -> Option<&ShellCard> {
+        self.cards.iter().rev().find_map(|c| match c {
+            Card::Shell(sc) => Some(sc),
+            _ => None,
+        })
+    }
+
     pub fn last_shell_card_mut(&mut self) -> Option<&mut ShellCard> {
         self.cards.iter_mut().rev().find_map(|c| match c {
             Card::Shell(sc) => Some(sc),

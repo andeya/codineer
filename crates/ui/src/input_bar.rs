@@ -134,20 +134,6 @@ impl InputBar {
 
                 ui.horizontal(|ui| {
                     ui.label(
-                        RichText::new(&self.cwd_display)
-                            .monospace()
-                            .size(11.0)
-                            .color(t::ACCENT_CYAN()),
-                    );
-                    if let Some(ref branch) = self.git_branch {
-                        ui.label(
-                            RichText::new(format!("({branch})"))
-                                .monospace()
-                                .size(11.0)
-                                .color(t::ACCENT_LIGHT()),
-                        );
-                    }
-                    ui.label(
                         RichText::new("$")
                             .monospace()
                             .color(t::SUCCESS())

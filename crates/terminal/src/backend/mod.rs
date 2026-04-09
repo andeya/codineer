@@ -314,6 +314,11 @@ impl TerminalBackend {
         &self.last_content
     }
 
+    /// Current write generation counter — incremented on each PTY event.
+    pub fn write_generation(&self) -> u64 {
+        self.write_generation.load(Ordering::Relaxed)
+    }
+
     pub fn id(&self) -> u64 {
         self.id
     }

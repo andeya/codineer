@@ -21,18 +21,14 @@ impl<'a> SettingsRow<'a> {
     }
 
     pub fn show(self, ui: &mut Ui, control: impl FnOnce(&mut Ui) -> bool) -> bool {
-        // Use the label text as stable ID salt so each row has a unique
-        // widget namespace — prevents collisions between sibling rows.
         ui.push_id(self.label, |ui| {
             let mut changed = false;
-
-            ui.add_space(spacing::SM);
 
             ui.horizontal(|ui| {
                 ui.set_min_width(ui.available_width());
 
                 ui.vertical(|ui| {
-                    ui.set_min_width(160.0);
+                    ui.set_min_width(140.0);
                     ui.label(
                         RichText::new(self.label)
                             .size(font_size::BODY)
@@ -52,8 +48,16 @@ impl<'a> SettingsRow<'a> {
                 });
             });
 
-            ui.add_space(spacing::SM);
-            ui.separator();
+            ui.add_space(spacing::XS);
+
+            // Subtle divider
+            let rect = ui.available_rect_before_wrap();
+            ui.painter().hline(
+                rect.x_range(),
+                rect.top(),
+                egui::Stroke::new(0.5, t::BORDER_SUBTLE()),
+            );
+            ui.add_space(spacing::XS);
 
             changed
         })

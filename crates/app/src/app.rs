@@ -100,6 +100,8 @@ pub struct AineerApp {
     activity_bar: ActivityBar,
     explorer: ExplorerPanel,
     toasts: ToastManager,
+    /// Per-tab PTY write generation at last card snapshot, for live output refresh.
+    last_snapshot_gen: Vec<(u64, u64)>,
 }
 
 impl AineerApp {
@@ -251,6 +253,7 @@ impl AineerApp {
             activity_bar: ActivityBar::new(),
             explorer: ExplorerPanel::new(),
             toasts: ToastManager::default(),
+            last_snapshot_gen: Vec::new(),
         }
     }
 
@@ -338,6 +341,84 @@ impl AineerApp {
                     }
                 }
                 _ => {}
+            }
+        }
+    }
+
+    /// Refresh running ShellCards with live terminal output when the PTY has
+    /// produced new data since our last snapshot.
+    fn refresh_running_cards(&mut self) {
+        let theme = &self.terminal_theme;
+
+        // Collect tab IDs that have a running card.
+        let running_tabs: Vec<u64> = self
+            .tab_states
+            .iter()
+            .filter_map(|(tab_id, state)| {
+                state
+                    .timeline
+                    .last_shell_card()
+                    .filter(|c| c.running)
+                    .map(|_| *tab_id)
+            })
+            .collect();
+
+        for tab_id in running_tabs {
+            let Some(tab) = self.tab_manager.tab_mut(tab_id) else {
+                continue;
+            };
+
+            let gen = tab.backend.write_generation();
+            let prev = self
+                .last_snapshot_gen
+                .iter()
+                .find(|(id, _)| *id == tab_id)
+                .map(|(_, g)| *g)
+                .unwrap_or(0);
+            if gen == prev {
+                continue;
+            }
+
+            let output = tab.backend.visible_text();
+            let styled: Vec<ui::cards::OutputLine> = tab
+                .backend
+                .visible_styled_lines(theme)
+                .into_iter()
+                .map(|sl| ui::cards::OutputLine {
+                    segments: sl
+                        .segments
+                        .into_iter()
+                        .map(|s| ui::cards::OutputSegment {
+                            text: s.text,
+                            fg: s.fg,
+                            bold: s.bold,
+                        })
+                        .collect(),
+                })
+                .collect();
+            let cwd = tab
+                .backend
+                .current_cwd()
+                .map(|p| p.to_string_lossy().to_string());
+
+            if let Some((_, state)) = self.tab_states.iter_mut().find(|(id, _)| *id == tab_id) {
+                if let Some(card) = state.timeline.last_shell_card_mut() {
+                    card.output_lines = output;
+                    card.styled_output = styled;
+                    if let Some(dir) = cwd {
+                        card.working_dir = dir;
+                    }
+                }
+            }
+
+            if let Some(entry) = self
+                .last_snapshot_gen
+                .iter_mut()
+                .find(|(id, _)| *id == tab_id)
+            {
+                entry.1 = gen;
+            } else {
+                self.last_snapshot_gen.push((tab_id, gen));
             }
         }
     }
@@ -1237,6 +1318,7 @@ impl eframe::App for AineerApp {
         }
 
         self.process_pty_events(ctx);
+        self.refresh_running_cards();
         self.poll_git_status();
         self.poll_agent_streams();
 
@@ -1456,13 +1538,18 @@ impl eframe::App for AineerApp {
                     .max_width(600.0)
                     .frame(
                         egui::Frame::new()
-                            .fill(t::PANEL_BG())
+                            .fill(t::BG_ELEVATED())
                             .stroke(egui::Stroke::new(1.0, t::BORDER_SUBTLE()))
-                            .inner_margin(egui::Margin::same(12)),
+                            .inner_margin(egui::Margin::symmetric(16, 12)),
                     )
                     .show(ctx, |ui| {
                         ui.horizontal(|ui| {
-                            ui.heading(RichText::new("Settings").size(15.0));
+                            ui.label(
+                                RichText::new("Settings")
+                                    .size(16.0)
+                                    .strong()
+                                    .color(t::FG()),
+                            );
                             ui.with_layout(
                                 egui::Layout::right_to_left(egui::Align::Center),
                                 |ui| {
@@ -1471,9 +1558,10 @@ impl eframe::App for AineerApp {
                                             egui::Button::new(
                                                 RichText::new("✕").color(t::FG_DIM()),
                                             )
-                                            .fill(t::SURFACE())
+                                            .fill(egui::Color32::TRANSPARENT)
                                             .corner_radius(t::BUTTON_CORNER_RADIUS),
                                         )
+                                        .on_hover_cursor(egui::CursorIcon::PointingHand)
                                         .clicked()
                                     {
                                         self.settings_panel.open = false;
@@ -1481,7 +1569,7 @@ impl eframe::App for AineerApp {
                                 },
                             );
                         });
-                        ui.separator();
+                        ui.add_space(4.0);
                         let save_result = self.settings_panel.show(ui);
                         if let Some(ok) = save_result {
                             if ok {

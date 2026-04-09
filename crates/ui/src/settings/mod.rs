@@ -13,7 +13,7 @@ use std::path::PathBuf;
 use egui::{RichText, Ui};
 
 use crate::icons;
-use crate::theme::{self as t, font_size, radius, spacing};
+use crate::theme::{self as t, font_size, spacing};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -206,76 +206,75 @@ impl SettingsPanel {
     /// Returns `Some(true)` on successful save, `Some(false)` on save error, `None` otherwise.
     pub fn show(&mut self, ui: &mut Ui) -> Option<bool> {
         // Search bar
-        ui.add_space(spacing::SM);
-        egui::Frame::new()
-            .fill(t::INPUT_BG())
-            .corner_radius(radius::LG)
-            .inner_margin(egui::Margin::symmetric(
-                spacing::MD as i8,
-                spacing::XS as i8,
-            ))
+        ui.add_space(spacing::XS);
+        ui.horizontal(|ui| {
+            ui.label(
+                RichText::new(icons::SEARCH)
+                    .size(font_size::BODY)
+                    .color(t::FG_MUTED()),
+            );
+            ui.add(
+                egui::TextEdit::singleline(&mut self.search_query)
+                    .desired_width(ui.available_width())
+                    .hint_text("Search settings...")
+                    .frame(false)
+                    .font(egui::FontId::proportional(font_size::BODY)),
+            );
+        });
+        ui.add_space(spacing::XS);
+
+        // Tab bar with underline indicator (scrollable horizontally)
+        egui::ScrollArea::horizontal()
+            .id_salt("settings_tabs_scroll")
             .show(ui, |ui| {
-                ui.set_min_width(ui.available_width());
                 ui.horizontal(|ui| {
-                    ui.label(
-                        RichText::new(icons::SEARCH)
-                            .size(font_size::BODY)
-                            .color(t::FG_MUTED()),
-                    );
-                    ui.add(
-                        egui::TextEdit::singleline(&mut self.search_query)
-                            .desired_width(ui.available_width())
-                            .hint_text("Search settings...")
-                            .frame(false)
-                            .font(egui::FontId::proportional(font_size::BODY)),
-                    );
+                    ui.spacing_mut().item_spacing.x = 0.0;
+                    for tab in SettingsTab::all() {
+                        let is_active = self.active_tab == *tab;
+                        let label = tab.label();
+
+                        let text = RichText::new(label).size(font_size::SMALL).color(
+                            if is_active {
+                                t::FG()
+                            } else {
+                                t::FG_DIM()
+                            },
+                        );
+
+                        let btn = egui::Button::new(if is_active { text.strong() } else { text })
+                            .fill(egui::Color32::TRANSPARENT)
+                            .stroke(egui::Stroke::NONE)
+                            .corner_radius(0.0);
+
+                        let resp = ui.add(btn);
+
+                        // Underline indicator for active tab
+                        if is_active {
+                            let rect = resp.rect;
+                            ui.painter().hline(
+                                rect.x_range(),
+                                rect.bottom() + 1.0,
+                                egui::Stroke::new(2.0, t::ACCENT()),
+                            );
+                        }
+
+                        if resp
+                            .on_hover_cursor(egui::CursorIcon::PointingHand)
+                            .clicked()
+                        {
+                            self.active_tab = *tab;
+                        }
+                    }
                 });
             });
 
-        ui.add_space(spacing::MD);
-
-        // Tab navigation with icons
-        ui.horizontal_wrapped(|ui| {
-            ui.spacing_mut().item_spacing.x = spacing::XXS;
-            for tab in SettingsTab::all() {
-                let is_active = self.active_tab == *tab;
-                let label = format!("{} {}", tab.icon(), tab.label());
-
-                let text = RichText::new(label)
-                    .size(font_size::SMALL)
-                    .color(if is_active {
-                        t::ACCENT_LIGHT()
-                    } else {
-                        t::FG_DIM()
-                    });
-
-                let fill = if is_active {
-                    t::alpha(t::ACCENT(), 20)
-                } else {
-                    egui::Color32::TRANSPARENT
-                };
-
-                let stroke = if is_active {
-                    egui::Stroke::new(1.0, t::alpha(t::ACCENT(), 80))
-                } else {
-                    egui::Stroke::NONE
-                };
-
-                let btn = egui::Button::new(if is_active { text.strong() } else { text })
-                    .fill(fill)
-                    .stroke(stroke)
-                    .corner_radius(radius::MD);
-
-                if ui
-                    .add(btn)
-                    .on_hover_cursor(egui::CursorIcon::PointingHand)
-                    .clicked()
-                {
-                    self.active_tab = *tab;
-                }
-            }
-        });
-
+        // Separator under tab bar
+        let rect = ui.available_rect_before_wrap();
+        ui.painter().hline(
+            rect.x_range(),
+            rect.top(),
+            egui::Stroke::new(0.5, t::BORDER_SUBTLE()),
+        );
         ui.add_space(spacing::XS);
 
         // Sync JSON text when switching to JSON tab
