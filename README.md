@@ -1,62 +1,62 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/andeya/codineer/main/assets/logo.svg" width="96" alt="">
+  <img src="https://raw.githubusercontent.com/andeya/aineer/main/assets/logo.svg" width="96" alt="">
 </p>
-<h1 align="center">codineer</h1>
+<h1 align="center">aineer</h1>
 <p align="center">
   <em>Your multi-provider AI coding agent — one binary, any model, zero lock-in.</em>
 </p>
 
 <p align="center">
-  <a href="https://github.com/andeya/codineer/actions"><img src="https://github.com/andeya/codineer/workflows/CI/badge.svg" alt="CI"></a>
-  <a href="https://github.com/andeya/codineer/releases"><img src="https://img.shields.io/github/v/release/andeya/codineer" alt="Release"></a>
-  <a href="https://crates.io/crates/codineer-cli"><img src="https://img.shields.io/crates/v/codineer-cli.svg" alt="crates.io"></a>
-  <img src="https://raw.githubusercontent.com/andeya/codineer/main/assets/badge-platforms.svg" alt="macOS | Linux | Windows">
+  <a href="https://github.com/andeya/aineer/actions"><img src="https://github.com/andeya/aineer/workflows/CI/badge.svg" alt="CI"></a>
+  <a href="https://github.com/andeya/aineer/releases"><img src="https://img.shields.io/github/v/release/andeya/aineer" alt="Release"></a>
+  <a href="https://crates.io/crates/aineer"><img src="https://img.shields.io/crates/v/aineer.svg" alt="crates.io"></a>
+  <img src="https://raw.githubusercontent.com/andeya/aineer/main/assets/badge-platforms.svg" alt="macOS | Linux | Windows">
   <br>
   <a href="README_CN.md">中文文档</a>
 </p>
 
 ---
 
-**Codineer** turns your terminal into an AI coding companion. It reads your workspace, understands project context, and helps you write, refactor, debug, and ship code — without leaving the command line.
+**Aineer** is an AI-native terminal application with an embedded model gateway and autonomous agent. It reads your workspace, understands project context, and helps you write, refactor, debug, and ship code — with a mixed shell/chat conversation flow, built-in Git diff viewer, and AI-powered tools.
 
-Built in safe Rust. Ships as a **single ~15 MB binary**. No daemon, no runtime dependency — bring any model and go.
+Built in safe Rust with `egui` + `wgpu`. Ships as a **single binary**. GUI mode by default, `--cli` for classic terminal mode. No daemon, no runtime dependency — bring any model and go.
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/andeya/codineer/main/assets/ScreenShot_01.png" alt="Codineer REPL screenshot" width="780">
+  <img src="https://raw.githubusercontent.com/andeya/aineer/main/assets/ScreenShot_01.png" alt="Aineer REPL screenshot" width="780">
 </p>
 
-## Why Codineer?
+## Why Aineer?
 
-Most AI coding CLIs lock you into a single provider. Claude Code requires Anthropic. Codex CLI requires OpenAI. **Codineer works with all of them — and local models too.**
+Most AI coding CLIs lock you into a single provider. Claude Code requires Anthropic. Codex CLI requires OpenAI. **Aineer works with all of them — and local models too.**
 
-|                                                                                                          |     Codineer     |  Claude Code   |    Codex CLI    |    Aider     |
-| -------------------------------------------------------------------------------------------------------- | :--------------: | :------------: | :-------------: | :----------: |
-| **Multi-provider** (Anthropic, OpenAI, xAI, Ollama, …)                                                   | **All built-in** | Anthropic only | OpenAI + Ollama |     Yes      |
+|                                                                                                         |      Aineer      |  Claude Code   |    Codex CLI    |    Aider     |
+| ------------------------------------------------------------------------------------------------------- | :--------------: | :------------: | :-------------: | :----------: |
+| **Multi-provider** (Anthropic, OpenAI, xAI, Ollama, …)                                                  | **All built-in** | Anthropic only | OpenAI + Ollama |     Yes      |
 | **Zero-token-cost** ([free access to major models](#token-free-gateway-free-access-to-major-ai-models)) |     **Yes**      |       No       |       No        |      No      |
-| **Zero-config local AI** (auto-detect Ollama)                                                            |     **Yes**      |       No       |  `--oss` flag   | Manual setup |
-| **Single binary** (no runtime deps)                                                                      |     **Rust**     |    Node.js     |     Node.js     |    Python    |
-| **Multimodal input** (`@image.png`, clipboard paste, drag-and-drop)                                      |     **Yes**      |      Yes       |     Limited     |   Limited    |
-| **MCP protocol** (external tool integration)                                                             |     **Yes**      |      Yes       |       Yes       |     Yes      |
-| **Plugin system** + agents + skills                                                                      |     **Yes**      |      Yes       |       No        |      No      |
-| **Permission modes** (read-only → full access)                                                           |     **Yes**      |      Yes       |       Yes       |   Partial    |
-| **Tool-use fallback** (graceful degradation)                                                             |     **Yes**      |      N/A       |       N/A       |     N/A      |
-| **Git workflow** (/commit, /pr, /diff, /branch)                                                          |   **Built-in**   |   Via tools    |    Via tools    | Auto-commit  |
-| **Vim mode** in REPL                                                                                     |     **Yes**      |       No       |       No        |      No      |
-| **CI/CD ready** (JSON output, tool allowlists)                                                           |     **Yes**      |      Yes       |       Yes       |   Limited    |
-| **Context caching** (Gemini cachedContents, Anthropic prompt cache)                                      |     **Yes**      |  Anthropic only|       No        |      No      |
-| **Model-based compaction** (LLM-summarized context compression)                                          |     **Yes**      |      Yes       |       No        |      No      |
-| **Streaming tool executor** (parallel tools, sibling abort, progress events)                             |     **Yes**      |      Yes       |       No        |      No      |
-| **Permission rules** (glob-based allow/deny matrix per tool)                                             |     **Yes**      |      Yes       |    Allowlists   |      No      |
+| **Zero-config local AI** (auto-detect Ollama)                                                           |     **Yes**      |       No       |  `--oss` flag   | Manual setup |
+| **Single binary** (no runtime deps)                                                                     |     **Rust**     |    Node.js     |     Node.js     |    Python    |
+| **Multimodal input** (`@image.png`, clipboard paste, drag-and-drop)                                     |     **Yes**      |      Yes       |     Limited     |   Limited    |
+| **MCP protocol** (external tool integration)                                                            |     **Yes**      |      Yes       |       Yes       |     Yes      |
+| **Plugin system** + agents + skills                                                                     |     **Yes**      |      Yes       |       No        |      No      |
+| **Permission modes** (read-only → full access)                                                          |     **Yes**      |      Yes       |       Yes       |   Partial    |
+| **Tool-use fallback** (graceful degradation)                                                            |     **Yes**      |      N/A       |       N/A       |     N/A      |
+| **Git workflow** (/commit, /pr, /diff, /branch)                                                         |   **Built-in**   |   Via tools    |    Via tools    | Auto-commit  |
+| **Vim mode** in REPL                                                                                    |     **Yes**      |       No       |       No        |      No      |
+| **CI/CD ready** (JSON output, tool allowlists)                                                          |     **Yes**      |      Yes       |       Yes       |   Limited    |
+| **Context caching** (Gemini cachedContents, Anthropic prompt cache)                                     |     **Yes**      | Anthropic only |       No        |      No      |
+| **Model-based compaction** (LLM-summarized context compression)                                         |     **Yes**      |      Yes       |       No        |      No      |
+| **Streaming tool executor** (parallel tools, sibling abort, progress events)                            |     **Yes**      |      Yes       |       No        |      No      |
+| **Permission rules** (glob-based allow/deny matrix per tool)                                            |     **Yes**      |      Yes       |   Allowlists    |      No      |
 
 **Key advantages:**
 
 - **Provider freedom** — switch between Claude, GPT, Grok, Ollama, LM Studio, OpenRouter, Groq, or any OpenAI-compatible API with `--model`. No vendor lock-in.
 - **Zero token cost** — pair with [Token Free Gateway](https://github.com/andeya/token-free-gateway) to use Claude, ChatGPT, Gemini, DeepSeek, and 10+ more models for free — no API key purchase needed.
-- **Zero-config local AI** — start Ollama, run `codineer`. Auto-detects local models and picks the best one.
+- **Zero-config local AI** — start Ollama, run `aineer`. Auto-detects local models and picks the best one.
 - **Instant setup** — `brew install` or `cargo install`. One Rust binary, no runtime dependencies.
 - **Multimodal input** — attach images via `@photo.png`, paste from clipboard (`Ctrl+V` / `/image`), or drag-and-drop into the terminal. Works with Anthropic, OpenAI, and any multimodal-capable provider.
 - **Graceful degradation** — models without function calling automatically fall back to text-only mode.
-- **Project memory** — `.codineer/CODINEER.md` gives the AI persistent context about your codebase. Commit it to share with your team.
+- **Project memory** — `.aineer/AINEER.md` gives the AI persistent context about your codebase. Commit it to share with your team.
 - **Adaptive terminal UI** — welcome panel and separator line reflow in real time as the window resizes. Ultra-narrow terminals collapse to a single-column layout; the input line redraws in place without flicker. Works on macOS, Linux, and Windows (Windows Terminal / ConPTY).
 - **Smart context caching** — Gemini's `cachedContents` API and Anthropic's prompt cache are managed automatically, reducing latency and token costs for long sessions.
 - **Model-based compaction** — when conversation context overflows, an LLM call summarizes history (with heuristic fallback), preserving key decisions and file modifications.
@@ -72,7 +72,7 @@ Most AI coding CLIs lock you into a single provider. Claude Code requires Anthro
   - [File & Image Attachments](#file--image-attachments)
 - [Configuration](#configuration)
 - [Project Context](#project-context)
-- [Extending Codineer](#extending-codineer)
+- [Extending Aineer](#extending-aineer)
 - [Sessions & Resume](#sessions--resume)
 - [Self-Update](#self-update)
 - [Troubleshooting](#troubleshooting)
@@ -84,26 +84,26 @@ Most AI coding CLIs lock you into a single provider. Claude Code requires Anthro
 ## Install
 
 ```bash
-brew install andeya/codineer/codineer            # Homebrew (macOS / Linux)
-cargo install codineer-cli                        # Cargo (from crates.io)
+brew install andeya/aineer/aineer            # Homebrew (macOS / Linux)
+cargo install aineer                           # Cargo (from crates.io)
 ```
 
-Or download a prebuilt binary from [Releases](https://github.com/andeya/codineer/releases):
+Or download a prebuilt binary from [Releases](https://github.com/andeya/aineer/releases):
 
-| Platform              | File                                          |
-| --------------------- | --------------------------------------------- |
-| macOS (Apple Silicon) | `codineer-*-aarch64-apple-darwin.tar.gz`      |
-| macOS (Intel)         | `codineer-*-x86_64-apple-darwin.tar.gz`       |
-| Linux (x86_64)        | `codineer-*-x86_64-unknown-linux-gnu.tar.gz`  |
-| Linux (ARM64)         | `codineer-*-aarch64-unknown-linux-gnu.tar.gz` |
-| Windows (x86_64)      | `codineer-*-x86_64-pc-windows-msvc.zip`       |
+| Platform              | File                                        |
+| --------------------- | ------------------------------------------- |
+| macOS (Apple Silicon) | `aineer-*-aarch64-apple-darwin.tar.gz`      |
+| macOS (Intel)         | `aineer-*-x86_64-apple-darwin.tar.gz`       |
+| Linux (x86_64)        | `aineer-*-x86_64-unknown-linux-gnu.tar.gz`  |
+| Linux (ARM64)         | `aineer-*-aarch64-unknown-linux-gnu.tar.gz` |
+| Windows (x86_64)      | `aineer-*-x86_64-pc-windows-msvc.zip`       |
 
 <details><summary>Build from source</summary>
 
 ```bash
-git clone https://github.com/andeya/codineer.git
-cd codineer
-cargo install --path crates/codineer-cli --locked
+git clone https://github.com/andeya/aineer.git
+cd aineer
+cargo install --path crates/app --locked
 ```
 
 </details>
@@ -123,20 +123,20 @@ export GEMINI_API_KEY="AIzaSy..."                  # Google Gemini (free key fro
 export DASHSCOPE_API_KEY="sk-..."                 # Alibaba DashScope (OpenAI-compatible)
 ollama serve                                      # Local AI (no key needed)
 # Or use Token Free Gateway for free access to all major models (see below)
-codineer login                                    # Or OAuth login (default provider)
-codineer login anthropic --source claude-code     # Use Claude Code credentials
-codineer status                                   # Check authentication status
-codineer config set model sonnet                   # Set default model (alias or full name)
+aineer login                                    # Or OAuth login (default provider)
+aineer login anthropic --source claude-code     # Use Claude Code credentials
+aineer status                                   # Check authentication status
+aineer config set model sonnet                   # Set default model (alias or full name)
 
 # 2. Initialize project context (optional)
-codineer init
+aineer init
 
 # 3. Start coding
-codineer                                          # Interactive REPL
-codineer "explain this project"                   # One-shot prompt
+aineer                                          # Interactive REPL
+aineer "explain this project"                   # One-shot prompt
 ```
 
-Codineer auto-detects your provider. No extra flags needed. All credentials can also go in [settings.json](#configuration) instead of shell exports.
+Aineer auto-detects your provider. No extra flags needed. All credentials can also go in [settings.json](#configuration) instead of shell exports.
 
 ---
 
@@ -160,11 +160,11 @@ Define your own short model names in `settings.json`:
 ```
 
 ```bash
-codineer --model sonnet "review my changes"
-codineer --model flash "quick question"
+aineer --model sonnet "review my changes"
+aineer --model flash "quick question"
 ```
 
-No aliases are built in — you decide what short names make sense for your workflow. View your configured aliases: `codineer models`.
+No aliases are built in — you decide what short names make sense for your workflow. View your configured aliases: `aineer models`.
 
 ### Custom providers (OpenAI-compatible)
 
@@ -178,12 +178,12 @@ Use any OpenAI-compatible API with the `provider/model` syntax:
 | `openrouter/<model>` | OpenRouter | `OPENROUTER_API_KEY` |
 
 ```bash
-codineer --model ollama/qwen3-coder "refactor this module"
-codineer --model groq/llama-3.3-70b-versatile "explain this"
-codineer --model ollama              # auto-pick best coding model
+aineer --model ollama/qwen3-coder "refactor this module"
+aineer --model groq/llama-3.3-70b-versatile "explain this"
+aineer --model ollama              # auto-pick best coding model
 ```
 
-**Zero-config Ollama**: when no API keys are found and Ollama is running, Codineer auto-detects it and picks the best coding model. Supports `OLLAMA_HOST` env var and remote instances (see [Configuration](#environment-variables)).
+**Zero-config Ollama**: when no API keys are found and Ollama is running, Aineer auto-detects it and picks the best coding model. Supports `OLLAMA_HOST` env var and remote instances (see [Configuration](#environment-variables)).
 
 > Models without function calling automatically fall back to text-only mode — every model works.
 
@@ -209,17 +209,17 @@ Get a **free** API key from [Google AI Studio](https://aistudio.google.com/apike
 ```
 
 ```bash
-codineer --model gemini/gemini-2.5-flash "explain this code"
-codineer --model gemini/gemini-2.5-pro "review my architecture"
+aineer --model gemini/gemini-2.5-flash "explain this code"
+aineer --model gemini/gemini-2.5-pro "review my architecture"
 ```
 
-> **Important:** Use the OpenAI-compatible endpoint (`/v1beta/openai`), not the native Gemini REST API (`/v1beta/models/...:generateContent`). Codineer appends `/chat/completions` to the base URL.
+> **Important:** Use the OpenAI-compatible endpoint (`/v1beta/openai`), not the native Gemini REST API (`/v1beta/models/...:generateContent`). Aineer appends `/chat/completions` to the base URL.
 
 ### Token Free Gateway (Free Access to Major AI Models)
 
 > **Zero API token cost** — log in via browser once, then call Claude, ChatGPT, Gemini, DeepSeek, Qwen, Kimi, Grok, and more through a single unified gateway — completely free.
 
-[Token Free Gateway](https://github.com/andeya/token-free-gateway) is an AI gateway that drives official model web UIs (browser login) instead of paid API keys. If you can use a model in the browser, you can call it through Codineer — no API token purchase required.
+[Token Free Gateway](https://github.com/andeya/token-free-gateway) is an AI gateway that drives official model web UIs (browser login) instead of paid API keys. If you can use a model in the browser, you can call it through Aineer — no API token purchase required.
 
 **Highlights:**
 
@@ -256,9 +256,9 @@ codineer --model gemini/gemini-2.5-pro "review my architecture"
 3. Start coding:
 
 ```bash
-codineer --model token-free-gateway/claude-sonnet-4-6 "refactor this module"
-codineer --model token-free-gateway/claude-opus-4-6 "code review"
-codineer --model token-free-gateway/deepseek-chat "explain this code"
+aineer --model token-free-gateway/claude-sonnet-4-6 "refactor this module"
+aineer --model token-free-gateway/claude-opus-4-6 "code review"
+aineer --model token-free-gateway/deepseek-chat "explain this code"
 ```
 
 You can also combine it with model aliases and fallback models for a seamless experience:
@@ -280,21 +280,21 @@ Use `provider/model` and configure `providers` in `settings.json` with the corre
 
 ```bash
 export DASHSCOPE_API_KEY="sk-..."
-codineer --model dashscope/qwen-plus-2025-07-28 "one-line Rust ownership"
+aineer --model dashscope/qwen-plus-2025-07-28 "one-line Rust ownership"
 ```
 
-Streaming deltas may use `reasoning_content`, `thought`, or array-shaped `content`; Codineer normalizes these. If you still see **assistant stream produced no content**, the CLI automatically retries **once** with a non-streaming request. Use a current build from source or the latest release.
+Streaming deltas may use `reasoning_content`, `thought`, or array-shaped `content`; Aineer normalizes these. If you still see **assistant stream produced no content**, the CLI automatically retries **once** with a non-streaming request. Use a current build from source or the latest release.
 
 ### Azure OpenAI
 
-Set optional `apiVersion` (e.g. `2024-02-15-preview`) on a `providers.<name>` entry; Codineer appends `api-version=…` to the `chat/completions` URL. See [`settings.example.json`](https://github.com/andeya/codineer/blob/main/settings.example.json) (`azure-openai`).
+Set optional `apiVersion` (e.g. `2024-02-15-preview`) on a `providers.<name>` entry; Aineer appends `api-version=…` to the `chat/completions` URL. See [`settings.example.json`](https://github.com/andeya/aineer/blob/main/settings.example.json) (`azure-openai`).
 
 ### List available models
 
 ```bash
-codineer models               # All providers
-codineer models anthropic     # Filter by provider
-codineer models ollama        # Show local Ollama models
+aineer models               # All providers
+aineer models anthropic     # Filter by provider
+aineer models ollama        # Show local Ollama models
 ```
 
 ### Model resolution order
@@ -305,13 +305,13 @@ When no `--model` flag is given:
 2. Auto-detect from available API credentials
 3. Auto-detect running Ollama instance
 
-If the resolved model lacks credentials, Codineer tries each entry in `fallbackModels` before giving up.
+If the resolved model lacks credentials, Aineer tries each entry in `fallbackModels` before giving up.
 
 Switch model mid-session: `/model <name>`
 
 ### Fallback models
 
-Set an ordered list of fallback models in `settings.json`. If the primary model is unavailable (e.g. missing API key), Codineer tries each fallback in order:
+Set an ordered list of fallback models in `settings.json`. If the primary model is unavailable (e.g. missing API key), Aineer tries each fallback in order:
 
 ```json
 {
@@ -330,10 +330,10 @@ Set an ordered list of fallback models in `settings.json`. If the primary model 
 ### Interactive REPL
 
 ```bash
-codineer
+aineer
 ```
 
-A **framed welcome banner** shows workspace, directory, model, session, and a copy-paste `codineer --resume …` line. The banner and separator adapt to the current terminal width in real time — narrow terminals switch to a single-column layout automatically. The prompt is **`❯`**. Type naturally. Use **slash commands** (Tab-autocomplete supported):
+A **framed welcome banner** shows workspace, directory, model, session, and a copy-paste `aineer --resume …` line. The banner and separator adapt to the current terminal width in real time — narrow terminals switch to a single-column layout automatically. The prompt is **`❯`**. Type naturally. Use **slash commands** (Tab-autocomplete supported):
 
 | Category        | Commands                                                                 |
 | --------------- | ------------------------------------------------------------------------ |
@@ -343,7 +343,7 @@ A **framed welcome banner** shows workspace, directory, model, session, and a co
 | **Agents**      | `/agents` `/skills` `/plugin`                                            |
 | **Advanced**    | `/ultraplan` `/bughunter` `/teleport` `/debug-tool-call` `/vim`          |
 | **Diagnostics** | `/doctor`                                                                |
-| **Update**      | `/update [check\|apply\|dismiss\|status]`                               |
+| **Update**      | `/update [check\|apply\|dismiss\|status]`                                |
 | **Navigation**  | `/init` `/permissions` `/exit`                                           |
 
 **Keyboard shortcuts:**
@@ -393,20 +393,20 @@ Images are transmitted as proper multimodal content — `source: base64` for Ant
 ### One-shot prompts
 
 ```bash
-codineer "explain this project's architecture"
-codineer -p "list all TODO comments" --output-format json
-codineer --model sonnet --permission-mode read-only "audit the codebase"
+aineer "explain this project's architecture"
+aineer -p "list all TODO comments" --output-format json
+aineer --model sonnet --permission-mode read-only "audit the codebase"
 ```
 
-| Flag                         | Description                                          |
-| ---------------------------- | ---------------------------------------------------- |
-| `-p <text>`                  | One-shot prompt                                      |
-| `--model <name>`             | Choose model                                         |
+| Flag                                      | Description                                                  |
+| ----------------------------------------- | ------------------------------------------------------------ |
+| `-p <text>`                               | One-shot prompt                                              |
+| `--model <name>`                          | Choose model                                                 |
 | `--output-format text\|json\|stream-json` | Output format (`stream-json` emits newline-delimited events) |
-| `--allowedTools <list>`      | Restrict tool access (comma-separated)               |
-| `--permission-mode <mode>`   | `read-only`, `workspace-write`, `danger-full-access` |
-| `--resume <file>`            | Resume a saved session                               |
-| `-V`, `--version`            | Print version                                        |
+| `--allowedTools <list>`                   | Restrict tool access (comma-separated)                       |
+| `--permission-mode <mode>`                | `read-only`, `workspace-write`, `danger-full-access`         |
+| `--resume <file>`                         | Resume a saved session                                       |
+| `-V`, `--version`                         | Print version                                                |
 
 ### Permission modes
 
@@ -419,7 +419,7 @@ codineer --model sonnet --permission-mode read-only "audit the codebase"
 ### Scripting & CI
 
 ```bash
-codineer -p "check for security issues" \
+aineer -p "check for security issues" \
   --permission-mode read-only \
   --allowedTools read_file,grep_search \
   --output-format json | jq '.content[0].text'
@@ -431,19 +431,19 @@ codineer -p "check for security issues" \
 
 ### Settings files
 
-Codineer merges JSON settings from multiple files (highest to lowest precedence):
+Aineer merges JSON settings from multiple files (highest to lowest precedence):
 
-| File                            | Actual path                                    | Scope                     | Committed?      |
-| ------------------------------- | ---------------------------------------------- | ------------------------- | --------------- |
-| `.codineer/settings.local.json` | `<project root>/.codineer/settings.local.json` | Project — local overrides | No (gitignored) |
-| `.codineer/settings.json`       | `<project root>/.codineer/settings.json`       | Project settings          | Yes             |
-| `~/.codineer/settings.json`     | `$HOME/.codineer/settings.json`                | User — global settings    | —               |
+| File                          | Actual path                                  | Scope                     | Committed?      |
+| ----------------------------- | -------------------------------------------- | ------------------------- | --------------- |
+| `.aineer/settings.local.json` | `<project root>/.aineer/settings.local.json` | Project — local overrides | No (gitignored) |
+| `.aineer/settings.json`       | `<project root>/.aineer/settings.json`       | Project settings          | Yes             |
+| `~/.aineer/settings.json`     | `$HOME/.aineer/settings.json`                | User — global settings    | —               |
 
-All files use the same schema. `env`, `providers`, and `mcpServers` objects are deep-merged across layers. For `mcpServers`, a server name defined in a later file replaces (not deep-merges) the earlier definition. `codineer config set` writes to the global file (`~/.codineer/settings.json`).
+All files use the same schema. `env`, `providers`, and `mcpServers` objects are deep-merged across layers. For `mcpServers`, a server name defined in a later file replaces (not deep-merges) the earlier definition. `aineer config set` writes to the global file (`~/.aineer/settings.json`).
 
 ### Settings reference
 
-> **Full example with all fields:** [`settings.example.json`](https://github.com/andeya/codineer/blob/main/settings.example.json)
+> **Full example with all fields:** [`settings.example.json`](https://github.com/andeya/aineer/blob/main/settings.example.json)
 
 ```json
 {
@@ -467,23 +467,23 @@ All files use the same schema. `env`, `providers`, and `mcpServers` objects are 
 }
 ```
 
-| Key              | Type     | Description                                                                                                                                                                                                        |
-| ---------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `model`          | string   | Default model — alias or full name (e.g. `"sonnet"`, `"claude-sonnet-4-6"`, `"ollama/qwen3-coder"`)                                                                                                                |
-| `modelAliases`   | object   | Custom short names mapping to full model IDs (e.g. `{"sonnet": "claude-sonnet-4-6"}`)                                                                                                                              |
-| `fallbackModels` | string[] | Ordered list of fallback models when the primary is unavailable                                                                                                                                                    |
-| `permissionMode` | string   | `"read-only"`, `"workspace-write"`, or `"danger-full-access"`                                                                                                                                                      |
-| `env`            | object   | Environment variables injected at startup. Shell exports take precedence.                                                                                                                                          |
-| `providers`      | object   | Custom OpenAI-compatible endpoints: `baseUrl`, `apiKey` / `apiKeyEnv`, optional **`apiVersion`** (Azure), `defaultModel`, etc. (see [example](https://github.com/andeya/codineer/blob/main/settings.example.json)) |
-| `oauth`          | object   | Custom OAuth config (clientId, authorizeUrl, tokenUrl, scopes, etc.)                                                                                                                                               |
-| `credentials`    | object   | Credential chain config (defaultSource, autoDiscover, claudeCode)                                                                                                                                                  |
-| `mcpServers`     | object   | MCP server definitions (stdio, sse, http, ws)                                                                                                                                                                      |
-| `sandbox`        | object   | Sandbox security settings (enabled, filesystemMode, allowedMounts)                                                                                                                                                 |
-| `enabledPlugins` | object   | Plugin enable/disable overrides (map of `name@marketplace` → boolean)                                                                                                                                              |
-| `plugins`        | object   | Plugin management (externalDirectories, installRoot)                                                                                                                                                               |
-| `hooks`          | object   | Shell commands for `PreToolUse` / `PostToolUse` hooks                                                                                                                                                              |
-| `geminiCache`    | object   | Gemini context caching: `{ "enabled": true, "ttlSeconds": 3600 }` — caches system prompt + tools via Google's cachedContents API                                                                                  |
-| `permissionRules`| array    | Fine-grained tool permission rules: `[{ "tool": "bash", "input": "rm *", "decision": "always-deny" }]`                                                                                                            |
+| Key               | Type     | Description                                                                                                                                                                                                      |
+| ----------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `model`           | string   | Default model — alias or full name (e.g. `"sonnet"`, `"claude-sonnet-4-6"`, `"ollama/qwen3-coder"`)                                                                                                              |
+| `modelAliases`    | object   | Custom short names mapping to full model IDs (e.g. `{"sonnet": "claude-sonnet-4-6"}`)                                                                                                                            |
+| `fallbackModels`  | string[] | Ordered list of fallback models when the primary is unavailable                                                                                                                                                  |
+| `permissionMode`  | string   | `"read-only"`, `"workspace-write"`, or `"danger-full-access"`                                                                                                                                                    |
+| `env`             | object   | Environment variables injected at startup. Shell exports take precedence.                                                                                                                                        |
+| `providers`       | object   | Custom OpenAI-compatible endpoints: `baseUrl`, `apiKey` / `apiKeyEnv`, optional **`apiVersion`** (Azure), `defaultModel`, etc. (see [example](https://github.com/andeya/aineer/blob/main/settings.example.json)) |
+| `oauth`           | object   | Custom OAuth config (clientId, authorizeUrl, tokenUrl, scopes, etc.)                                                                                                                                             |
+| `credentials`     | object   | Credential chain config (defaultSource, autoDiscover, claudeCode)                                                                                                                                                |
+| `mcpServers`      | object   | MCP server definitions (stdio, sse, http, ws)                                                                                                                                                                    |
+| `sandbox`         | object   | Sandbox security settings (enabled, filesystemMode, allowedMounts)                                                                                                                                               |
+| `enabledPlugins`  | object   | Plugin enable/disable overrides (map of `name@marketplace` → boolean)                                                                                                                                            |
+| `plugins`         | object   | Plugin management (externalDirectories, installRoot)                                                                                                                                                             |
+| `hooks`           | object   | Shell commands for `PreToolUse` / `PostToolUse` hooks                                                                                                                                                            |
+| `geminiCache`     | object   | Gemini context caching: `{ "enabled": true, "ttlSeconds": 3600 }` — caches system prompt + tools via Google's cachedContents API                                                                                 |
+| `permissionRules` | array    | Fine-grained tool permission rules: `[{ "tool": "bash", "input": "rm *", "decision": "always-deny" }]`                                                                                                           |
 
 Inspect merged config at runtime: `/config`, `/config env`, `/config model`
 
@@ -491,33 +491,33 @@ Inspect merged config at runtime: `/config`, `/config env`, `/config model`
 
 Set via shell export **or** the `"env"` section in settings.json (shell exports take precedence):
 
-| Variable                   | Purpose                                                                                         |
-| -------------------------- | ----------------------------------------------------------------------------------------------- |
-| `ANTHROPIC_API_KEY`        | Claude API key                                                                                  |
-| `ANTHROPIC_AUTH_TOKEN`     | Bearer token (alternative)                                                                      |
-| `XAI_API_KEY`              | xAI / Grok API key                                                                              |
-| `OPENAI_API_KEY`           | OpenAI API key                                                                                  |
-| `OPENROUTER_API_KEY`       | OpenRouter API key                                                                              |
-| `GROQ_API_KEY`             | Groq Cloud API key                                                                              |
-| `GEMINI_API_KEY`           | Google Gemini API key ([free from AI Studio](https://aistudio.google.com/apikey))               |
-| `DASHSCOPE_API_KEY`        | Alibaba Cloud DashScope (OpenAI-compatible)                                                     |
-| `OLLAMA_HOST`              | Ollama endpoint (e.g. `http://192.168.1.100:11434`)                                             |
-| `CODINEER_WORKSPACE_ROOT`  | Override workspace root                                                                         |
-| `CODINEER_CONFIG_HOME`     | Override global config dir (default `~/.codineer`); `settings.json` is read from this directory |
-| `CODINEER_PERMISSION_MODE` | Default permission mode                                                                         |
-| `NO_COLOR`                 | Disable ANSI colors                                                                             |
-| `CLICOLOR=0`               | Disable ANSI colors (alternative)                                                               |
+| Variable                 | Purpose                                                                                       |
+| ------------------------ | --------------------------------------------------------------------------------------------- |
+| `ANTHROPIC_API_KEY`      | Claude API key                                                                                |
+| `ANTHROPIC_AUTH_TOKEN`   | Bearer token (alternative)                                                                    |
+| `XAI_API_KEY`            | xAI / Grok API key                                                                            |
+| `OPENAI_API_KEY`         | OpenAI API key                                                                                |
+| `OPENROUTER_API_KEY`     | OpenRouter API key                                                                            |
+| `GROQ_API_KEY`           | Groq Cloud API key                                                                            |
+| `GEMINI_API_KEY`         | Google Gemini API key ([free from AI Studio](https://aistudio.google.com/apikey))             |
+| `DASHSCOPE_API_KEY`      | Alibaba Cloud DashScope (OpenAI-compatible)                                                   |
+| `OLLAMA_HOST`            | Ollama endpoint (e.g. `http://192.168.1.100:11434`)                                           |
+| `AINEER_WORKSPACE_ROOT`  | Override workspace root                                                                       |
+| `AINEER_CONFIG_HOME`     | Override global config dir (default `~/.aineer`); `settings.json` is read from this directory |
+| `AINEER_PERMISSION_MODE` | Default permission mode                                                                       |
+| `NO_COLOR`               | Disable ANSI colors                                                                           |
+| `CLICOLOR=0`             | Disable ANSI colors (alternative)                                                             |
 
 **Credential chain (per-provider, in priority order):**
 
-| Provider           | Chain                                                                                                        |
-| ------------------ | ------------------------------------------------------------------------------------------------------------ |
-| Anthropic (Claude) | `ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN` → Codineer OAuth (`codineer login`) → Claude Code auto-discover |
-| xAI (Grok)         | `XAI_API_KEY`                                                                                                |
-| OpenAI             | `OPENAI_API_KEY`                                                                                             |
-| Custom providers   | inline `apiKey` → `apiKeyEnv` env var                                                                        |
+| Provider           | Chain                                                                                                    |
+| ------------------ | -------------------------------------------------------------------------------------------------------- |
+| Anthropic (Claude) | `ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN` → Aineer OAuth (`aineer login`) → Claude Code auto-discover |
+| xAI (Grok)         | `XAI_API_KEY`                                                                                            |
+| OpenAI             | `OPENAI_API_KEY`                                                                                         |
+| Custom providers   | inline `apiKey` → `apiKeyEnv` env var                                                                    |
 
-**Claude Code auto-discovery:** If you have Claude Code installed and logged in (`claude login`), Codineer automatically discovers your Claude Code credentials from `~/.claude/.credentials.json` (or macOS Keychain). This means you can use Codineer with your existing Claude subscription — no separate API key needed.
+**Claude Code auto-discovery:** If you have Claude Code installed and logged in (`claude login`), Aineer automatically discovers your Claude Code credentials from `~/.claude/.credentials.json` (or macOS Keychain). This means you can use Aineer with your existing Claude subscription — no separate API key needed.
 
 Configure in `settings.json`:
 
@@ -525,21 +525,21 @@ Configure in `settings.json`:
 { "credentials": { "autoDiscover": true, "claudeCode": { "enabled": true } } }
 ```
 
-Check auth status: `codineer status` or `codineer status anthropic`
+Check auth status: `aineer status` or `aineer status anthropic`
 
 **Configuration management:**
 
 ```bash
-codineer config set model sonnet               # Set a config value
-codineer config get model                      # Read a config value
-codineer config list                           # Show all settings
+aineer config set model sonnet               # Set a config value
+aineer config get model                      # Read a config value
+aineer config list                           # Show all settings
 ```
 
 ---
 
 ## Project Context
 
-`.codineer/CODINEER.md` is the **project memory file** — it is injected into every conversation's system prompt so the AI understands your codebase without re-asking each time. Typical content includes:
+`.aineer/AINEER.md` is the **project memory file** — it is injected into every conversation's system prompt so the AI understands your codebase without re-asking each time. Typical content includes:
 
 - Tech stack and languages used
 - Build, lint, and test commands
@@ -547,25 +547,25 @@ codineer config list                           # Show all settings
 - Repository layout notes
 
 ```bash
-codineer init        # auto-generate from detected stack
+aineer init        # auto-generate from detected stack
 ```
 
-`codineer init` scaffolds the `.codineer/` directory and auto-detects your stack (Rust/Python/Node/etc.) to generate a starter `CODINEER.md`. Edit it freely and commit it to the repo so the whole team benefits.
+`aineer init` scaffolds the `.aineer/` directory and auto-detects your stack (Rust/Python/Node/etc.) to generate a starter `AINEER.md`. Edit it freely and commit it to the repo so the whole team benefits.
 
-Codineer walks up the directory tree and loads all matching instruction files:
+Aineer walks up the directory tree and loads all matching instruction files:
 
-| File                        | Purpose                             |
-| --------------------------- | ----------------------------------- |
-| `.codineer/CODINEER.md`     | Primary context (commit this)       |
-| `CODINEER.md`               | Legacy location (also supported)    |
-| `CODINEER.local.md`         | Personal overrides (gitignore this) |
-| `.codineer/instructions.md` | Additional instructions             |
+| File                      | Purpose                             |
+| ------------------------- | ----------------------------------- |
+| `.aineer/AINEER.md`       | Primary context (commit this)       |
+| `AINEER.md`               | Legacy location (also supported)    |
+| `AINEER.local.md`         | Personal overrides (gitignore this) |
+| `.aineer/instructions.md` | Additional instructions             |
 
-Files are loaded from every ancestor directory, deduplicated, and concatenated into the system prompt. This means monorepo sub-projects can have their own `CODINEER.md` that augments the root one.
+Files are loaded from every ancestor directory, deduplicated, and concatenated into the system prompt. This means monorepo sub-projects can have their own `AINEER.md` that augments the root one.
 
 ---
 
-## Extending Codineer
+## Extending Aineer
 
 ### MCP servers
 
@@ -583,10 +583,10 @@ Transports: `stdio` (default), `sse`, `http`, `ws`.
 
 ### Plugins
 
-Plugins extend Codineer with custom **tools** (AI-callable functions), **slash commands**, **hooks** (pre/post tool-call interception), and **lifecycle scripts**. A plugin is a directory with a `plugin.json` manifest:
+Plugins extend Aineer with custom **tools** (AI-callable functions), **slash commands**, **hooks** (pre/post tool-call interception), and **lifecycle scripts**. A plugin is a directory with a `plugin.json` manifest:
 
 ```
-.codineer/plugins/my-plugin/
+.aineer/plugins/my-plugin/
 ├── plugin.json              ← manifest (tools, commands, hooks, lifecycle)
 ├── tools/query-db.sh        ← AI calls this tool automatically
 ├── hooks/audit.sh           ← runs before/after every tool call
@@ -609,13 +609,13 @@ Manage plugins from the REPL:
 **Agents** are named sub-agent configs for specialized tasks. **Skills** are reusable prompt templates.
 
 ```bash
-codineer agents          # list agents
-codineer skills          # list skills
+aineer agents          # list agents
+aineer skills          # list skills
 /agents                  # inside REPL
 /skills                  # inside REPL
 ```
 
-Skills are discovered from the project's `.codineer/skills/` (or `~/.codineer/skills/` when no project is initialized), then `$CODINEER_CONFIG_HOME/skills/` and `~/.codineer/skills/`.
+Skills are discovered from the project's `.aineer/skills/` (or `~/.aineer/skills/` when no project is initialized), then `$AINEER_CONFIG_HOME/skills/` and `~/.aineer/skills/`.
 
 ---
 
@@ -624,39 +624,39 @@ Skills are discovered from the project's `.codineer/skills/` (or `~/.codineer/sk
 Every conversation is saved automatically. You can resume any session later — even across reboots.
 
 ```bash
-codineer --resume /path/to/session.jsonl     # Resume from CLI
+aineer --resume /path/to/session.jsonl     # Resume from CLI
 ```
 
 Inside the REPL:
 
-| Command                | Action                                        |
-| ---------------------- | --------------------------------------------- |
-| `/session`             | Show current session path                     |
-| `/resume <path>`       | Load and resume a previous session            |
-| `/export [path]`       | Export the session transcript                  |
-| `/compact`             | Summarize and compress context to free tokens |
-| `/clear`               | Clear conversation history                    |
+| Command          | Action                                        |
+| ---------------- | --------------------------------------------- |
+| `/session`       | Show current session path                     |
+| `/resume <path>` | Load and resume a previous session            |
+| `/export [path]` | Export the session transcript                 |
+| `/compact`       | Summarize and compress context to free tokens |
+| `/clear`         | Clear conversation history                    |
 
-The welcome banner includes a copy-paste `codineer --resume …` line so you can always return to a session.
+The welcome banner includes a copy-paste `aineer --resume …` line so you can always return to a session.
 
 ---
 
 ## Self-Update
 
-Codineer can update itself. A background check runs periodically (every 24h by default) and shows a notification when a new version is available.
+Aineer can update itself. A background check runs periodically (every 24h by default) and shows a notification when a new version is available.
 
 ```bash
-codineer update                   # Check for updates and auto-install
+aineer update                   # Check for updates and auto-install
 ```
 
 Inside the REPL:
 
-| Command              | Action                                                          |
-| -------------------- | --------------------------------------------------------------- |
-| `/update`            | Check for new versions                                          |
-| `/update apply`      | Download and install the latest version                         |
-| `/update dismiss`    | Suppress notification for the current version                   |
-| `/update status`     | Show current version, last check time, and dismissed versions   |
+| Command           | Action                                                        |
+| ----------------- | ------------------------------------------------------------- |
+| `/update`         | Check for new versions                                        |
+| `/update apply`   | Download and install the latest version                       |
+| `/update dismiss` | Suppress notification for the current version                 |
+| `/update status`  | Show current version, last check time, and dismissed versions |
 
 The updater downloads the correct prebuilt binary for your platform (macOS, Linux, Windows) and replaces the current executable atomically with a backup. If no prebuilt binary is available for your platform, it shows manual install instructions.
 
@@ -667,10 +667,10 @@ The updater downloads the correct prebuilt binary for your platform (macOS, Linu
 <details><summary><strong>No API key / authentication errors</strong></summary>
 
 ```bash
-codineer status                         # Check which credentials are detected
-codineer status anthropic               # Check a specific provider
-codineer login                          # OAuth login
-codineer login anthropic --source claude-code   # Reuse Claude Code credentials
+aineer status                         # Check which credentials are detected
+aineer status anthropic               # Check a specific provider
+aineer login                          # OAuth login
+aineer login anthropic --source claude-code   # Reuse Claude Code credentials
 ```
 
 Set API keys via shell exports or `settings.json` → `"env"`. See [Environment variables](#environment-variables).
@@ -680,9 +680,9 @@ Set API keys via shell exports or `settings.json` → `"env"`. See [Environment 
 <details><summary><strong>Model not found / unsupported model</strong></summary>
 
 ```bash
-codineer models                         # List all available models
-codineer models ollama                  # Check Ollama models
-codineer --model ollama/qwen3-coder "test"   # Use explicit provider/model
+aineer models                         # List all available models
+aineer models ollama                  # Check Ollama models
+aineer --model ollama/qwen3-coder "test"   # Use explicit provider/model
 ```
 
 For custom providers, make sure `baseUrl` uses the OpenAI-compatible endpoint (e.g. `/v1` or `/v1beta/openai` for Gemini).
@@ -691,17 +691,17 @@ For custom providers, make sure `baseUrl` uses the OpenAI-compatible endpoint (e
 
 <details><summary><strong>"assistant stream produced no content"</strong></summary>
 
-Some providers (DashScope, certain OpenRouter models) send responses in non-standard formats. Codineer normalizes `reasoning_content`, `thought`, and array-shaped `content`. If you still see this error, the CLI automatically retries once with a non-streaming request. Ensure you are on the latest version: `codineer update`.
+Some providers (DashScope, certain OpenRouter models) send responses in non-standard formats. Aineer normalizes `reasoning_content`, `thought`, and array-shaped `content`. If you still see this error, the CLI automatically retries once with a non-streaming request. Ensure you are on the latest version: `aineer update`.
 
 </details>
 
 <details><summary><strong>Permission denied when editing files</strong></summary>
 
-By default, Codineer runs in `workspace-write` mode and asks before writing outside the workspace. Change mode with:
+By default, Aineer runs in `workspace-write` mode and asks before writing outside the workspace. Change mode with:
 
 ```bash
-codineer --permission-mode danger-full-access    # Unrestricted
-codineer --permission-mode read-only             # No writes at all
+aineer --permission-mode danger-full-access    # Unrestricted
+aineer --permission-mode read-only             # No writes at all
 ```
 
 Or set permanently in `settings.json`: `"permissionMode": "danger-full-access"`
@@ -727,7 +727,7 @@ Or set permanently in `settings.json`: `"permissionMode": "danger-full-access"`
 
 <details><summary><strong>Context overflow / conversation too long</strong></summary>
 
-Codineer automatically compacts context when it approaches the model's limit. You can also manually trigger compaction:
+Aineer automatically compacts context when it approaches the model's limit. You can also manually trigger compaction:
 
 ```
 /compact                # Summarize and compress context
@@ -788,19 +788,23 @@ Configure `geminiCache` in settings for intelligent context caching with Gemini 
 
 ### Crate structure
 
-All crates are published to crates.io. Install `codineer-cli` — the others are internal dependencies.
+All crates are published to crates.io. Install `aineer` — the others are internal dependencies.
 
-| Crate               | Role                                  |
-| ------------------- | ------------------------------------- |
-| `codineer-cli`      | CLI binary (**install this**)         |
-| `codineer-core`     | Shared types, events, observer traits |
-| `codineer-runtime`  | Core runtime engine                   |
-| `codineer-api`      | AI provider API clients               |
-| `codineer-mcp`      | MCP protocol client & transport       |
-| `codineer-tools`    | Tool definitions & execution          |
-| `codineer-plugins`  | Plugin system and hooks               |
-| `codineer-commands` | Slash commands                        |
-| `codineer-lsp`      | LSP client integration                |
+| Crate             | Role                                                 |
+| ----------------- | ---------------------------------------------------- |
+| `aineer`          | Unified binary — GUI (default) or CLI (`--cli`) mode |
+| `aineer-cli`      | CLI mode library (embedded in `aineer`)              |
+| `aineer-core`     | Shared types, events, observer traits                |
+| `aineer-runtime`  | Core runtime engine                                  |
+| `aineer-api`      | AI provider API clients                              |
+| `aineer-gateway`  | Embedded OpenAI-compatible model gateway             |
+| `aineer-terminal` | Terminal emulator backend (alacritty_terminal + PTY) |
+| `aineer-ui`       | GUI components (egui widgets, theme, timeline, etc.) |
+| `aineer-mcp`      | MCP protocol client & transport                      |
+| `aineer-tools`    | Tool definitions & execution                         |
+| `aineer-plugins`  | Plugin system and hooks                              |
+| `aineer-commands` | Slash commands                                       |
+| `aineer-lsp`      | LSP client integration                               |
 
 ---
 

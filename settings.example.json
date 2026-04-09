@@ -120,17 +120,17 @@
   },
   "oauth": {
     "clientId": "df03b862-78fe-4a2b-bb24-426ac30897b7",
-    "authorizeUrl": "https://platform.codineer.dev/oauth/authorize",
-    "tokenUrl": "https://platform.codineer.dev/v1/oauth/token",
+    "authorizeUrl": "https://platform.aineer.dev/oauth/authorize",
+    "tokenUrl": "https://platform.aineer.dev/v1/oauth/token",
     "callbackPort": 4545,
-    "manualRedirectUrl": "https://platform.codineer.dev/oauth/callback",
+    "manualRedirectUrl": "https://platform.aineer.dev/oauth/callback",
     "scopes": [
       "user:profile",
       "user:inference"
     ]
   },
   "credentials": {
-    "defaultSource": "codineer-oauth",
+    "defaultSource": "aineer-oauth",
     "autoDiscover": true,
     "claudeCode": {
       "enabled": true

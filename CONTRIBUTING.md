@@ -1,6 +1,6 @@
-# Contributing to Codineer
+# Contributing to Aineer
 
-Thanks for your interest in Codineer! This guide helps you get up and running quickly.
+Thanks for your interest in Aineer! This guide helps you get up and running quickly.
 
 ## Development setup
 
@@ -8,26 +8,30 @@ Thanks for your interest in Codineer! This guide helps you get up and running qu
 2. Clone the repo and work from the repository root — this is a Cargo workspace.
 
 ```bash
-git clone https://github.com/andeya/codineer.git
-cd codineer
+git clone https://github.com/andeya/aineer.git
+cd aineer
 cargo build
 ```
 
 ## Architecture overview
 
 ```
-codineer (Cargo workspace)
+aineer (Cargo workspace)
 ├── crates/
-│   ├── codineer-cli      # Binary crate — CLI, REPL, rendering, auto-update
-│   ├── codineer-core     # Shared types, events, observer traits
-│   ├── codineer-runtime  # Conversation engine, config, sessions, permissions
-│   ├── codineer-api      # AI provider clients (Anthropic, OpenAI-compat, Gemini cache)
-│   ├── codineer-mcp      # Model Context Protocol client & transports
-│   ├── codineer-lsp      # Language Server Protocol client
-│   ├── codineer-tools    # Built-in tool implementations
-│   ├── codineer-commands # Slash command parsing & dispatch
-│   └── codineer-plugins  # Plugin system, hooks, lifecycle
-├── .codineer/            # Project context for AI sessions
+│   ├── app/            # Unified binary — GUI (default) or CLI (--cli)
+│   ├── aineer-cli/     # CLI mode library (REPL, rendering, auto-update)
+│   ├── aineer-core/    # Shared types, events, observer traits
+│   ├── aineer-runtime/ # Conversation engine, config, sessions, permissions
+│   ├── aineer-api/     # AI provider clients (Anthropic, OpenAI-compat, Gemini cache)
+│   ├── gateway/        # Embedded OpenAI-compatible model gateway
+│   ├── terminal/       # Terminal emulator backend (alacritty_terminal + PTY)
+│   ├── ui/             # GUI components (egui widgets, theme, timeline)
+│   ├── aineer-mcp/     # Model Context Protocol client & transports
+│   ├── aineer-lsp/     # Language Server Protocol client
+│   ├── aineer-tools/   # Built-in tool implementations
+│   ├── aineer-commands/ # Slash command parsing & dispatch
+│   └── aineer-plugins/ # Plugin system, hooks, lifecycle
+├── assets/             # Logo and badge SVGs
 ├── settings.example.json # Full configuration reference
 └── .github/workflows/    # CI and release automation
 ```
@@ -35,7 +39,9 @@ codineer (Cargo workspace)
 **Dependency direction** (top → bottom):
 
 ```
-codineer-cli
+aineer (app)
+    ↓
+aineer-cli · aineer-ui · aineer-gateway · aineer-terminal
     ↓
 commands · tools · plugins
     ↓
@@ -44,7 +50,7 @@ runtime
 api · mcp · lsp · core
 ```
 
-`core` has no internal dependencies. Every other crate depends on `core`. The `cli` crate is the only binary.
+`core` has no internal dependencies. Every other crate depends on `core`. The `app` crate (`aineer`) is the only binary.
 
 ## Build & verify
 
@@ -59,15 +65,15 @@ cargo test --workspace             # All tests
 
 ## Where to add things
 
-| What you're adding          | Where it goes                          |
-| --------------------------- | -------------------------------------- |
-| New CLI flag or subcommand  | `crates/codineer-cli/src/cli.rs`       |
-| New slash command            | `crates/commands/src/slash_spec.rs`    |
-| New built-in tool           | `crates/tools/src/` (+ register in `builtin.rs`) |
-| New API provider            | `crates/api/src/providers/`            |
-| Runtime behavior change     | `crates/runtime/src/`                  |
-| Plugin system change        | `crates/plugins/src/`                  |
-| Shared types / traits       | `crates/codineer-core/src/`            |
+| What you're adding         | Where it goes                                    |
+| -------------------------- | ------------------------------------------------ |
+| New CLI flag or subcommand | `crates/aineer-cli/src/cli.rs`                   |
+| New slash command          | `crates/commands/src/slash_spec.rs`              |
+| New built-in tool          | `crates/tools/src/` (+ register in `builtin.rs`) |
+| New API provider           | `crates/api/src/providers/`                      |
+| Runtime behavior change    | `crates/runtime/src/`                            |
+| Plugin system change       | `crates/plugins/src/`                            |
+| Shared types / traits      | `crates/aineer-core/src/`                        |
 
 ## Code style
 
@@ -91,7 +97,7 @@ refactor(api): extract ProviderCacheStrategy trait
 test(commands): add slash command parsing edge cases
 ```
 
-Scope is the crate name without the `codineer-` prefix (e.g. `tools`, `runtime`, `api`, `cli`).
+Scope is the crate name without the `aineer-` prefix (e.g. `tools`, `runtime`, `api`, `cli`).
 
 ## Pull requests
 
@@ -104,8 +110,8 @@ Scope is the crate name without the `codineer-` prefix (e.g. `tools`, `runtime`,
 ## Testing tips
 
 ```bash
-cargo test -p codineer-cli               # Test one crate
-cargo test -p codineer-cli -- auto_update  # Filter tests by name
+cargo test -p aineer-cli               # Test one crate
+cargo test -p aineer-cli -- auto_update  # Filter tests by name
 cargo test --workspace -- --nocapture      # See println output
 ```
 
@@ -117,4 +123,4 @@ cargo test --workspace -- --ignored
 
 ## Need help?
 
-Open a [GitHub issue](https://github.com/andeya/codineer/issues) or start a discussion. We're happy to help you get started.
+Open a [GitHub issue](https://github.com/andeya/aineer/issues) or start a discussion. We're happy to help you get started.

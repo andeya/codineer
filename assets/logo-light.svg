@@ -1,33 +1,29 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 88" fill="none">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 88">
   <defs>
-    <linearGradient id="gem" x1="8" y1="10" x2="76" y2="78" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#6366F1"/>
+    <linearGradient id="a-grad" x1="12" y1="8" x2="72" y2="78" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#818CF8"/>
+      <stop offset="45%" stop-color="#6366F1"/>
       <stop offset="100%" stop-color="#06B6D4"/>
     </linearGradient>
-    <linearGradient id="gem-shine" x1="42" y1="10" x2="42" y2="56" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="rgba(255,255,255,0.18)"/>
-      <stop offset="100%" stop-color="rgba(255,255,255,0)"/>
-    </linearGradient>
-    <linearGradient id="amber" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#FBBF24"/>
-      <stop offset="100%" stop-color="#F59E0B"/>
+    <linearGradient id="bg-grad" x1="0" y1="0" x2="84" y2="88" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#13132B"/>
+      <stop offset="100%" stop-color="#0D0D1F"/>
     </linearGradient>
   </defs>
 
-  <rect x="18" y="20" width="48" height="48" rx="5" ry="5"
-        transform="rotate(45, 42, 44)"
-        fill="url(#gem)"/>
+  <rect x="2" y="2" width="80" height="80" rx="18" fill="url(#bg-grad)"/>
+  <rect x="3" y="3" width="78" height="78" rx="17" fill="none" stroke="rgba(99,102,241,0.12)" stroke-width="0.8"/>
 
-  <rect x="18" y="20" width="48" height="48" rx="5" ry="5"
-        transform="rotate(45, 42, 44)"
-        fill="url(#gem-shine)"/>
+  <path d="
+    M 42 12 L 75 72 L 62 72 L 53 53 L 31 53 L 22 72 L 9 72 Z
+    M 42 30 L 35 47 L 49 47 Z
+  " fill="url(#a-grad)" fill-rule="evenodd"/>
 
-  <path d="M 24 28 L 42 44 L 24 60"
-        stroke="rgba(255,255,255,0.92)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <circle cx="55" cy="50" r="2" fill="#FBBF24" opacity="0.85">
+    <animate attributeName="opacity" values="0.85;0.15;0.85" dur="1.2s" repeatCount="indefinite"/>
+  </circle>
 
-  <rect x="47" y="52" width="14" height="4.5" rx="1.5" fill="url(#amber)"/>
-
-  <text x="96" y="54" fill="#1A1B26" font-family="'Inter', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="38" font-weight="700" letter-spacing="1.5">
-    codineer
+  <text x="96" y="56" fill="#1A1B26" font-family="'Inter', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="38" font-weight="700" letter-spacing="1.5">
+    aineer
   </text>
 </svg>
