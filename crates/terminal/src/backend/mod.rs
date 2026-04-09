@@ -207,7 +207,12 @@ impl TerminalBackend {
                         tracing::warn!("pty_event_subscription_{id}: event channel closed");
                         break;
                     }
-                    app_context.clone().request_repaint();
+                    // Rate-limit repaints: coalesce bursts of PTY output to
+                    // at most ~60 fps so the UI stays responsive under heavy
+                    // terminal activity (e.g. cargo build output).
+                    app_context
+                        .clone()
+                        .request_repaint_after(std::time::Duration::from_millis(16));
                     match event {
                         Event::Exit => break,
                         Event::PtyWrite(pty) => pty_notifier.notify(pty.into_bytes()),
