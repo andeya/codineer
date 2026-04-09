@@ -207,14 +207,16 @@ impl Timeline {
 
                 let before_y = ui.cursor().min.y;
                 // Each card gets its own ID scope to prevent widget ID collisions
-                let card_action = ui.push_id(card_id, |ui| match card {
-                    Card::Shell(sc) => render_shell_card(ui, sc),
-                    Card::Chat(cc) => render_chat_card(ui, cc, md_cache),
-                    Card::System(sys) => {
-                        render_system_card(ui, sys);
-                        TimelineAction::None
-                    }
-                }).inner;
+                let card_action = ui
+                    .push_id(card_id, |ui| match card {
+                        Card::Shell(sc) => render_shell_card(ui, sc),
+                        Card::Chat(cc) => render_chat_card(ui, cc, md_cache),
+                        Card::System(sys) => {
+                            render_system_card(ui, sys);
+                            TimelineAction::None
+                        }
+                    })
+                    .inner;
                 let after_y = ui.cursor().min.y;
                 let rendered_h = after_y - before_y;
                 if rendered_h > 0.0 {
@@ -251,23 +253,35 @@ fn truncate_str(s: &str, max_bytes: usize) -> &str {
 
 fn render_shell_card(ui: &mut Ui, card: &mut ShellCard) -> TimelineAction {
     let mut action = TimelineAction::None;
-    let (frame_color, left_accent) = if card.running {
-        (t::SHELL_RUNNING_BG(), t::ACCENT())
+    let accent_color = if card.running {
+        t::ACCENT()
     } else if card.exit_code == Some(0) {
-        (t::SHELL_SUCCESS_BG(), t::SUCCESS())
+        t::SUCCESS()
     } else if card.exit_code.is_some() {
-        (t::SHELL_ERROR_BG(), t::ERROR())
+        t::ERROR()
     } else {
-        (t::SHELL_RUNNING_BG(), t::FG_MUTED())
+        t::FG_MUTED()
     };
 
+    // Minimal "terminal line" style: transparent background, left accent bar only.
     egui::Frame::new()
-        .fill(frame_color)
-        .corner_radius(t::CARD_CORNER_RADIUS)
-        .inner_margin(t::CARD_INNER_MARGIN)
-        .stroke(Stroke::new(1.0, t::alpha(left_accent, 40)))
+        .fill(egui::Color32::TRANSPARENT)
+        .inner_margin(egui::Margin {
+            left: 10,
+            right: 4,
+            top: 4,
+            bottom: 4,
+        })
         .show(ui, |ui| {
             ui.set_min_width(ui.available_width());
+
+            // Draw 2-px left accent bar (status colour)
+            let rect = ui.available_rect_before_wrap();
+            ui.painter().vline(
+                rect.left() - 6.0,
+                rect.y_range(),
+                Stroke::new(2.0, accent_color),
+            );
 
             ui.horizontal(|ui| {
                 ui.label(
@@ -308,7 +322,16 @@ fn render_shell_card(ui: &mut Ui, card: &mut ShellCard) -> TimelineAction {
                 });
             });
 
-            if !card.collapsed && !card.output_lines.is_empty() {
+            // Decide which source to render: prefer styled_output (has colour info),
+            // fall back to plain output_lines only when styled data is absent.
+            let use_styled = !card.styled_output.is_empty();
+            let total_lines = if use_styled {
+                card.styled_output.len()
+            } else {
+                card.output_lines.len()
+            };
+
+            if !card.collapsed && total_lines > 0 {
                 ui.add_space(4.0);
                 ui.painter().hline(
                     ui.available_rect_before_wrap().x_range(),
@@ -317,11 +340,11 @@ fn render_shell_card(ui: &mut Ui, card: &mut ShellCard) -> TimelineAction {
                 );
                 ui.add_space(4.0);
 
-                if card.output_lines.len() > MAX_VISIBLE_OUTPUT_LINES {
+                if total_lines > MAX_VISIBLE_OUTPUT_LINES {
                     ui.label(
                         RichText::new(format!(
                             "… {} lines hidden …",
-                            card.output_lines.len() - MAX_VISIBLE_OUTPUT_LINES
+                            total_lines - MAX_VISIBLE_OUTPUT_LINES
                         ))
                         .small()
                         .color(t::FG_DIM()),
@@ -333,24 +356,20 @@ fn render_shell_card(ui: &mut Ui, card: &mut ShellCard) -> TimelineAction {
                     .max_height(300.0)
                     .auto_shrink([false; 2])
                     .show(ui, |ui| {
-                        let start = card
-                            .output_lines
-                            .len()
-                            .saturating_sub(MAX_VISIBLE_OUTPUT_LINES);
-                        let styled_available = !card.styled_output.is_empty();
-                        for i in start..card.output_lines.len() {
-                            if styled_available {
-                                if let Some(styled_line) = card.styled_output.get(i) {
-                                    ui.label(styled_line_to_layout(styled_line));
-                                    continue;
-                                }
+                        let start = total_lines.saturating_sub(MAX_VISIBLE_OUTPUT_LINES);
+                        if use_styled {
+                            for styled_line in &card.styled_output[start..] {
+                                ui.label(styled_line_to_layout(styled_line));
                             }
-                            ui.label(
-                                RichText::new(&card.output_lines[i])
-                                    .monospace()
-                                    .size(12.0)
-                                    .color(t::FG_SOFT()),
-                            );
+                        } else {
+                            for line in &card.output_lines[start..] {
+                                ui.label(
+                                    RichText::new(line.as_str())
+                                        .monospace()
+                                        .size(12.0)
+                                        .color(t::FG_SOFT()),
+                                );
+                            }
                         }
                     });
             }
@@ -476,120 +495,120 @@ fn render_tool_turn(ui: &mut Ui, card_id: CardId, turn: &ToolTurn, idx: usize) -
     ui.add_space(4.0);
     // Unique ID per tool turn to avoid widget collisions across multiple turns
     ui.push_id(idx, |ui| {
-    egui::Frame::new()
-        .fill(t::alpha(t::SURFACE(), 180))
-        .corner_radius(6.0)
-        .inner_margin(8.0)
-        .stroke(Stroke::new(0.5, t::BORDER_SUBTLE()))
-        .show(ui, |ui| {
-            ui.set_min_width(ui.available_width());
+        egui::Frame::new()
+            .fill(t::alpha(t::SURFACE(), 180))
+            .corner_radius(6.0)
+            .inner_margin(8.0)
+            .stroke(Stroke::new(0.5, t::BORDER_SUBTLE()))
+            .show(ui, |ui| {
+                ui.set_min_width(ui.available_width());
 
-            let (icon, icon_color) = match &turn.state {
-                ToolState::Pending => ("⏳", t::AMBER()),
-                ToolState::Running => ("⚙", t::ACCENT_LIGHT()),
-                ToolState::Completed { is_error, .. } => {
-                    if *is_error {
-                        ("✗", t::ERROR())
-                    } else {
-                        ("✓", t::SUCCESS())
+                let (icon, icon_color) = match &turn.state {
+                    ToolState::Pending => ("⏳", t::AMBER()),
+                    ToolState::Running => ("⚙", t::ACCENT_LIGHT()),
+                    ToolState::Completed { is_error, .. } => {
+                        if *is_error {
+                            ("✗", t::ERROR())
+                        } else {
+                            ("✓", t::SUCCESS())
+                        }
                     }
-                }
-                ToolState::Denied => ("⊘", t::FG_DIM()),
-            };
+                    ToolState::Denied => ("⊘", t::FG_DIM()),
+                };
 
-            ui.horizontal(|ui| {
-                ui.label(RichText::new(icon).size(12.0).color(icon_color));
-                ui.label(
-                    RichText::new(&turn.name)
-                        .monospace()
-                        .size(12.0)
-                        .strong()
-                        .color(t::FG()),
-                );
-                if matches!(turn.state, ToolState::Running) {
-                    ui.spinner();
-                }
-            });
-
-            if !turn.input.is_empty() {
-                let input_preview = truncate_str(&turn.input, 200);
-                ui.label(
-                    RichText::new(input_preview)
-                        .monospace()
-                        .size(11.0)
-                        .color(t::FG_DIM()),
-                );
-            }
-
-            match &turn.state {
-                ToolState::Pending => {
-                    ui.add_space(4.0);
-                    ui.horizontal(|ui| {
-                        if ui
-                            .add(
-                                egui::Button::new(
-                                    RichText::new("✓ Allow").size(11.0).color(t::SUCCESS()),
-                                )
-                                .fill(t::blend(t::SURFACE(), t::SUCCESS(), 0.1))
-                                .corner_radius(t::BUTTON_CORNER_RADIUS),
-                            )
-                            .clicked()
-                        {
-                            action = TimelineAction::ToolApprove {
-                                card_id,
-                                tool_use_id: turn.tool_use_id.clone(),
-                            };
-                        }
-                        if ui
-                            .add(
-                                egui::Button::new(
-                                    RichText::new("✗ Deny").size(11.0).color(t::ERROR()),
-                                )
-                                .fill(t::blend(t::SURFACE(), t::ERROR(), 0.1))
-                                .corner_radius(t::BUTTON_CORNER_RADIUS),
-                            )
-                            .clicked()
-                        {
-                            action = TimelineAction::ToolDeny {
-                                card_id,
-                                tool_use_id: turn.tool_use_id.clone(),
-                            };
-                        }
-                        if ui
-                            .add(
-                                egui::Button::new(
-                                    RichText::new("⚡ Allow All").size(11.0).color(t::AMBER()),
-                                )
-                                .fill(t::blend(t::SURFACE(), t::AMBER(), 0.08))
-                                .corner_radius(t::BUTTON_CORNER_RADIUS),
-                            )
-                            .clicked()
-                        {
-                            action = TimelineAction::ToolApproveAll { card_id };
-                        }
-                    });
-                }
-                ToolState::Completed { output, .. } if !output.is_empty() => {
-                    let out_preview = truncate_str(output, 300);
-                    ui.add_space(2.0);
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new(icon).size(12.0).color(icon_color));
                     ui.label(
-                        RichText::new(out_preview)
+                        RichText::new(&turn.name)
                             .monospace()
-                            .size(11.0)
-                            .color(t::FG_SOFT()),
+                            .size(12.0)
+                            .strong()
+                            .color(t::FG()),
                     );
-                }
-                ToolState::Denied => {
+                    if matches!(turn.state, ToolState::Running) {
+                        ui.spinner();
+                    }
+                });
+
+                if !turn.input.is_empty() {
+                    let input_preview = truncate_str(&turn.input, 200);
                     ui.label(
-                        RichText::new("Denied by user")
-                            .italics()
+                        RichText::new(input_preview)
+                            .monospace()
                             .size(11.0)
                             .color(t::FG_DIM()),
                     );
                 }
-                _ => {}
-            }
-        });
+
+                match &turn.state {
+                    ToolState::Pending => {
+                        ui.add_space(4.0);
+                        ui.horizontal(|ui| {
+                            if ui
+                                .add(
+                                    egui::Button::new(
+                                        RichText::new("✓ Allow").size(11.0).color(t::SUCCESS()),
+                                    )
+                                    .fill(t::blend(t::SURFACE(), t::SUCCESS(), 0.1))
+                                    .corner_radius(t::BUTTON_CORNER_RADIUS),
+                                )
+                                .clicked()
+                            {
+                                action = TimelineAction::ToolApprove {
+                                    card_id,
+                                    tool_use_id: turn.tool_use_id.clone(),
+                                };
+                            }
+                            if ui
+                                .add(
+                                    egui::Button::new(
+                                        RichText::new("✗ Deny").size(11.0).color(t::ERROR()),
+                                    )
+                                    .fill(t::blend(t::SURFACE(), t::ERROR(), 0.1))
+                                    .corner_radius(t::BUTTON_CORNER_RADIUS),
+                                )
+                                .clicked()
+                            {
+                                action = TimelineAction::ToolDeny {
+                                    card_id,
+                                    tool_use_id: turn.tool_use_id.clone(),
+                                };
+                            }
+                            if ui
+                                .add(
+                                    egui::Button::new(
+                                        RichText::new("⚡ Allow All").size(11.0).color(t::AMBER()),
+                                    )
+                                    .fill(t::blend(t::SURFACE(), t::AMBER(), 0.08))
+                                    .corner_radius(t::BUTTON_CORNER_RADIUS),
+                                )
+                                .clicked()
+                            {
+                                action = TimelineAction::ToolApproveAll { card_id };
+                            }
+                        });
+                    }
+                    ToolState::Completed { output, .. } if !output.is_empty() => {
+                        let out_preview = truncate_str(output, 300);
+                        ui.add_space(2.0);
+                        ui.label(
+                            RichText::new(out_preview)
+                                .monospace()
+                                .size(11.0)
+                                .color(t::FG_SOFT()),
+                        );
+                    }
+                    ToolState::Denied => {
+                        ui.label(
+                            RichText::new("Denied by user")
+                                .italics()
+                                .size(11.0)
+                                .color(t::FG_DIM()),
+                        );
+                    }
+                    _ => {}
+                }
+            });
     }); // push_id
 
     action
