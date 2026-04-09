@@ -47,12 +47,14 @@ fn insert_font(defs: &mut FontDefinitions, name: &str, data: &'static [u8]) {
 
 pub fn aineer_terminal_theme() -> terminal::TerminalTheme {
     use ui::theme;
+    // Use the same colour as CentralPanel so the terminal blends in
+    // without a visible "shell frame" border effect.
     terminal::TerminalTheme::new(Box::new(terminal::ColorPalette {
         background: format!(
             "#{:02X}{:02X}{:02X}",
-            theme::PANEL_BG().r(),
-            theme::PANEL_BG().g(),
-            theme::PANEL_BG().b()
+            theme::BG().r(),
+            theme::BG().g(),
+            theme::BG().b()
         ),
         foreground: format!(
             "#{:02X}{:02X}{:02X}",
