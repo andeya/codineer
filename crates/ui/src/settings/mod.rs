@@ -281,6 +281,7 @@ impl SettingsPanel {
         }
 
         egui::ScrollArea::vertical()
+            .id_salt("settings_panel_scroll")
             .auto_shrink([false; 2])
             .show(ui, |ui| {
                 let changed = match self.active_tab {

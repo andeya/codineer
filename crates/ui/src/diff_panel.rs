@@ -110,6 +110,7 @@ impl DiffPanel {
         }
 
         egui::ScrollArea::vertical()
+            .id_salt("diff_panel_scroll")
             .auto_shrink([false; 2])
             .show(ui, |ui| {
                 for change in &status.changes {

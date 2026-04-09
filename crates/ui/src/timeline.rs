@@ -170,6 +170,7 @@ impl Timeline {
     pub fn show(&mut self, ui: &mut Ui) -> TimelineAction {
         let mut action = TimelineAction::None;
         let scroll = egui::ScrollArea::vertical()
+            .id_salt("timeline_main_scroll")
             .auto_shrink([false; 2])
             .stick_to_bottom(self.auto_scroll);
 
@@ -205,14 +206,15 @@ impl Timeline {
                 }
 
                 let before_y = ui.cursor().min.y;
-                let card_action = match card {
+                // Each card gets its own ID scope to prevent widget ID collisions
+                let card_action = ui.push_id(card_id, |ui| match card {
                     Card::Shell(sc) => render_shell_card(ui, sc),
                     Card::Chat(cc) => render_chat_card(ui, cc, md_cache),
                     Card::System(sys) => {
                         render_system_card(ui, sys);
                         TimelineAction::None
                     }
-                };
+                }).inner;
                 let after_y = ui.cursor().min.y;
                 let rendered_h = after_y - before_y;
                 if rendered_h > 0.0 {
@@ -327,6 +329,7 @@ fn render_shell_card(ui: &mut Ui, card: &mut ShellCard) -> TimelineAction {
                 }
 
                 egui::ScrollArea::vertical()
+                    .id_salt("shell_output")
                     .max_height(300.0)
                     .auto_shrink([false; 2])
                     .show(ui, |ui| {
@@ -455,8 +458,8 @@ fn render_chat_card(
                     CommonMarkViewer::new().show(ui, md_cache, &card.response);
                 }
 
-                for turn in &card.tool_turns {
-                    let tool_action = render_tool_turn(ui, card_id, turn);
+                for (idx, turn) in card.tool_turns.iter().enumerate() {
+                    let tool_action = render_tool_turn(ui, card_id, turn, idx);
                     if !matches!(tool_action, TimelineAction::None) {
                         action = tool_action;
                     }
@@ -467,10 +470,12 @@ fn render_chat_card(
     action
 }
 
-fn render_tool_turn(ui: &mut Ui, card_id: CardId, turn: &ToolTurn) -> TimelineAction {
+fn render_tool_turn(ui: &mut Ui, card_id: CardId, turn: &ToolTurn, idx: usize) -> TimelineAction {
     let mut action = TimelineAction::None;
 
     ui.add_space(4.0);
+    // Unique ID per tool turn to avoid widget collisions across multiple turns
+    ui.push_id(idx, |ui| {
     egui::Frame::new()
         .fill(t::alpha(t::SURFACE(), 180))
         .corner_radius(6.0)
@@ -585,6 +590,7 @@ fn render_tool_turn(ui: &mut Ui, card_id: CardId, turn: &ToolTurn) -> TimelineAc
                 _ => {}
             }
         });
+    }); // push_id
 
     action
 }
