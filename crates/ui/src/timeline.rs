@@ -5,7 +5,9 @@ use egui_commonmark::{CommonMarkCache, CommonMarkViewer};
 use crate::cards::{
     Card, CardId, ChatCard, OutputLine, ShellCard, SystemCard, ToolState, ToolTurn,
 };
+use crate::icons;
 use crate::theme as t;
+use crate::widgets::EmptyState;
 
 #[derive(Debug, Clone)]
 pub enum TimelineAction {
@@ -178,6 +180,14 @@ impl Timeline {
             ui.set_min_width(ui.available_width());
             ui.add_space(4.0);
 
+            // Empty state
+            if self.cards.is_empty() {
+                EmptyState::new(icons::TERMINAL, "No conversation yet")
+                    .subtitle("Run a shell command or press Ctrl+Enter to chat with AI")
+                    .show(ui);
+                return;
+            }
+
             let viewport_top = ui.clip_rect().min.y;
             let viewport_bottom = ui.clip_rect().max.y;
             let md_cache = &mut self.md_cache;
@@ -206,14 +216,61 @@ impl Timeline {
                 }
 
                 let before_y = ui.cursor().min.y;
-                // Each card gets its own ID scope to prevent widget ID collisions
+                // Each card gets its own ID scope to prevent widget ID collisions.
+                // The response wrapper enables right-click context menus per card.
                 let card_action = ui
-                    .push_id(card_id, |ui| match card {
-                        Card::Shell(sc) => render_shell_card(ui, sc),
-                        Card::Chat(cc) => render_chat_card(ui, cc, md_cache),
-                        Card::System(sys) => {
-                            render_system_card(ui, sys);
-                            TimelineAction::None
+                    .push_id(card_id, |ui| {
+                        let inner_action = match card {
+                            Card::Shell(sc) => render_shell_card(ui, sc),
+                            Card::Chat(cc) => render_chat_card(ui, cc, md_cache),
+                            Card::System(sys) => {
+                                render_system_card(ui, sys);
+                                TimelineAction::None
+                            }
+                        };
+                        // Card-level right-click context menu
+                        let card_rect = ui.min_rect();
+                        let card_resp =
+                            ui.interact(card_rect, ui.id().with("ctx_menu"), egui::Sense::hover());
+                        let mut ctx_action = TimelineAction::None;
+                        card_resp.context_menu(|ui| match card {
+                            Card::Shell(sc) => {
+                                if ui.button("Copy Output").clicked() {
+                                    ui.ctx().copy_text(sc.output_text());
+                                    ui.close();
+                                }
+                                if ui.button("Reference in AI").clicked() {
+                                    ctx_action = TimelineAction::AddRef { card_id };
+                                    ui.close();
+                                }
+                                ui.separator();
+                                let label = if sc.collapsed { "Expand" } else { "Collapse" };
+                                if ui.button(label).clicked() {
+                                    sc.collapsed = !sc.collapsed;
+                                    ui.close();
+                                }
+                            }
+                            Card::Chat(cc) => {
+                                if !cc.response.is_empty() && ui.button("Copy Response").clicked() {
+                                    ui.ctx().copy_text(cc.response.clone());
+                                    ui.close();
+                                }
+                                if ui.button("Copy Prompt").clicked() {
+                                    ui.ctx().copy_text(cc.prompt.clone());
+                                    ui.close();
+                                }
+                            }
+                            Card::System(sys) => {
+                                if ui.button("Copy Message").clicked() {
+                                    ui.ctx().copy_text(sys.message.clone());
+                                    ui.close();
+                                }
+                            }
+                        });
+                        if !matches!(ctx_action, TimelineAction::None) {
+                            ctx_action
+                        } else {
+                            inner_action
                         }
                     })
                     .inner;
@@ -484,26 +541,21 @@ fn render_chat_card(
 
                     // Copy button for the full AI response (right-aligned)
                     if !card.response.is_empty() && !card.streaming {
-                        ui.with_layout(
-                            egui::Layout::right_to_left(egui::Align::Center),
-                            |ui| {
-                                if ui
-                                    .add(
-                                        egui::Button::new(
-                                            RichText::new("Copy")
-                                                .size(10.0)
-                                                .color(t::FG_DIM()),
-                                        )
-                                        .fill(egui::Color32::TRANSPARENT)
-                                        .corner_radius(t::BUTTON_CORNER_RADIUS),
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if ui
+                                .add(
+                                    egui::Button::new(
+                                        RichText::new("Copy").size(10.0).color(t::FG_DIM()),
                                     )
-                                    .on_hover_text("Copy response to clipboard")
-                                    .clicked()
-                                {
-                                    ui.ctx().copy_text(card.response.clone());
-                                }
-                            },
-                        );
+                                    .fill(egui::Color32::TRANSPARENT)
+                                    .corner_radius(t::BUTTON_CORNER_RADIUS),
+                                )
+                                .on_hover_text("Copy response to clipboard")
+                                .clicked()
+                            {
+                                ui.ctx().copy_text(card.response.clone());
+                            }
+                        });
                     }
                 });
 
