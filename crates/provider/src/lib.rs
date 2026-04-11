@@ -40,13 +40,21 @@ impl FromStr for SelectedModel {
 
 fn detect_provider_from_model(model: &str) -> String {
     let m = model.to_lowercase();
-    if m.contains("claude") { return "anthropic".into(); }
+    if m.contains("claude") {
+        return "anthropic".into();
+    }
     if m.contains("gpt") || m.contains("o1") || m.contains("o3") || m.contains("o4") {
         return "openai".into();
     }
-    if m.contains("gemini") { return "google".into(); }
-    if m.contains("grok") { return "xai".into(); }
-    if m.contains("deepseek") { return "deepseek".into(); }
+    if m.contains("gemini") {
+        return "google".into();
+    }
+    if m.contains("grok") {
+        return "xai".into();
+    }
+    if m.contains("deepseek") {
+        return "deepseek".into();
+    }
     if m.contains("mistral") || m.contains("mixtral") || m.contains("codestral") {
         return "mistral".into();
     }
@@ -70,9 +78,15 @@ pub enum ProviderError {
     #[error("Provider '{0}' not found")]
     NotFound(ProviderId),
     #[error("Not authenticated for {provider}: {message}")]
-    NotAuthenticated { provider: ProviderId, message: String },
+    NotAuthenticated {
+        provider: ProviderId,
+        message: String,
+    },
     #[error("Model '{model}' not available for provider '{provider}'")]
-    ModelNotAvailable { provider: ProviderId, model: ModelId },
+    ModelNotAvailable {
+        provider: ProviderId,
+        model: ModelId,
+    },
     #[error("API error: {0}")]
     Api(String),
     #[error("Credential error: {0}")]

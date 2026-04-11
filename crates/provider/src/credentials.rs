@@ -27,7 +27,11 @@ impl CredentialsManager {
     }
 
     /// Resolve credential from multiple sources (priority: EnvVar > Keychain > Manual)
-    pub fn resolve(&self, provider_id: &str, env_var_name: Option<&str>) -> Result<String, ProviderError> {
+    pub fn resolve(
+        &self,
+        provider_id: &str,
+        env_var_name: Option<&str>,
+    ) -> Result<String, ProviderError> {
         // 1. Try environment variable
         if let Some(var) = env_var_name {
             if let Ok(val) = std::env::var(var) {
