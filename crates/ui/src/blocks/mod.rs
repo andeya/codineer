@@ -65,7 +65,7 @@ pub struct AIBlock {
     pub executable_snippets: Vec<CodeSnippet>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Role {
     User,
     Assistant,
