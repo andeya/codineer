@@ -41,9 +41,5 @@ pub struct Attachment {
 pub trait ChannelAdapter: Send + Sync {
     fn channel_type(&self) -> ChannelSource;
     async fn send_message(&self, to: &str, message: &str) -> Result<(), ChannelError>;
-    async fn send_approval_request(
-        &self,
-        to: &str,
-        description: &str,
-    ) -> Result<(), ChannelError>;
+    async fn send_approval_request(&self, to: &str, description: &str) -> Result<(), ChannelError>;
 }
