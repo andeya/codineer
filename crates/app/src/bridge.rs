@@ -1,9 +1,8 @@
-//! Tokio ↔ GPUI bridge (stub until wired into `application`).
-#![allow(dead_code)]
+//! Tokio <-> GPUI bridge: owns a multi-threaded tokio runtime for backend async.
 
 use std::sync::Arc;
 
-/// Bridge between tokio (backend) and GPUI (UI) async runtimes.
+#[derive(Clone)]
 pub struct TokioBridge {
     rt: Arc<tokio::runtime::Runtime>,
 }
@@ -22,7 +21,6 @@ impl TokioBridge {
         &self.rt
     }
 
-    /// Spawn a tokio future and get a handle to await it.
     pub fn spawn<F>(&self, future: F) -> tokio::task::JoinHandle<F::Output>
     where
         F: std::future::Future + Send + 'static,
@@ -31,7 +29,6 @@ impl TokioBridge {
         self.rt.spawn(future)
     }
 
-    /// Block on a tokio future (use sparingly, prefer spawn + notify pattern).
     pub fn block_on<F: std::future::Future>(&self, future: F) -> F::Output {
         self.rt.block_on(future)
     }
