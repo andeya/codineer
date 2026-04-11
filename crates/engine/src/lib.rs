@@ -25,6 +25,19 @@ pub mod tool_orchestration;
 pub mod tool_result;
 mod usage;
 
+pub use aineer_lsp::{
+    FileDiagnostics, LspContextEnrichment, LspError, LspManager, LspServerConfig, SymbolLocation,
+    WorkspaceDiagnostics,
+};
+pub use aineer_mcp::{
+    mcp_server_signature, mcp_tool_name, mcp_tool_prefix, normalize_name_for_mcp,
+    scoped_mcp_config_hash, unwrap_mcp_proxy_url, ManagedMcpTool, McpClientBootstrap,
+    McpRemoteClient, McpServerManager, McpServerManagerError, McpStdioProcess, McpTool,
+    McpToolCallContent, McpToolCallResult, UnsupportedMcpServer,
+};
+pub use aineer_protocol::prompt_types::{
+    BlockKind, CacheControl, CacheScope, CacheType, SystemBlock, ThinkingConfig, ThinkingMode,
+};
 pub use bash::{execute_bash, BashCommandInput, BashCommandOutput};
 pub use compact::{
     apply_model_compact_summary, build_model_compact_request, compact_session,
@@ -51,16 +64,6 @@ pub use file_ops::{
 };
 pub use hooks::HookDispatcher;
 pub use json::JsonValue;
-pub use aineer_lsp::{
-    FileDiagnostics, LspContextEnrichment, LspError, LspManager, LspServerConfig, SymbolLocation,
-    WorkspaceDiagnostics,
-};
-pub use aineer_mcp::{
-    mcp_server_signature, mcp_tool_name, mcp_tool_prefix, normalize_name_for_mcp,
-    scoped_mcp_config_hash, unwrap_mcp_proxy_url, ManagedMcpTool, McpClientBootstrap,
-    McpRemoteClient, McpServerManager, McpServerManagerError, McpStdioProcess, McpTool,
-    McpToolCallContent, McpToolCallResult, UnsupportedMcpServer,
-};
 pub use model_context::{context_window_for_model, ModelContextWindow};
 pub use oauth::{
     clear_oauth_credentials, generate_state, load_oauth_credentials, loopback_redirect_uri,
@@ -74,9 +77,6 @@ pub use permissions::{
 pub use prompt::{
     load_system_prompt, load_system_prompt_with_lsp, ContextFile, InstructionLoader,
     ProjectContext, PromptBuildError, PromptCache, SystemPromptBuilder,
-};
-pub use aineer_protocol::prompt_types::{
-    BlockKind, CacheControl, CacheScope, CacheType, SystemBlock, ThinkingConfig, ThinkingMode,
 };
 pub use remote::{
     inherited_upstream_proxy_env, RemoteSessionContext, UpstreamProxyBootstrap, UpstreamProxyState,

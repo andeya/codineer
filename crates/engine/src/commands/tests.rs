@@ -10,7 +10,9 @@ use super::{
     suggest_slash_commands, PluginEffect,
 };
 use crate::{CompactionConfig, ContentBlock, ConversationMessage, MessageRole, Session};
-use aineer_plugins::{PluginKind, PluginManager, PluginManagerConfig, PluginMetadata, PluginSummary};
+use aineer_plugins::{
+    PluginKind, PluginManager, PluginManagerConfig, PluginMetadata, PluginSummary,
+};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
