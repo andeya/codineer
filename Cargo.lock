@@ -67,6 +67,7 @@ dependencies = [
  "serde",
  "serde_json",
  "smol",
+ "tempfile",
  "tokio",
  "tracing",
  "tracing-subscriber",

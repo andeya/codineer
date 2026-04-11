@@ -35,5 +35,8 @@ chrono = { workspace = true }
 cocoa = { workspace = true }
 objc = { workspace = true }
 
+[dev-dependencies]
+tempfile = "3"
+
 [lints.rust]
 unsafe_code = "allow"
