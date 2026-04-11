@@ -1,5 +1,5 @@
-pub mod pty;
 pub mod mappings;
+pub mod pty;
 
 use std::path::PathBuf;
 
@@ -49,10 +49,25 @@ pub enum TerminalColor {
 
 #[derive(Debug, Clone, Copy)]
 pub enum NamedColor {
-    Black, Red, Green, Yellow, Blue, Magenta, Cyan, White,
-    BrightBlack, BrightRed, BrightGreen, BrightYellow,
-    BrightBlue, BrightMagenta, BrightCyan, BrightWhite,
-    Foreground, Background, Cursor,
+    Black,
+    Red,
+    Green,
+    Yellow,
+    Blue,
+    Magenta,
+    Cyan,
+    White,
+    BrightBlack,
+    BrightRed,
+    BrightGreen,
+    BrightYellow,
+    BrightBlue,
+    BrightMagenta,
+    BrightCyan,
+    BrightWhite,
+    Foreground,
+    Background,
+    Cursor,
 }
 
 #[derive(Debug, Clone, Copy, Default)]
