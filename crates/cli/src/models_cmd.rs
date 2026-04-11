@@ -1,6 +1,8 @@
 use std::collections::BTreeMap;
 
-use aineer_api::{list_known_models, provider_kind_by_name, ProviderKind, BUILTIN_PROVIDER_PRESETS};
+use aineer_api::{
+    list_known_models, provider_kind_by_name, ProviderKind, BUILTIN_PROVIDER_PRESETS,
+};
 use aineer_engine::{ConfigLoader, CustomProviderConfig, RuntimeConfig};
 
 use crate::error::CliResult;

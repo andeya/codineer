@@ -22,13 +22,15 @@ use crate::workspace::parse_git_status_metadata;
 
 use aineer_api::{MessageResponse, OutputContentBlock, Usage};
 use aineer_engine::commands::{resume_supported_slash_commands, SlashCommand};
-use aineer_engine::{AssistantEvent, ContentBlock, ConversationMessage, MessageRole, PermissionMode};
+use aineer_engine::{
+    AssistantEvent, ContentBlock, ConversationMessage, MessageRole, PermissionMode,
+};
 use aineer_plugins::{PluginTool, PluginToolDefinition, PluginToolPermission};
+use aineer_tools::GlobalToolRegistry;
 use serde_json::json;
 use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
-use aineer_tools::GlobalToolRegistry;
 
 fn env_lock() -> &'static Mutex<()> {
     static LOCK: OnceLock<Mutex<()>> = OnceLock::new();

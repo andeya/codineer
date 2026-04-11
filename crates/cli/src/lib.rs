@@ -227,7 +227,8 @@ fn run() -> CliResult<()> {
 }
 
 fn print_system_prompt(cwd: PathBuf, date: String) -> CliResult<()> {
-    let blocks = aineer_engine::load_system_prompt_with_lsp(cwd, date, env::consts::OS, "unknown", None)?;
+    let blocks =
+        aineer_engine::load_system_prompt_with_lsp(cwd, date, env::consts::OS, "unknown", None)?;
     let text: Vec<&str> = blocks.iter().map(|b| b.text.as_str()).collect();
     println!("{}", text.join("\n\n"));
     Ok(())

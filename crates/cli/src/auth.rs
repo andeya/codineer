@@ -83,28 +83,34 @@ pub fn build_credential_chain(kind: ProviderKind, config: &RuntimeConfig) -> Cre
 }
 
 fn make_refresh_fn() -> aineer_engine::credentials::oauth_resolver::RefreshFn {
-    Arc::new(|config: &OAuthConfig, token_set: aineer_engine::OAuthTokenSet| {
-        let client =
-            AineerApiClient::from_auth(AuthSource::None).with_base_url(aineer_api::read_base_url());
-        let refresh_token = token_set.refresh_token.clone().ok_or_else(|| {
-            let err: Box<dyn std::error::Error + Send + Sync> =
-                Box::new(CliError::from("no refresh token available"));
-            err
-        })?;
-        let request =
-            OAuthRefreshRequest::from_config(config, refresh_token, Some(token_set.scopes.clone()));
-        let refreshed =
-            client_runtime_block_on(async { client.refresh_oauth_token(config, &request).await })
-                .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> {
+    Arc::new(
+        |config: &OAuthConfig, token_set: aineer_engine::OAuthTokenSet| {
+            let client = AineerApiClient::from_auth(AuthSource::None)
+                .with_base_url(aineer_api::read_base_url());
+            let refresh_token = token_set.refresh_token.clone().ok_or_else(|| {
+                let err: Box<dyn std::error::Error + Send + Sync> =
+                    Box::new(CliError::from("no refresh token available"));
+                err
+            })?;
+            let request = OAuthRefreshRequest::from_config(
+                config,
+                refresh_token,
+                Some(token_set.scopes.clone()),
+            );
+            let refreshed = client_runtime_block_on(async {
+                client.refresh_oauth_token(config, &request).await
+            })
+            .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> {
                 Box::new(CliError::from(e))
             })?;
-        Ok(aineer_engine::OAuthTokenSet {
-            access_token: refreshed.access_token,
-            refresh_token: refreshed.refresh_token.or(token_set.refresh_token),
-            expires_at: refreshed.expires_at,
-            scopes: refreshed.scopes,
-        })
-    })
+            Ok(aineer_engine::OAuthTokenSet {
+                access_token: refreshed.access_token,
+                refresh_token: refreshed.refresh_token.or(token_set.refresh_token),
+                expires_at: refreshed.expires_at,
+                scopes: refreshed.scopes,
+            })
+        },
+    )
 }
 
 fn client_runtime_block_on<F, T>(future: F) -> Result<T, aineer_api::ApiError>
@@ -243,7 +249,9 @@ pub fn run_status(provider: Option<&str>) -> CliResult<()> {
                 let label = match cred {
                     aineer_engine::ResolvedCredential::ApiKey(_) => "API key",
                     aineer_engine::ResolvedCredential::BearerToken(_) => "Bearer token",
-                    aineer_engine::ResolvedCredential::ApiKeyAndBearer { .. } => "API key + Bearer token",
+                    aineer_engine::ResolvedCredential::ApiKeyAndBearer { .. } => {
+                        "API key + Bearer token"
+                    }
                     _ => "credentials",
                 };
                 println!("  Active: {label}");
@@ -318,7 +326,8 @@ fn run_aineer_oauth_login(config: &RuntimeConfig) -> CliResult<()> {
         return Err(io::Error::new(io::ErrorKind::InvalidData, "oauth state mismatch").into());
     }
 
-    let client = AineerApiClient::from_auth(AuthSource::None).with_base_url(aineer_api::read_base_url());
+    let client =
+        AineerApiClient::from_auth(AuthSource::None).with_base_url(aineer_api::read_base_url());
     let exchange_request =
         OAuthTokenExchangeRequest::from_config(oauth, code, state, pkce.verifier, redirect_uri);
     let token_set = client_runtime_block_on(async {

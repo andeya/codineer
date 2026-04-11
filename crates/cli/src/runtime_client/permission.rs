@@ -14,7 +14,10 @@ impl CliPermissionPrompter {
 }
 
 impl aineer_engine::PermissionPrompter for CliPermissionPrompter {
-    fn decide(&mut self, request: &aineer_engine::PermissionRequest) -> aineer_engine::PermissionPromptDecision {
+    fn decide(
+        &mut self,
+        request: &aineer_engine::PermissionRequest,
+    ) -> aineer_engine::PermissionPromptDecision {
         println!();
         println!("Permission approval required");
         println!("  Tool             {}", request.tool_name);

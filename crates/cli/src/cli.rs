@@ -6,8 +6,8 @@ use std::sync::{Arc, Mutex};
 use aineer_api::ToolDefinition;
 use aineer_engine::commands::SlashCommand;
 use aineer_engine::{ConfigLoader, McpServerManager, PermissionMode};
-use serde_json::json;
 use aineer_tools::GlobalToolRegistry;
+use serde_json::json;
 
 use crate::help::append_slash_command_suggestions;
 use crate::reports::normalize_permission_mode;

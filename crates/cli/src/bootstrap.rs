@@ -6,8 +6,8 @@ use aineer_engine::ConfigLoader;
 use aineer_plugins::{PluginManager, PluginManagerConfig};
 use aineer_tools::GlobalToolRegistry;
 
-pub(crate) fn build_runtime_plugin_state() -> CliResult<(aineer_engine::RuntimeConfig, GlobalToolRegistry)>
-{
+pub(crate) fn build_runtime_plugin_state(
+) -> CliResult<(aineer_engine::RuntimeConfig, GlobalToolRegistry)> {
     crate::init::ensure_home_aineer_dirs();
     let cwd = env::current_dir()?;
     let loader = ConfigLoader::default_for(&cwd);

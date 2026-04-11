@@ -1,4 +1,6 @@
-use aineer_api::{CacheControl, ImageSource, InputContentBlock, InputMessage, ToolResultContentBlock};
+use aineer_api::{
+    CacheControl, ImageSource, InputContentBlock, InputMessage, ToolResultContentBlock,
+};
 use aineer_engine::ConversationMessage;
 
 /// Convert runtime messages to API input messages, placing a single

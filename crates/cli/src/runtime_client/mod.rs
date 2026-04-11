@@ -88,7 +88,8 @@ pub(crate) fn build_runtime(params: RuntimeParams) -> CliResult<RuntimeBuildResu
         .iter()
         .filter_map(|fb| {
             let expanded = resolver.expand_shorthand(fb).ok()?;
-            let canonical = aineer_api::resolve_model_alias(&expanded, runtime_config.model_aliases());
+            let canonical =
+                aineer_api::resolve_model_alias(&expanded, runtime_config.model_aliases());
             if canonical == resolved_model {
                 return None;
             }
