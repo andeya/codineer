@@ -221,14 +221,14 @@ aineer
 The prompt is **`❯`**. Type naturally. Use **slash commands** (Tab-autocomplete supported):
 
 | Category        | Commands                                                                 |
-| --------------- | ------------------------------------------------------------------------ | ----- | ------- | -------- |
+| --------------- | ------------------------------------------------------------------------ |
 | **Info**        | `/help` `/status` `/version` `/model` `/cost` `/config` `/memory`        |
 | **Session**     | `/compact` `/clear` `/session` `/resume` `/export`                       |
 | **Git**         | `/diff` `/branch` `/commit` `/commit-push-pr` `/pr` `/issue` `/worktree` |
 | **Agents**      | `/agents` `/skills` `/plugin`                                            |
 | **Advanced**    | `/ultraplan` `/bughunter` `/teleport` `/debug-tool-call` `/vim`          |
 | **Diagnostics** | `/doctor`                                                                |
-| **Update**      | `/update [check                                                          | apply | dismiss | status]` |
+| **Update**      | `/update [check \| apply \| dismiss \| status]`                          |
 
 <details><summary>Keyboard shortcuts</summary>
 
@@ -268,13 +268,13 @@ aineer -p "list all TODO comments" --output-format json
 aineer --permission-mode read-only "audit the codebase"
 ```
 
-| Flag                       | Description                                          |
-| -------------------------- | ---------------------------------------------------- | ------------ | ------------- |
-| `--model <name>`           | Choose model                                         |
-| `--output-format text      | json                                                 | stream-json` | Output format |
-| `--allowedTools <list>`    | Restrict tool access (comma-separated)               |
-| `--permission-mode <mode>` | `read-only`, `workspace-write`, `danger-full-access` |
-| `--resume <file>`          | Resume a saved session                               |
+| Flag                                          | Description                                          |
+| --------------------------------------------- | ---------------------------------------------------- |
+| `--model <name>`                              | Choose model                                         |
+| `--output-format text \| json \| stream-json` | Output format                                        |
+| `--allowedTools <list>`                       | Restrict tool access (comma-separated)               |
+| `--permission-mode <mode>`                    | `read-only`, `workspace-write`, `danger-full-access` |
+| `--resume <file>`                             | Resume a saved session                               |
 
 ### Permission modes
 

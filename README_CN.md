@@ -221,14 +221,14 @@ aineer
 主提示符为 **`❯`**，用自然语言交流。支持**斜杠命令**（Tab 自动补全）：
 
 | 分类      | 命令                                                                     |
-| --------- | ------------------------------------------------------------------------ | ----- | ------- | -------- |
+| --------- | ------------------------------------------------------------------------ |
 | **信息**  | `/help` `/status` `/version` `/model` `/cost` `/config` `/memory`        |
 | **会话**  | `/compact` `/clear` `/session` `/resume` `/export`                       |
 | **Git**   | `/diff` `/branch` `/commit` `/commit-push-pr` `/pr` `/issue` `/worktree` |
 | **Agent** | `/agents` `/skills` `/plugin`                                            |
 | **高级**  | `/ultraplan` `/bughunter` `/teleport` `/debug-tool-call` `/vim`          |
 | **诊断**  | `/doctor`                                                                |
-| **更新**  | `/update [check                                                          | apply | dismiss | status]` |
+| **更新**  | `/update [check \| apply \| dismiss \| status]`                          |
 
 <details><summary>快捷键</summary>
 
@@ -268,13 +268,13 @@ aineer -p "列出所有 TODO" --output-format json
 aineer --permission-mode read-only "审计代码"
 ```
 
-| 参数                       | 说明                                                 |
-| -------------------------- | ---------------------------------------------------- | ------------ | -------- |
-| `--model <名称>`           | 选择模型                                             |
-| `--output-format text      | json                                                 | stream-json` | 输出格式 |
-| `--allowedTools <列表>`    | 限制工具访问（逗号分隔）                             |
-| `--permission-mode <模式>` | `read-only`、`workspace-write`、`danger-full-access` |
-| `--resume <文件>`          | 恢复已保存的会话                                     |
+| 参数                                          | 说明                                                 |
+| --------------------------------------------- | ---------------------------------------------------- |
+| `--model <名称>`                              | 选择模型                                             |
+| `--output-format text \| json \| stream-json` | 输出格式                                             |
+| `--allowedTools <列表>`                       | 限制工具访问（逗号分隔）                             |
+| `--permission-mode <模式>`                    | `read-only`、`workspace-write`、`danger-full-access` |
+| `--resume <文件>`                             | 恢复已保存的会话                                     |
 
 ### 权限模式
 
