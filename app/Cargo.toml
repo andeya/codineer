@@ -1,0 +1,50 @@
+[package]
+name = "aineer"
+version.workspace = true
+edition.workspace = true
+description = "Aineer — Agentic Development Environment"
+
+[[bin]]
+name = "aineer"
+path = "src/main.rs"
+
+[lib]
+name = "aineer_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-opener = "2"
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+chrono = { workspace = true }
+
+portable-pty = { workspace = true }
+dirs = "6"
+
+aineer-api = { workspace = true }
+aineer-auto-update = { workspace = true }
+aineer-channels = { workspace = true }
+aineer-cli = { workspace = true }
+aineer-engine = { workspace = true }
+aineer-gateway = { workspace = true }
+aineer-lsp = { workspace = true }
+aineer-mcp = { workspace = true }
+aineer-memory = { workspace = true }
+aineer-plugins = { workspace = true }
+aineer-protocol = { workspace = true }
+aineer-provider = { workspace = true }
+aineer-release-channel = { workspace = true }
+aineer-settings = { workspace = true }
+aineer-tools = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"
