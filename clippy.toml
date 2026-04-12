@@ -1,0 +1,3 @@
+# Clippy lint configuration (see also Cargo.toml [workspace.lints]).
+# https://doc.rust-lang.org/clippy/configuration.html
+msrv = "1.83"

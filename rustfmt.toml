@@ -1,0 +1,7 @@
+# Repository-wide rustfmt. CI: `cargo fmt --all -- --check` (see .github/workflows/ci.yml).
+# Run `cargo fmt --all` before `cargo clippy --workspace -- -D warnings` to avoid style churn.
+edition = "2021"
+max_width = 100
+tab_spaces = 4
+newline_style = "Unix"
+use_small_heuristics = "Default"

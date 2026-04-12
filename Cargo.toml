@@ -78,8 +78,14 @@ aineer-channels = { version = "*", path = "crates/channels" }
 aineer-auto-update = { version = "*", path = "crates/auto_update" }
 aineer-release-channel = { version = "*", path = "crates/release_channel" }
 
+# Inherited by crates with `[lints] workspace = true`. CI: `cargo clippy --workspace --all-targets -- -D warnings`
 [workspace.lints.rust]
 unsafe_code = "forbid"
+# Allow redundant `{}` around expressions (e.g. closure args after rustfmt wraps long calls).
+# With `-D warnings`, rustc would otherwise error and fight `cargo fmt` output.
+unused_braces = "allow"
 
 [workspace.lints.clippy]
+# Baseline: enable all Clippy lints at `warn`; CI promotes warnings to errors with `-D warnings`.
+# Pedantic / nursery are opt-in per crate or module to keep noise low.
 all = { level = "warn", priority = -1 }

@@ -12,3 +12,6 @@ tracing = { workspace = true }
 tokio = { workspace = true }
 reqwest = { workspace = true }
 async-trait = { workspace = true }
+
+[lints]
+workspace = true

@@ -1,0 +1,4 @@
+# Local parity with CI (see .github/workflows/ci.yml).
+[alias]
+ci-clippy = "clippy --workspace --all-targets -- -D warnings"
+ci-fmt-check = "fmt --all -- --check"
