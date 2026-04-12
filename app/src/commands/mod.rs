@@ -1,0 +1,16 @@
+pub mod agent;
+pub mod ai;
+pub mod auto_update;
+pub mod cache;
+pub mod channels;
+pub mod files;
+pub mod gateway;
+pub mod git;
+pub mod lsp;
+pub mod mcp;
+pub mod memory;
+pub mod plugins;
+pub mod session;
+pub mod settings;
+pub mod shell;
+pub mod slash_commands;
