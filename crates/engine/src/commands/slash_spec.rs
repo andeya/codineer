@@ -11,7 +11,7 @@ pub enum SlashCommandCategory {
 }
 
 impl SlashCommandCategory {
-    pub(crate) const fn title(self) -> &'static str {
+    pub const fn title(self) -> &'static str {
         match self {
             Self::Core => "Core flow",
             Self::Workspace => "Workspace & memory",
@@ -19,6 +19,12 @@ impl SlashCommandCategory {
             Self::Git => "Git & GitHub",
             Self::Automation => "Automation & discovery",
         }
+    }
+}
+
+impl std::fmt::Display for SlashCommandCategory {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.title())
     }
 }
 
