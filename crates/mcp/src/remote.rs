@@ -232,7 +232,7 @@ impl McpRemoteClient {
         match &mut self.transport {
             RemoteTransport::Http { .. } => Ok(()),
             RemoteTransport::WebSocket { ws } => {
-                let _ = ws.close().await;
+                let _ = SinkExt::<WsMessage>::close(ws.as_mut()).await;
                 Ok(())
             }
         }
