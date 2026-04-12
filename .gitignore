@@ -6,7 +6,6 @@ app/target/
 # Node / Frontend
 node_modules/
 dist/
-bun.lock
 *.local
 
 # Tauri generated
