@@ -22,3 +22,13 @@ export const clearCache = (target: "attachments" | "history" | "all") =>
 export const listChatHistory = () => call<ChatHistoryEntry[]>("list_chat_history");
 export const deleteChatHistory = (sessionId: string) =>
   call<void>("delete_chat_history", { sessionId });
+
+export interface AutoCleanupConfig {
+  interval: string;
+  target: string;
+  lastRunMs: number;
+}
+
+export const getAutoCleanup = () => call<AutoCleanupConfig>("get_auto_cleanup");
+export const setAutoCleanup = (interval: string, target: string) =>
+  call<void>("set_auto_cleanup", { interval, target });

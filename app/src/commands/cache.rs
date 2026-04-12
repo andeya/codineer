@@ -1,7 +1,8 @@
 use crate::error::{AppError, AppResult};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
+use std::time::SystemTime;
 use tauri::Manager;
 
 fn attachments_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
@@ -163,10 +164,8 @@ fn base64_decode(input: &str) -> Result<Vec<u8>, String> {
 #[tauri::command]
 pub async fn clear_cache(app: tauri::AppHandle, target: String) -> AppResult<()> {
     if target == "attachments" || target == "all" {
-        clear_dir_contents(
-            &attachments_dir(&app).map_err(AppError::Cache)?,
-        )
-        .map_err(AppError::Cache)?;
+        clear_dir_contents(&attachments_dir(&app).map_err(AppError::Cache)?)
+            .map_err(AppError::Cache)?;
     }
     if target == "history" || target == "all" {
         clear_dir_contents(&history_dir(&app).map_err(AppError::Cache)?)
@@ -208,14 +207,117 @@ pub async fn list_chat_history(app: tauri::AppHandle) -> AppResult<Vec<ChatHisto
 }
 
 #[tauri::command]
-pub async fn delete_chat_history(
-    app: tauri::AppHandle,
-    session_id: String,
-) -> AppResult<()> {
+pub async fn delete_chat_history(app: tauri::AppHandle, session_id: String) -> AppResult<()> {
     let dir = history_dir(&app).map_err(AppError::Cache)?;
     let path = dir.join(format!("{session_id}.json"));
     if path.exists() {
         fs::remove_file(&path).map_err(|e| AppError::Cache(e.to_string()))?;
     }
     Ok(())
+}
+
+// ── Auto-cleanup ──────────────────────────────────────
+
+fn now_epoch_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64
+}
+
+fn interval_ms(interval: &str) -> Option<u64> {
+    match interval {
+        "daily" => Some(24 * 60 * 60 * 1000),
+        "weekly" => Some(7 * 24 * 60 * 60 * 1000),
+        "monthly" => Some(30 * 24 * 60 * 60 * 1000),
+        _ => None,
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AutoCleanupConfig {
+    pub interval: String,
+    pub target: String,
+    pub last_run_ms: u64,
+}
+
+#[tauri::command]
+pub async fn get_auto_cleanup(
+    state: tauri::State<'_, super::settings::ManagedSettings>,
+) -> AppResult<AutoCleanupConfig> {
+    let cfg = state.merged().map_err(AppError::Settings)?;
+    let ac = cfg.auto_cleanup.unwrap_or_default();
+    Ok(AutoCleanupConfig {
+        interval: ac.interval.unwrap_or_else(|| "off".into()),
+        target: ac.target.unwrap_or_else(|| "all".into()),
+        last_run_ms: ac.last_run_ms.unwrap_or(0),
+    })
+}
+
+#[tauri::command]
+pub async fn set_auto_cleanup(
+    state: tauri::State<'_, super::settings::ManagedSettings>,
+    interval: String,
+    target: String,
+) -> AppResult<()> {
+    let updates = serde_json::json!({
+        "autoCleanup": {
+            "interval": interval,
+            "target": target,
+        }
+    });
+    state.save_and_reload(&updates).map_err(AppError::Settings)
+}
+
+/// Run by the app at startup; returns true if cleanup was performed.
+pub fn maybe_run_auto_cleanup(app: &tauri::AppHandle) -> bool {
+    let state: tauri::State<'_, super::settings::ManagedSettings> = app.state();
+    let cfg = match state.merged() {
+        Ok(c) => c,
+        Err(_) => return false,
+    };
+    let ac = match &cfg.auto_cleanup {
+        Some(ac) => ac,
+        None => return false,
+    };
+    let period = match interval_ms(ac.interval.as_deref().unwrap_or("off")) {
+        Some(p) => p,
+        None => return false,
+    };
+    let last = ac.last_run_ms.unwrap_or(0);
+    let now = now_epoch_ms();
+    if now.saturating_sub(last) < period {
+        return false;
+    }
+    let target = ac.target.as_deref().unwrap_or("all");
+    let att_ok = if target == "attachments" || target == "all" {
+        attachments_dir(app)
+            .ok()
+            .map(|d| clear_dir_contents(&d).is_ok())
+            .unwrap_or(false)
+    } else {
+        true
+    };
+    let hist_ok = if target == "history" || target == "all" {
+        history_dir(app)
+            .ok()
+            .map(|d| clear_dir_contents(&d).is_ok())
+            .unwrap_or(false)
+    } else {
+        true
+    };
+    if att_ok && hist_ok {
+        let updates = serde_json::json!({
+            "autoCleanup": {
+                "lastRunMs": now,
+            }
+        });
+        let _ = state.save_and_reload(&updates);
+        tracing::info!("Auto-cleanup completed (target={target})");
+        true
+    } else {
+        tracing::warn!("Auto-cleanup partially failed");
+        false
+    }
 }

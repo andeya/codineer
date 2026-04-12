@@ -13,9 +13,9 @@ use commands::{
     session as session_cmd, settings, shell, slash_commands,
 };
 use serde::Serialize;
-use tauri::Manager;
 #[cfg(target_os = "macos")]
 use tauri::menu::{MenuBuilder, MenuItemBuilder, SubmenuBuilder};
+use tauri::Manager;
 
 fn read_close_to_tray(app: &tauri::AppHandle) -> bool {
     let state = app.state::<settings::ManagedSettings>();
@@ -106,11 +106,8 @@ pub fn run_desktop() {
             #[cfg(target_os = "macos")]
             {
                 let display = channel.display_name();
-                let about_item = MenuItemBuilder::with_id(
-                    "menu-about",
-                    format!("About {display}"),
-                )
-                .build(app)?;
+                let about_item = MenuItemBuilder::with_id("menu-about", format!("About {display}"))
+                    .build(app)?;
                 let app_submenu = SubmenuBuilder::new(app, display)
                     .item(&about_item)
                     .separator()
@@ -146,6 +143,9 @@ pub fn run_desktop() {
             if let Err(e) = system_tray::setup(app) {
                 tracing::warn!("Failed to setup system tray: {e}");
             }
+
+            // Run scheduled auto-cleanup if due
+            cache::maybe_run_auto_cleanup(app.handle());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -198,6 +198,8 @@ pub fn run_desktop() {
             cache::clear_cache,
             cache::list_chat_history,
             cache::delete_chat_history,
+            cache::get_auto_cleanup,
+            cache::set_auto_cleanup,
             // Auto-update
             auto_update::check_for_update,
             auto_update::get_update_channel,

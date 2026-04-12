@@ -1,17 +1,20 @@
 import { Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { Select } from "@/components/ui/select";
 import { formatBytes } from "@/lib/format";
 import { useI18n } from "@/lib/i18n";
-import type { CacheStats, ChatHistoryEntry } from "@/lib/tauri";
+import type { AutoCleanupConfig, CacheStats, ChatHistoryEntry } from "@/lib/tauri";
 import {
   clearCache,
   deleteChatHistory,
+  getAutoCleanup,
   getCacheStats,
   listChatHistory,
+  setAutoCleanup,
   tryInvoke,
 } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
-import { Section } from "./shared";
+import { Field, Section } from "./shared";
 
 function formatDate(timestampMs: number): string {
   if (!timestampMs) return "";
@@ -71,19 +74,34 @@ function ClearButton({
   );
 }
 
+function formatRelativeDate(ms: number, t: ReturnType<typeof useI18n>["t"]): string {
+  if (!ms) return t.settings.cleanupNever;
+  const d = new Date(ms);
+  return d.toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 export function CachePage() {
   const { t } = useI18n();
   const [stats, setStats] = useState<CacheStats | null>(null);
   const [history, setHistory] = useState<ChatHistoryEntry[]>([]);
   const [clearing, setClearing] = useState<string | null>(null);
+  const [cleanup, setCleanup] = useState<AutoCleanupConfig | null>(null);
 
   const refresh = useCallback(async () => {
-    const [s, h] = await Promise.all([
+    const [s, h, ac] = await Promise.all([
       tryInvoke(getCacheStats, null),
       tryInvoke(listChatHistory, []),
+      tryInvoke(getAutoCleanup, null),
     ]);
     if (s) setStats(s);
     setHistory(h);
+    if (ac) setCleanup(ac);
   }, []);
 
   useEffect(() => {
@@ -166,6 +184,54 @@ export function CachePage() {
             destructive
           />
         </div>
+      </Section>
+
+      <Section title={t.settings.autoCleanup}>
+        <p className="mb-2 text-[10px] text-muted-foreground">{t.settings.autoCleanupHint}</p>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label={t.settings.cleanupInterval}>
+            <Select
+              fullWidth
+              value={cleanup?.interval ?? "off"}
+              options={[
+                { value: "off", label: t.settings.cleanupOff },
+                { value: "daily", label: t.settings.cleanupDaily },
+                { value: "weekly", label: t.settings.cleanupWeekly },
+                { value: "monthly", label: t.settings.cleanupMonthly },
+              ]}
+              onChange={(v) => {
+                const target = cleanup?.target ?? "all";
+                setCleanup((prev) =>
+                  prev ? { ...prev, interval: v } : { interval: v, target, lastRunMs: 0 },
+                );
+                setAutoCleanup(v, target).catch(console.error);
+              }}
+            />
+          </Field>
+          <Field label={t.settings.cleanupTarget}>
+            <Select
+              fullWidth
+              value={cleanup?.target ?? "all"}
+              options={[
+                { value: "all", label: t.settings.cleanupTargetAll },
+                { value: "attachments", label: t.settings.cleanupTargetAttachments },
+                { value: "history", label: t.settings.cleanupTargetHistory },
+              ]}
+              onChange={(v) => {
+                const interval = cleanup?.interval ?? "off";
+                setCleanup((prev) =>
+                  prev ? { ...prev, target: v } : { interval, target: v, lastRunMs: 0 },
+                );
+                setAutoCleanup(interval, v).catch(console.error);
+              }}
+            />
+          </Field>
+        </div>
+        {cleanup && cleanup.interval !== "off" && (
+          <p className="mt-1.5 text-[10px] text-muted-foreground">
+            {t.settings.cleanupLastRun} {formatRelativeDate(cleanup.lastRunMs, t)}
+          </p>
+        )}
       </Section>
 
       {history.length > 0 && (

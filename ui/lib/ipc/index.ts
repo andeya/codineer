@@ -7,13 +7,15 @@ export {
   stopAgent,
   stopAiStream,
 } from "./ai";
-export type { CacheStats, ChatHistoryEntry } from "./cache";
+export type { AutoCleanupConfig, CacheStats, ChatHistoryEntry } from "./cache";
 export {
   clearCache,
   deleteChatHistory,
+  getAutoCleanup,
   getCacheStats,
   listChatHistory,
   saveAttachment,
+  setAutoCleanup,
 } from "./cache";
 export { isTauri, tryInvoke } from "./call";
 export type { ContentMatch, FileEntry, SearchResult } from "./files";

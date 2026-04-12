@@ -57,6 +57,9 @@ pub struct SettingsContent {
     // Window behaviour
     pub close_to_tray: Option<bool>,
 
+    // Cache auto-cleanup
+    pub auto_cleanup: Option<AutoCleanupConfig>,
+
     // Advanced
     pub auto_compact: Option<bool>,
     pub max_context_tokens: Option<u32>,
@@ -188,6 +191,17 @@ pub struct HooksConfig {
 #[serde(rename_all = "camelCase", default)]
 pub struct PluginsConfig {
     pub external_dir: Option<String>,
+}
+
+/// Schedule-based cache auto-cleanup.
+/// `interval`: "off" | "daily" | "weekly" | "monthly"
+/// `last_run_ms`: epoch millis of the last successful run (managed by the app).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct AutoCleanupConfig {
+    pub interval: Option<String>,
+    pub target: Option<String>,
+    pub last_run_ms: Option<u64>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
