@@ -77,6 +77,7 @@ aineer-memory = { version = "*", path = "crates/memory" }
 aineer-channels = { version = "*", path = "crates/channels" }
 aineer-auto-update = { version = "*", path = "crates/auto_update" }
 aineer-release-channel = { version = "*", path = "crates/release_channel" }
+aineer-webai = { version = "*", path = "crates/webai" }
 
 # Inherited by crates with `[lints] workspace = true`. CI: `cargo clippy --workspace --all-targets -- -D warnings`
 [workspace.lints.rust]

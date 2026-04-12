@@ -47,6 +47,7 @@ dependencies = [
  "aineer-release-channel",
  "aineer-settings",
  "aineer-tools",
+ "aineer-webai",
  "anyhow",
  "chrono",
  "dirs",
@@ -164,6 +165,7 @@ version = "0.7.1"
 dependencies = [
  "aineer-api",
  "aineer-protocol",
+ "aineer-webai",
  "anyhow",
  "async-stream",
  "axum",
@@ -282,6 +284,26 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.18",
  "tokio",
+]
+
+[[package]]
+name = "aineer-webai"
+version = "0.7.1"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "chrono",
+ "dirs",
+ "futures-core",
+ "regex",
+ "serde",
+ "serde_json",
+ "tauri",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "url",
+ "uuid",
 ]
 
 [[package]]
