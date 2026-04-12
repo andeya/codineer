@@ -1,7 +1,11 @@
-import { useCallback, useEffect, useState } from "react";
+import { Suspense, lazy, useCallback, useEffect, useState } from "react";
 import { useI18n } from "@/lib/i18n";
 import { Section } from "./shared";
 import type { PageProps } from "./types";
+
+const LazyJsonEditor = lazy(() =>
+  import("@/components/ui/json-editor").then((m) => ({ default: m.JsonEditor })),
+);
 
 export function JsonPage({ settings, onSave }: PageProps) {
   const { t } = useI18n();
@@ -33,20 +37,27 @@ export function JsonPage({ settings, onSave }: PageProps) {
   return (
     <Section title={t.settings.jsonTitle}>
       <p className="mb-2 text-[10px] text-muted-foreground">{t.settings.jsonDesc}</p>
-      <textarea
-        value={jsonText}
-        onChange={(e) => {
-          setJsonText(e.target.value);
-          try {
-            JSON.parse(e.target.value);
-            setError(null);
-          } catch (err) {
-            setError(String(err));
-          }
-        }}
-        className="min-h-[300px] w-full rounded-md border border-border bg-background p-3 font-mono text-xs text-foreground focus:border-primary focus:outline-none"
-        spellCheck={false}
-      />
+      <Suspense
+        fallback={
+          <div className="flex min-h-[200px] items-center justify-center rounded-md border border-border bg-background text-xs text-muted-foreground">
+            Loading editor…
+          </div>
+        }
+      >
+        <LazyJsonEditor
+          value={jsonText}
+          height="min(55vh, 440px)"
+          onChange={(next) => {
+            setJsonText(next);
+            try {
+              JSON.parse(next);
+              setError(null);
+            } catch (err) {
+              setError(String(err));
+            }
+          }}
+        />
+      </Suspense>
       {error && <p className="mt-1 text-[10px] text-destructive">{error}</p>}
       <div className="mt-2 flex items-center gap-2">
         <button
