@@ -86,6 +86,7 @@ export {
 } from "./settings";
 export type {
   CommandOutput,
+  CompletionItem,
   ExecuteCommandRequest,
   PtyExitPayload,
   PtyId,

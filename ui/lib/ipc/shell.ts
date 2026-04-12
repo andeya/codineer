@@ -57,5 +57,10 @@ export async function listenPtyExit(cb: (payload: PtyExitPayload) => void): Prom
 export const executeCommand = (req: ExecuteCommandRequest) =>
   call<CommandOutput>("execute_command", { request: req });
 
-export const shellComplete = (partial: string, cwd?: string) =>
-  call<string[]>("shell_complete", { partial, cwd });
+export interface CompletionItem {
+  value: string;
+  isDir: boolean;
+}
+
+export const shellComplete = (partial: string, cwd?: string, isFirstWord?: boolean) =>
+  call<CompletionItem[]>("shell_complete", { partial, cwd, isFirstWord });
