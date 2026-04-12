@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 420 128">
+  <defs>
+    <linearGradient id="tg" x1="152" y1="0" x2="400" y2="0" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#1E1B4B"/>
+      <stop offset="45%" stop-color="#7C3AED"/>
+      <stop offset="100%" stop-color="#06B6D4"/>
+    </linearGradient>
+  </defs>
+  <svg x="0" y="0" width="128" height="128" viewBox="0 0 512 512">
+    <defs>
+      <linearGradient id="bg" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse">
+        <stop offset="0%" stop-color="#FAFAF9"/><stop offset="100%" stop-color="#F5F5F4"/>
+      </linearGradient>
+      <linearGradient id="g" x1="256" y1="20" x2="256" y2="493" gradientUnits="userSpaceOnUse">
+        <stop offset="0%" stop-color="#1E1B4B"/><stop offset="45%" stop-color="#7C3AED"/><stop offset="100%" stop-color="#06B6D4"/>
+      </linearGradient>
+    </defs>
+    <rect width="512" height="512" rx="108" fill="url(#bg)"/>
+    <rect x="1" y="1" width="510" height="510" rx="107" fill="none" stroke="rgba(49,46,129,0.06)" stroke-width="1"/>
+    <line x1="200" y1="349" x2="90" y2="493" stroke="url(#g)" stroke-width="13" stroke-linecap="round"/>
+    <line x1="312" y1="349" x2="422" y2="493" stroke="url(#g)" stroke-width="13" stroke-linecap="round"/>
+    <line x1="132" y1="438" x2="380" y2="438" stroke="url(#g)" stroke-width="13" stroke-linecap="round"/>
+    <rect x="68" y="92" width="377" height="233" rx="55" fill="none" stroke="url(#g)" stroke-width="34"/>
+    <circle cx="256" cy="30.5" r="10.5" fill="url(#g)"/>
+    <line x1="256" y1="41" x2="256" y2="92" stroke="url(#g)" stroke-width="13" stroke-linecap="round"/>
+    <line x1="34" y1="209" x2="68" y2="209" stroke="url(#g)" stroke-width="13" stroke-linecap="round"/>
+    <line x1="445" y1="209" x2="479" y2="209" stroke="url(#g)" stroke-width="13" stroke-linecap="round"/>
+    <path d="M167 181.5 L201 209 L167 236.5" fill="none" stroke="url(#g)" stroke-width="21" stroke-linecap="round" stroke-linejoin="round"/>
+    <line x1="328" y1="181.5" x2="328" y2="236.5" stroke="url(#g)" stroke-width="21" stroke-linecap="round"/>
+  </svg>
+  <text x="152" y="82" font-family="Inter,SF Pro Display,system-ui,-apple-system,Segoe UI,Roboto,sans-serif" font-size="55" font-weight="600" letter-spacing="0.03em" fill="url(#tg)">Aineer</text>
+</svg>

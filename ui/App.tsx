@@ -241,7 +241,7 @@ function MainApp() {
           <TerminalPanel
             ref={terminalRef}
             visible={terminalVisible}
-            cwd={workspace.projectRoot || undefined}
+            cwd={chat.sessionCwd || workspace.projectRoot || undefined}
             onClose={handleToggleTerminal}
             onCommandDone={handleTerminalCommandDone}
           />
@@ -264,10 +264,10 @@ function MainApp() {
             isStreaming={chat.isStreaming}
             slashCommands={workspace.slashCommands}
             queueSize={queuedTasks.length}
-            projectRoot={workspace.projectRoot}
+            projectRoot={chat.sessionCwd || workspace.projectRoot}
           />
           <StatusBar
-            cwd={workspace.projectRoot || "~"}
+            cwd={chat.sessionCwd || workspace.projectRoot || "~"}
             gitBranch={workspace.gitBranchName || undefined}
             model={workspace.modelName || undefined}
             mode={chat.inputMode}

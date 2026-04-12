@@ -1,7 +1,7 @@
 {
   "name": "aineer",
   "private": true,
-  "version": "0.7.0",
+  "version": "0.7.1",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -16,7 +16,7 @@
     "lint:fix": "cargo clippy --workspace --all-targets --fix --allow-dirty && bunx biome check --fix .",
     "format": "cargo fmt --all && bunx biome format --write .",
     "format:check": "cargo fmt --all -- --check && bunx biome format .",
-    "check": "cargo check --workspace && bun run build",
+    "check": "cargo check --workspace --all-targets && bun run build",
     "version:patch": "bun run scripts/version-bump.ts patch",
     "version:minor": "bun run scripts/version-bump.ts minor",
     "version:major": "bun run scripts/version-bump.ts major",

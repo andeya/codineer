@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { useCallback, useState } from "react";
 import { AttachmentLightbox } from "@/components/input/AttachmentStrip";
+import { Logo } from "@/components/Logo";
 import { Badge } from "@/components/ui/badge";
 import {
   ChatContainerContent,
@@ -449,7 +450,7 @@ function WelcomeScreen() {
 
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-6 p-8 text-center">
-      <img src="/logo.svg" alt="Aineer" className="h-14 w-14 opacity-80" />
+      <Logo className="h-16 w-16" />
       <div>
         <h1 className="text-lg font-semibold text-foreground">{t.chat.welcome}</h1>
         <p className="mt-1 text-sm text-muted-foreground">{t.chat.subtitle}</p>

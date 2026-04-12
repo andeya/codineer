@@ -4,23 +4,9 @@ import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { vscodeDark, vscodeLight } from "@uiw/codemirror-theme-vscode";
 import CodeMirror from "@uiw/react-codemirror";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
+import { useIsDark } from "@/hooks/useIsDark";
 import { cn } from "@/lib/utils";
-
-function useRootDarkClass(): boolean {
-  const [dark, setDark] = useState(() =>
-    typeof document !== "undefined" ? document.documentElement.classList.contains("dark") : false,
-  );
-  useEffect(() => {
-    const root = document.documentElement;
-    const sync = () => setDark(root.classList.contains("dark"));
-    sync();
-    const obs = new MutationObserver(sync);
-    obs.observe(root, { attributes: true, attributeFilter: ["class"] });
-    return () => obs.disconnect();
-  }, []);
-  return dark;
-}
 
 export interface JsonEditorProps {
   value: string;
@@ -38,7 +24,7 @@ export function JsonEditor({
   className,
   readOnly = false,
 }: JsonEditorProps) {
-  const dark = useRootDarkClass();
+  const dark = useIsDark();
 
   const extensions = useMemo(
     () => [

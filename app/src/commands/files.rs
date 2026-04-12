@@ -29,7 +29,18 @@ pub async fn get_project_root() -> AppResult<String> {
             None => break,
         }
     }
-    Ok(cwd.to_string_lossy().into_owned())
+    // If the process CWD looks like a non-user directory (e.g. "/" on macOS
+    // when launched from Finder), fall back to $HOME.
+    let cwd_str = cwd.to_string_lossy();
+    if cwd_str == "/" || cwd_str.starts_with("/Applications") || cwd_str.starts_with("/System") {
+        if let Ok(home) = std::env::var("HOME") {
+            let home_path = PathBuf::from(&home);
+            if home_path.is_dir() {
+                return Ok(home);
+            }
+        }
+    }
+    Ok(cwd_str.into_owned())
 }
 
 #[tauri::command]

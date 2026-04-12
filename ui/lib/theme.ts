@@ -58,7 +58,7 @@ const LEGACY_KEY = "aineer-theme";
 const DEFAULT_CONFIG: ThemeConfig = {
   mode: "system",
   light: "github-light",
-  dark: "one-dark-pro",
+  dark: "dracula",
 };
 
 function getSystemPreference(): "light" | "dark" {
@@ -70,6 +70,11 @@ function resolveConcreteId(cfg: ThemeConfig): ConcreteThemeId {
   if (cfg.mode === "light") return cfg.light;
   if (cfg.mode === "dark") return cfg.dark;
   return getSystemPreference() === "dark" ? cfg.dark : cfg.light;
+}
+
+function applyFavicon(isDark: boolean) {
+  const link = document.getElementById("favicon") as HTMLLinkElement | null;
+  if (link) link.href = isDark ? "/logo-dark.svg" : "/logo-light.svg";
 }
 
 function applyTheme(id: ConcreteThemeId) {
@@ -86,6 +91,8 @@ function applyTheme(id: ConcreteThemeId) {
   } else {
     root.classList.remove("dark");
   }
+
+  applyFavicon(preset.isDark);
 }
 
 export function getStoredConfig(): ThemeConfig {

@@ -570,6 +570,7 @@ export function InputBar({
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      if (e.nativeEvent.isComposing || e.keyCode === 229) return;
       if (showFilePicker) return;
 
       const activePopup = showSlash || showMentions || showShellComplete;

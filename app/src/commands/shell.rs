@@ -66,6 +66,9 @@ pub struct ExecuteCommandRequest {
     pub command: String,
     pub cwd: Option<String>,
     pub timeout_ms: Option<u64>,
+    /// When true, the backend appends a CWD probe to the command and returns
+    /// the subprocess's final working directory in `final_cwd`.
+    pub track_cwd: Option<bool>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -75,6 +78,8 @@ pub struct CommandOutput {
     pub exit_code: i32,
     pub duration_ms: u64,
     pub timed_out: bool,
+    /// The subprocess's working directory after execution (only when `track_cwd` was set).
+    pub final_cwd: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -288,14 +293,47 @@ fn complete_from_history(partial: &str) -> Vec<CompletionItem> {
 }
 
 const DEFAULT_TIMEOUT_MS: u64 = 30_000;
+const CWD_PROBE_MARKER: &str = "__AINEER_CWD_PROBE_a9f2e1__";
+
+/// Wrap the user command so that after it finishes we can capture the final CWD
+/// without altering the visible output or exit code.
+fn wrap_command_with_cwd_probe(user_cmd: &str, is_windows: bool) -> String {
+    if is_windows {
+        format!(
+            "{user_cmd} & set __aineer_ec=%errorlevel% & echo {CWD_PROBE_MARKER} & cd & exit /b %__aineer_ec%"
+        )
+    } else {
+        format!(
+            "{user_cmd}; __aineer_ec=$?; printf '\\n{CWD_PROBE_MARKER}\\n'; pwd; exit $__aineer_ec"
+        )
+    }
+}
+
+/// Split stdout at the CWD probe marker, returning (real_stdout, final_cwd).
+fn extract_cwd_from_output(raw: &str) -> (String, Option<String>) {
+    if let Some(idx) = raw.rfind(CWD_PROBE_MARKER) {
+        let before = raw[..idx].trim_end_matches('\n');
+        let after = raw[idx + CWD_PROBE_MARKER.len()..].trim();
+        let cwd = if after.is_empty() {
+            None
+        } else {
+            Some(after.to_string())
+        };
+        (before.to_string(), cwd)
+    } else {
+        (raw.to_string(), None)
+    }
+}
 
 #[tauri::command]
 pub async fn execute_command(request: ExecuteCommandRequest) -> AppResult<CommandOutput> {
     let start = std::time::Instant::now();
     let timeout =
         std::time::Duration::from_millis(request.timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS));
+    let track_cwd = request.track_cwd.unwrap_or(false);
 
-    let (shell, flag) = if cfg!(target_os = "windows") {
+    let is_windows = cfg!(target_os = "windows");
+    let (shell, flag) = if is_windows {
         ("cmd".to_string(), "/C")
     } else {
         (
@@ -304,9 +342,15 @@ pub async fn execute_command(request: ExecuteCommandRequest) -> AppResult<Comman
         )
     };
 
+    let actual_command = if track_cwd {
+        wrap_command_with_cwd_probe(&request.command, is_windows)
+    } else {
+        request.command.clone()
+    };
+
     let mut cmd = std::process::Command::new(&shell);
     cmd.arg(flag)
-        .arg(&request.command)
+        .arg(&actual_command)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
 
@@ -330,13 +374,22 @@ pub async fn execute_command(request: ExecuteCommandRequest) -> AppResult<Comman
     let duration_ms = start.elapsed().as_millis() as u64;
 
     match result {
-        WaitResult::Completed(output) => Ok(CommandOutput {
-            stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
-            stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
-            exit_code: output.status.code().unwrap_or(-1),
-            duration_ms,
-            timed_out: false,
-        }),
+        WaitResult::Completed(output) => {
+            let raw_stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+            let (stdout, final_cwd) = if track_cwd {
+                extract_cwd_from_output(&raw_stdout)
+            } else {
+                (raw_stdout, None)
+            };
+            Ok(CommandOutput {
+                stdout,
+                stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+                exit_code: output.status.code().unwrap_or(-1),
+                duration_ms,
+                timed_out: false,
+                final_cwd,
+            })
+        }
         WaitResult::TimedOut(partial_stdout, partial_stderr) => Ok(CommandOutput {
             stdout: partial_stdout,
             stderr: format!(
@@ -351,6 +404,7 @@ pub async fn execute_command(request: ExecuteCommandRequest) -> AppResult<Comman
             exit_code: 124,
             duration_ms,
             timed_out: true,
+            final_cwd: None,
         }),
         WaitResult::Error(msg) => Err(AppError::Shell(msg)),
     }

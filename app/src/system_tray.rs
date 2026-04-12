@@ -8,8 +8,9 @@ use tauri::{
 /// Build and register the system-tray icon with Show / About / Quit actions.
 ///
 /// Platform notes:
-/// - **macOS**: `icon_as_template(true)` ensures the icon adapts to menu bar
-///   light/dark mode. Left-click shows the window; right-click opens the menu.
+/// - **macOS**: Uses a dedicated 22pt (44px @2x) colored tray icon so it
+///   renders crisply in the menu bar. `icon_as_template(false)` preserves the
+///   original brand colors. Left-click shows the window; right-click opens the menu.
 /// - **Windows**: Tray icon gets a stable `id` so that Windows correctly tracks
 ///   it across restarts. Left-click shows the window; right-click opens the menu.
 /// - **Linux**: Behaviour depends on the DE's `libappindicator` / `StatusNotifier`
@@ -29,6 +30,12 @@ pub fn setup(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         .item(&quit)
         .build()?;
 
+    #[cfg(target_os = "macos")]
+    let icon = {
+        let png = include_bytes!("../icons/tray-icon@2x.png");
+        tauri::image::Image::from_bytes(png)?
+    };
+    #[cfg(not(target_os = "macos"))]
     let icon = app
         .default_window_icon()
         .cloned()
@@ -36,7 +43,7 @@ pub fn setup(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
 
     let _tray = TrayIconBuilder::with_id("aineer-tray")
         .icon(icon)
-        .icon_as_template(cfg!(target_os = "macos"))
+        .icon_as_template(false)
         .tooltip(crate::version::display_title())
         .menu(&menu)
         .show_menu_on_left_click(false)

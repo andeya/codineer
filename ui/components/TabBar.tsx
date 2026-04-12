@@ -94,9 +94,32 @@ export function TabBar({
     setContextMenu({ id, x: e.clientX, y: e.clientY });
   }, []);
 
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const activeTabRef = useRef<HTMLDivElement>(null);
+
+  // Scroll active tab into view when it changes
+  useEffect(() => {
+    activeTabRef.current?.scrollIntoView({
+      inline: "nearest",
+      block: "nearest",
+      behavior: "smooth",
+    });
+  });
+
+  const handleWheel = useCallback((e: React.WheelEvent<HTMLDivElement>) => {
+    if (!scrollRef.current) return;
+    if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+      scrollRef.current.scrollLeft += e.deltaY;
+    }
+  }, []);
+
   return (
     <div className="flex h-9 shrink-0 items-end border-b border-border bg-card/30">
-      <div className="flex min-w-0 flex-1 items-end overflow-x-auto">
+      <div
+        ref={scrollRef}
+        onWheel={handleWheel}
+        className="flex min-w-0 flex-1 items-end overflow-x-auto scrollbar-none"
+      >
         {tabs.map((tab) => {
           const Icon = typeIcon[tab.type];
           const isActive = tab.id === activeId;
@@ -105,6 +128,7 @@ export function TabBar({
           return (
             <div
               key={tab.id}
+              ref={isActive ? activeTabRef : undefined}
               role="tab"
               tabIndex={0}
               aria-selected={isActive}
@@ -181,7 +205,7 @@ export function TabBar({
         type="button"
         onClick={onNewChat}
         title={t.tab.newChat}
-        className="flex h-8 w-8 shrink-0 items-center justify-center text-muted-foreground transition-colors hover:bg-card hover:text-foreground"
+        className="flex h-8 w-8 shrink-0 items-center justify-center border-l border-border text-muted-foreground transition-colors hover:bg-card hover:text-foreground"
       >
         <Plus className="h-3.5 w-3.5" />
       </button>

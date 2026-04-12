@@ -26,6 +26,8 @@ export interface ExecuteCommandRequest {
   command: string;
   cwd?: string;
   timeout_ms?: number;
+  /** When true, the backend tracks the subprocess's final CWD after execution. */
+  track_cwd?: boolean;
 }
 
 export interface CommandOutput {
@@ -34,6 +36,8 @@ export interface CommandOutput {
   exit_code: number;
   duration_ms: number;
   timed_out: boolean;
+  /** The subprocess's working directory after execution (only when `track_cwd` was set). */
+  final_cwd?: string;
 }
 
 export const spawnPty = (req: SpawnPtyRequest) => call<PtyId>("spawn_pty", { request: req });

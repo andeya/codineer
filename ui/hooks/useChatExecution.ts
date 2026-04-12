@@ -81,6 +81,20 @@ export function useChatExecution({
   const pendingAttachmentsRef = useRef<Attachment[] | null>(null);
   const [inputMode, setInputMode] = useState<InputMode>("shell");
 
+  // Session CWD persists across shell commands; initialized from projectRoot.
+  const [sessionCwd, setSessionCwd] = useState(projectRoot);
+  const sessionCwdRef = useRef(sessionCwd);
+  sessionCwdRef.current = sessionCwd;
+
+  // Sync sessionCwd when projectRoot first becomes available
+  const projectRootInitialized = useRef(false);
+  useEffect(() => {
+    if (projectRoot && !projectRootInitialized.current) {
+      projectRootInitialized.current = true;
+      setSessionCwd(projectRoot);
+    }
+  }, [projectRoot]);
+
   const messagesRef = useRef(messages);
   messagesRef.current = messages;
 
@@ -161,12 +175,12 @@ export function useChatExecution({
       let exitCode: number;
       let durationMs: number;
       let timedOut = false;
-      const cwd = projectRootRef.current || undefined;
+      const cwd = sessionCwdRef.current || projectRootRef.current || undefined;
       const startMs = Date.now();
 
       if (isTauri()) {
         try {
-          const resultPromise = executeCommand({ command: text, cwd });
+          const resultPromise = executeCommand({ command: text, cwd, track_cwd: true });
           const abortPromise = new Promise<"aborted">((resolve) => {
             abort.signal.addEventListener("abort", () => resolve("aborted"), { once: true });
           });
@@ -181,7 +195,9 @@ export function useChatExecution({
             const parts: string[] = [];
             if (result.stdout) parts.push(result.stdout);
             if (result.stderr) parts.push(result.stderr);
-            output = parts.join("\n") || "(no output)";
+            const newCwd = result.final_cwd && result.final_cwd !== cwd ? result.final_cwd : null;
+            if (newCwd) setSessionCwd(newCwd);
+            output = parts.join("\n") || newCwd || "(no output)";
             exitCode = result.exit_code;
             durationMs = result.duration_ms;
             timedOut = result.timed_out;
@@ -223,6 +239,7 @@ export function useChatExecution({
       abortRef.current = null;
 
       const outId = allocId();
+      const displayCwd = sessionCwdRef.current || cwd || "~";
       setMessages((prev) => [
         ...prev,
         {
@@ -233,7 +250,7 @@ export function useChatExecution({
           timestamp: Date.now(),
           shell: {
             command: text,
-            cwd: cwd || "~",
+            cwd: displayCwd,
             output: output.replace(/\n$/, ""),
             exitCode,
             durationMs,
@@ -271,7 +288,7 @@ export function useChatExecution({
           const blockId = await sendAiMessage({
             message: text,
             model: modelNameRef.current || undefined,
-            cwd: projectRootRef.current || undefined,
+            cwd: sessionCwdRef.current || projectRootRef.current || undefined,
             shell_context: shellContext.length > 0 ? shellContext : undefined,
           });
           const safetyTimer = setTimeout(() => {
@@ -348,7 +365,7 @@ export function useChatExecution({
           const assistantId = allocId();
           const blockId = await startAgent({
             goal: text,
-            cwd: projectRootRef.current || undefined,
+            cwd: sessionCwdRef.current || projectRootRef.current || undefined,
             model: modelNameRef.current || undefined,
             shell_context: shellContext.length > 0 ? shellContext : undefined,
           });
@@ -599,6 +616,7 @@ export function useChatExecution({
     isStreaming,
     inputMode,
     setInputMode,
+    sessionCwd,
     handleSubmit,
     handleStop,
     handleSlashCommand,

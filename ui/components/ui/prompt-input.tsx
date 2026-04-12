@@ -146,6 +146,7 @@ function PromptInputTextarea({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.nativeEvent.isComposing || e.keyCode === 229) return;
     onKeyDown?.(e);
     if (e.key === "Enter" && !e.shiftKey && !e.defaultPrevented) {
       e.preventDefault();

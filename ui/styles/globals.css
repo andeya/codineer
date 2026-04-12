@@ -575,3 +575,7 @@ button, [role="button"] {
 /* ── Drag handle hover ─────────────────────────────────── */
 .drag-handle-hover:hover  { background: var(--accent); }
 .drag-handle-hover:active { background: var(--muted); }
+
+/* ── Hidden scrollbar utility ─────────────────────────── */
+.scrollbar-none { scrollbar-width: none; -ms-overflow-style: none; }
+.scrollbar-none::-webkit-scrollbar { display: none; }

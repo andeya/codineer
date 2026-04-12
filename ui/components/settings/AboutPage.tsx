@@ -1,5 +1,6 @@
 import { ExternalLink } from "lucide-react";
 import { useEffect, useState } from "react";
+import { Logo } from "@/components/Logo";
 import type { Translations } from "@/lib/i18n";
 import { useI18n } from "@/lib/i18n";
 import type { AppInfo } from "@/lib/tauri";
@@ -44,9 +45,7 @@ export function AboutPage() {
   return (
     <>
       <div className="mb-6 flex flex-col items-center gap-3 py-4">
-        <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-about-logo text-3xl font-bold shadow-sm">
-          A
-        </div>
+        <Logo className="h-16 w-16 rounded-2xl shadow-sm" />
         <div className="text-center">
           <h2 className="text-lg font-semibold text-foreground">Aineer</h2>
           <p className="mt-0.5 text-sm text-muted-foreground">{versionDisplay}</p>
