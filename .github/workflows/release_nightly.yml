@@ -73,11 +73,11 @@ jobs:
 
       - name: Build with Tauri
         uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tauriScript: bunx tauri
           args: --target ${{ matrix.target }}
+          includeUpdaterJson: false
+          uploadPlainBinary: false
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -88,6 +88,7 @@ jobs:
             target/${{ matrix.target }}/release/bundle/appimage/*.AppImage
             target/${{ matrix.target }}/release/bundle/deb/*.deb
             target/${{ matrix.target }}/release/bundle/nsis/*.exe
+            target/${{ matrix.target }}/release/bundle/msi/*.msi
 
   release:
     name: Publish Nightly
@@ -109,4 +110,8 @@ jobs:
             Automated nightly build from `main` branch.
             **Warning:** This is an unstable development build.
           files: |
-            aineer-nightly-*/**/*
+            **/*.dmg
+            **/*.AppImage
+            **/*.deb
+            **/*.exe
+            **/*.msi

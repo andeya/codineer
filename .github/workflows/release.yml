@@ -69,13 +69,15 @@ jobs:
       - name: Install frontend deps
         run: bun install --frozen-lockfile
 
+      # Build only here; release assets are attached in the `release` job so we
+      # publish installer archives only (not .app bundle internals as loose files).
       - name: Build with Tauri
         uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tauriScript: bunx tauri
           args: --target ${{ matrix.target }}
+          includeUpdaterJson: false
+          uploadPlainBinary: false
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -83,7 +85,6 @@ jobs:
           name: aineer-${{ matrix.target }}
           path: |
             target/${{ matrix.target }}/release/bundle/dmg/*.dmg
-            target/${{ matrix.target }}/release/bundle/macos/*.app
             target/${{ matrix.target }}/release/bundle/appimage/*.AppImage
             target/${{ matrix.target }}/release/bundle/deb/*.deb
             target/${{ matrix.target }}/release/bundle/nsis/*.exe
@@ -102,5 +103,10 @@ jobs:
         with:
           prerelease: ${{ needs.determine-channel.outputs.channel == 'preview' }}
           generate_release_notes: true
+          # Only final installers — never `**/*` (would attach every file inside .app bundles).
           files: |
-            aineer-*/**/*
+            **/*.dmg
+            **/*.AppImage
+            **/*.deb
+            **/*.exe
+            **/*.msi
