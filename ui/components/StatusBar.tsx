@@ -1,7 +1,13 @@
-import { Check, ChevronDown, ChevronRight, Cpu, GitBranch, TerminalSquare } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Check, ChevronDown, Cpu, GitBranch, TerminalSquare } from "lucide-react";
+import { useCallback, useMemo, useRef, useState } from "react";
+import { Select } from "@/components/ui/select";
 import { useClickOutside } from "@/hooks/useClickOutside";
 import { useI18n } from "@/lib/i18n";
+import {
+  modelGroupsToSelectOptions,
+  shortModelDisplay,
+  withCurrentModelOption,
+} from "@/lib/model-options";
 import type { GitBranchInfo, ModelGroupData } from "@/lib/tauri";
 import type { InputMode } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -58,7 +64,7 @@ export function StatusBar({
           <span className="hidden sm:inline">{t.status.terminal}</span>
         </button>
       )}
-      <ModelPicker model={model} groups={modelGroups} onSelect={onSelectModel} />
+      <StatusBarModelSelect model={model} groups={modelGroups} onSelect={onSelectModel} />
       <span
         className={cn(
           "rounded-sm px-1.5 py-0.5 text-[10px] font-medium",
@@ -157,10 +163,10 @@ function BranchPicker({
 }
 
 // ────────────────────────────────────────────────────────
-// Model picker
+// Model select (same flat list as Settings → Models)
 // ────────────────────────────────────────────────────────
 
-function ModelPicker({
+function StatusBarModelSelect({
   model,
   groups,
   onSelect,
@@ -170,175 +176,46 @@ function ModelPicker({
   onSelect?: (model: string) => void;
 }) {
   const { t } = useI18n();
-  const [open, setOpen] = useState(false);
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
-  const [focusIdx, setFocusIdx] = useState(-1);
-  const ref = useRef<HTMLDivElement>(null);
-  const listRef = useRef<HTMLDivElement>(null);
 
-  const close = useCallback(() => {
-    setOpen(false);
-    setCollapsed(new Set());
-    setFocusIdx(-1);
-  }, []);
+  const options = useMemo(() => {
+    const base = modelGroupsToSelectOptions(groups ?? []);
+    return withCurrentModelOption(base, model);
+  }, [groups, model]);
 
-  useClickOutside(ref, open, close);
+  const short = model?.trim() ? shortModelDisplay(model) : "";
 
-  // Flat list of visible model IDs for keyboard navigation
-  const flatItems = useMemo(() => {
-    if (!groups) return [];
-    const items: string[] = [];
-    for (const g of groups) {
-      if (collapsed.has(g.provider)) continue;
-      for (const m of g.models) {
-        items.push(`${g.provider}/${m}`);
-      }
-    }
-    return items;
-  }, [groups, collapsed]);
-
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
-      if (!open) return;
-      switch (e.key) {
-        case "ArrowDown":
-          e.preventDefault();
-          setFocusIdx((prev) => (prev + 1 < flatItems.length ? prev + 1 : 0));
-          break;
-        case "ArrowUp":
-          e.preventDefault();
-          setFocusIdx((prev) => (prev - 1 >= 0 ? prev - 1 : flatItems.length - 1));
-          break;
-        case "Enter": {
-          e.preventDefault();
-          const id = flatItems[focusIdx];
-          if (id) {
-            onSelect?.(id);
-            close();
-          }
-          break;
-        }
-        case "Escape":
-          e.preventDefault();
-          close();
-          break;
-      }
-    },
-    [open, flatItems, focusIdx, onSelect, close],
-  );
-
-  // Scroll focused item into view
-  useEffect(() => {
-    if (focusIdx < 0 || !listRef.current) return;
-    const el = listRef.current.querySelector(`[data-idx="${focusIdx}"]`);
-    if (el) el.scrollIntoView({ block: "nearest" });
-  }, [focusIdx]);
-
-  const displayName = model ? (model.includes("/") ? model.split("/").pop() : model) : "";
-
-  const hasGroups = groups && groups.length > 0;
-
-  let itemCounter = 0;
-
-  return (
-    // biome-ignore lint/a11y/noStaticElementInteractions: keyboard nav on wrapper
-    <div ref={ref} className="relative" onKeyDown={handleKeyDown}>
-      <button
-        type="button"
-        onClick={() => {
-          if (hasGroups) {
-            setOpen((v) => !v);
-            setFocusIdx(-1);
-          }
-        }}
-        className={cn(
-          "flex items-center gap-1 rounded px-1 transition-colors",
-          hasGroups && "hover:bg-accent hover:text-foreground",
-          !hasGroups && "cursor-default",
-        )}
-      >
-        <Cpu className="h-3 w-3 text-muted-foreground" />
-        {displayName ? (
-          <span className="max-w-[180px] truncate">{displayName}</span>
+  if (options.length === 0) {
+    return (
+      <div className="flex max-w-[220px] items-center gap-1 text-[11px] text-muted-foreground">
+        <Cpu className="h-3 w-3 shrink-0" />
+        {short ? (
+          <span className="truncate text-foreground">{short}</span>
         ) : (
           <span className="italic opacity-50">{t.status.noModel}</span>
         )}
-        {hasGroups && <ChevronDown className="h-2.5 w-2.5 opacity-60" />}
-      </button>
+      </div>
+    );
+  }
 
-      {open && hasGroups && (
-        <div className="absolute bottom-full right-0 z-50 mb-1 w-64 overflow-hidden rounded-md border border-border bg-popover shadow-lg">
-          <div ref={listRef} className="max-h-72 overflow-y-auto py-1">
-            {groups.map((g) => {
-              const isGroupCollapsed = collapsed.has(g.provider);
-              return (
-                <div key={g.provider}>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setCollapsed((prev) => {
-                        const next = new Set(prev);
-                        if (next.has(g.provider)) next.delete(g.provider);
-                        else next.add(g.provider);
-                        return next;
-                      })
-                    }
-                    className="flex w-full items-center gap-1.5 px-2 py-1.5 text-left text-[11px] font-medium text-foreground transition-colors hover:bg-accent"
-                  >
-                    <ChevronRight
-                      className={cn(
-                        "h-3 w-3 shrink-0 transition-transform",
-                        !isGroupCollapsed && "rotate-90",
-                      )}
-                    />
-                    {g.provider}
-                    <span className="ml-auto text-[10px] text-muted-foreground">
-                      {g.models.length}
-                    </span>
-                  </button>
-                  {!isGroupCollapsed &&
-                    g.models.map((m) => {
-                      const idx = itemCounter++;
-                      const fullId = `${g.provider}/${m}`;
-                      const isCurrent = model === fullId || model === m;
-                      const isFocused = idx === focusIdx;
-                      return (
-                        <button
-                          key={m}
-                          type="button"
-                          data-idx={idx}
-                          onClick={() => {
-                            onSelect?.(fullId);
-                            close();
-                          }}
-                          onMouseEnter={() => setFocusIdx(idx)}
-                          className={cn(
-                            "flex w-full items-center gap-2 pl-6 pr-2 py-1 text-left text-[11px] transition-colors",
-                            isFocused
-                              ? "bg-accent text-accent-foreground"
-                              : "hover:bg-accent hover:text-foreground",
-                            isCurrent && !isFocused && "font-medium text-primary",
-                          )}
-                        >
-                          {isCurrent ? (
-                            <Check className="h-3 w-3 shrink-0 text-primary" />
-                          ) : (
-                            <span className="h-3 w-3 shrink-0" />
-                          )}
-                          <span className="truncate">{m}</span>
-                        </button>
-                      );
-                    })}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
+  return (
+    <div className="flex max-w-[240px] min-w-0 items-center gap-0.5">
+      <Cpu className="h-3 w-3 shrink-0 text-muted-foreground" />
+      <Select
+        value={model ?? ""}
+        options={options}
+        onChange={(v) => onSelect?.(v)}
+        placeholder={t.status.noModel}
+        triggerLabel={short || null}
+        dropUp
+        menuAlign="end"
+        menuClassName="min-w-64 max-h-72"
+        triggerClassName={cn(
+          "max-w-[180px] min-w-0 border-0 bg-transparent px-1 py-0.5 text-[11px] shadow-none",
+          "hover:bg-accent hover:text-foreground",
+          "focus:ring-1 focus:ring-ring",
+        )}
+        className="min-w-0 flex-1"
+      />
     </div>
   );
 }
-
-// ────────────────────────────────────────────────────────
-// Shared click-outside hook
-// ────────────────────────────────────────────────────────

@@ -99,6 +99,7 @@ export function FilePicker({
           filteredEntries.map((entry, i) => (
             <div
               role="option"
+              tabIndex={-1}
               aria-selected={i === selectedIdx}
               key={entry.path}
               onMouseEnter={() => onHoverIndex(i)}

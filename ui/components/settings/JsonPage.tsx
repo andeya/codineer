@@ -1,4 +1,4 @@
-import { Suspense, lazy, useCallback, useEffect, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { useI18n } from "@/lib/i18n";
 import { Section } from "./shared";
 import type { PageProps } from "./types";

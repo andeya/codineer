@@ -287,11 +287,7 @@ function ChatAttachmentStrip({ attachments }: { attachments: Attachment[] }) {
               onClick={() => openPreview(att.previewUrl ?? "", att.name)}
               className="cursor-zoom-in overflow-hidden rounded border border-border transition-opacity hover:opacity-80"
             >
-              <img
-                src={att.previewUrl}
-                alt={att.name}
-                className="h-12 w-12 object-cover"
-              />
+              <img src={att.previewUrl} alt={att.name} className="h-12 w-12 object-cover" />
             </button>
           ) : (
             <div

@@ -35,9 +35,9 @@ function AttachmentThumb({
   const sizeLabel = formatSize(attachment.size, units);
 
   return (
-    <div
-      role="listitem"
+    <li
       draggable
+      className="list-none"
       onDragStart={(e) => {
         e.dataTransfer.effectAllowed = "move";
         onDragStart();
@@ -48,43 +48,48 @@ function AttachmentThumb({
         e.dataTransfer.dropEffect = "move";
         onDragOver(attachment.id);
       }}
-      className={cn(
-        "hover-reveal relative flex-shrink-0 rounded-lg border border-border bg-muted/50 transition-opacity",
-        isDragging && "opacity-40",
-      )}
     >
-      {isImage ? (
+      <div
+        className={cn(
+          "hover-reveal relative flex-shrink-0 rounded-lg border border-border bg-muted/50 transition-opacity",
+          isDragging && "opacity-40",
+        )}
+      >
+        {isImage ? (
+          <button
+            type="button"
+            onClick={() => onPreview(attachment.previewUrl ?? "")}
+            className="block overflow-hidden rounded-t-lg"
+          >
+            <img
+              src={attachment.previewUrl}
+              alt={attachment.name}
+              className="h-16 w-20 object-cover transition-transform hover:scale-105"
+            />
+          </button>
+        ) : (
+          <div className="flex h-16 w-20 items-center justify-center rounded-t-lg bg-muted">
+            <FileText className="h-6 w-6 text-muted-foreground" />
+          </div>
+        )}
+        <div className="flex flex-col px-1.5 py-1">
+          <span className="max-w-[72px] truncate text-[10px] text-foreground">
+            {attachment.name}
+          </span>
+          <span className="text-[9px] text-muted-foreground">{sizeLabel}</span>
+        </div>
         <button
           type="button"
-          onClick={() => onPreview(attachment.previewUrl ?? "")}
-          className="block overflow-hidden rounded-t-lg"
+          onClick={(e) => {
+            e.stopPropagation();
+            onRemove(attachment.id);
+          }}
+          className="hover-reveal-target absolute -top-1.5 -right-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-destructive text-destructive-foreground shadow-sm"
         >
-          <img
-            src={attachment.previewUrl}
-            alt={attachment.name}
-            className="h-16 w-20 object-cover transition-transform hover:scale-105"
-          />
+          <X className="h-3 w-3" />
         </button>
-      ) : (
-        <div className="flex h-16 w-20 items-center justify-center rounded-t-lg bg-muted">
-          <FileText className="h-6 w-6 text-muted-foreground" />
-        </div>
-      )}
-      <div className="flex flex-col px-1.5 py-1">
-        <span className="max-w-[72px] truncate text-[10px] text-foreground">{attachment.name}</span>
-        <span className="text-[9px] text-muted-foreground">{sizeLabel}</span>
       </div>
-      <button
-        type="button"
-        onClick={(e) => {
-          e.stopPropagation();
-          onRemove(attachment.id);
-        }}
-        className="hover-reveal-target absolute -top-1.5 -right-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-destructive text-destructive-foreground shadow-sm"
-      >
-        <X className="h-3 w-3" />
-      </button>
-    </div>
+    </li>
   );
 }
 
@@ -118,7 +123,11 @@ export function AttachmentLightbox({
       tabIndex={-1}
       className="fixed inset-0 z-50 flex cursor-zoom-out items-center justify-center bg-black/70 backdrop-blur-sm"
       onClick={onClose}
+      onKeyDown={(e) => {
+        if (e.key === "Escape") onClose();
+      }}
     >
+      {/* biome-ignore lint/a11y/useKeyWithClickEvents: stopPropagation only, no action */}
       <img
         src={url}
         alt={alt}

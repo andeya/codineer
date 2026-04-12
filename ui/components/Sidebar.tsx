@@ -118,9 +118,8 @@ export function Sidebar({
           {panelContent(panel, onOpenFile, onOpenDiff, t)}
         </div>
       </div>
-      {/* Drag handle */}
       <div
-        role="separator"
+        aria-hidden="true"
         className="absolute top-0 right-0 z-10 h-full w-1 cursor-col-resize transition-colors hover:bg-primary/40 active:bg-primary/60"
         onMouseDown={handleMouseDown}
       />

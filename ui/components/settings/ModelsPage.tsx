@@ -1,7 +1,9 @@
 import { ChevronRight, Globe, Key, Plus, X } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Select } from "@/components/ui/select";
 import { useI18n } from "@/lib/i18n";
-import { getApiKey, setApiKey } from "@/lib/tauri";
+import { modelGroupsToSelectOptions, withCurrentModelOption } from "@/lib/model-options";
+import { getApiKey, listModelGroups, type ModelGroupData, setApiKey } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 import { BUILTIN_PROVIDERS } from "./constants";
 import { Field, NumberInput, Section, TextInput, Toggle } from "./shared";
@@ -106,10 +108,25 @@ export function ModelsPage({ settings, onSave }: PageProps) {
   const { t } = useI18n();
   const [newFallback, setNewFallback] = useState("");
   const [apiKeyInput, setApiKeyInput] = useState<{ provider: string; value: string } | null>(null);
+  const [modelGroups, setModelGroups] = useState<ModelGroupData[]>([]);
 
   const fallbackModels = settings.fallbackModels ?? [];
   const aliases = settings.modelAliases ?? {};
   const providers = settings.providers ?? {};
+
+  useEffect(() => {
+    listModelGroups()
+      .then(setModelGroups)
+      .catch(() => setModelGroups([]));
+  }, []);
+
+  const catalogModelOptions = useMemo(() => modelGroupsToSelectOptions(modelGroups), [modelGroups]);
+  const modelSelectOptions = useMemo(
+    () => withCurrentModelOption(catalogModelOptions, settings.model),
+    [catalogModelOptions, settings.model],
+  );
+
+  const showModelSelect = catalogModelOptions.length > 0;
 
   const handleSetKey = useCallback(async (provider: string, key: string) => {
     try {
@@ -124,11 +141,21 @@ export function ModelsPage({ settings, onSave }: PageProps) {
     <>
       <Section title={t.settings.defaultModel}>
         <Field label={t.settings.model} hint={t.settings.modelHint}>
-          <TextInput
-            value={settings.model ?? ""}
-            onChange={(v) => onSave({ model: v || undefined })}
-            placeholder={t.settings.modelPlaceholder}
-          />
+          {showModelSelect ? (
+            <Select
+              fullWidth
+              value={settings.model ?? ""}
+              options={modelSelectOptions}
+              onChange={(v) => onSave({ model: v || undefined })}
+              placeholder={t.settings.modelPlaceholder}
+            />
+          ) : (
+            <TextInput
+              value={settings.model ?? ""}
+              onChange={(v) => onSave({ model: v || undefined })}
+              placeholder={t.settings.modelPlaceholder}
+            />
+          )}
         </Field>
 
         <Field label={t.settings.thinkingMode}>
