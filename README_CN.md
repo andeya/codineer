@@ -3,7 +3,7 @@
 </p>
 <h1 align="center">aineer</h1>
 <p align="center">
-  <em>代理式开发环境 — Shell、AI、Agent 三位一体。</em>
+  <em>Agent 不是功能，而是你所处的环境。</em>
 </p>
 
 <p align="center">
@@ -17,7 +17,7 @@
 
 ---
 
-**Aineer** 是一个 **ADE（代理式开发环境）**——Shell 命令、AI 对话和 Agent 自主执行在统一信息流中自然交织。它读取工作区、理解项目上下文，帮你编写、重构、调试和交付代码。
+**Aineer** 是 **ADE（代理式开发环境）**。在该范式下，**AI Agent 被定位为工作环境本身，而非独立于工作流的附加模块。** Shell、对话式 AI 与 Agent 自主执行在同一信息流中衔接，并与工作区及项目上下文持续对齐，从而减少在查阅、分析与交付之间的上下文切换与重复说明。
 
 安全 Rust 构建，基于 **Tauri 2 + React 19 + Radix UI + Tailwind CSS + xterm.js**。默认桌面 GUI 模式，`--cli` 可切换经典终端 REPL。无守护进程，无运行时依赖——带上任意模型即可开始。
 

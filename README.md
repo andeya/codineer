@@ -3,7 +3,7 @@
 </p>
 <h1 align="center">aineer</h1>
 <p align="center">
-  <em>The Agentic Development Environment — where Shell, AI, and Agent merge into one.</em>
+  <em>The agent isn't a feature — it is the environment.</em>
 </p>
 
 <p align="center">
@@ -17,7 +17,7 @@
 
 ---
 
-**Aineer** is an **ADE (Agentic Development Environment)** — Shell commands, AI chat, and autonomous agent actions weave together in a single unified stream. It reads your workspace, understands project context, and helps you write, refactor, debug, and ship code.
+**Aineer** is an **ADE (Agentic Development Environment)**. In this model, **the AI agent is the environment you work in—not an auxiliary feature bolted onto the side.** Shell, conversational AI, and autonomous agent work share **one continuous stream**, grounded in your workspace, which reduces context switching and repeated re-explanation from reading code through to shipping changes.
 
 Built in safe Rust with **Tauri 2 + React 19 + Radix UI + Tailwind CSS + xterm.js**. Desktop GUI by default, `--cli` for classic terminal REPL. No daemon, no runtime dependency — bring any model and go.
 
