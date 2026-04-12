@@ -3,7 +3,7 @@
 </p>
 <h1 align="center">aineer</h1>
 <p align="center">
-  <em>Your multi-provider AI coding agent — one binary, any model, zero lock-in.</em>
+  <em>The Agentic Development Environment — where Shell, AI, and Agent merge into one.</em>
 </p>
 
 <p align="center">
@@ -17,9 +17,11 @@
 
 ---
 
-**Aineer** is the first **ADE (Agentic Development Environment)** — AI Agent is not a feature, it _is_ the environment. Shell commands, AI chat, and autonomous agent actions weave together in a single unified stream. It reads your workspace, understands project context, and helps you write, refactor, debug, and ship code.
+**Aineer** is an **ADE (Agentic Development Environment)** — Shell commands, AI chat, and autonomous agent actions weave together in a single unified stream. It reads your workspace, understands project context, and helps you write, refactor, debug, and ship code.
 
-Built in safe Rust with **Tauri 2 + React 19 + shadcn/ui + Prompt Kit + xterm.js**. Desktop GUI by default, `--cli` for classic terminal mode. No daemon, no runtime dependency — bring any model and go.
+Built in safe Rust with **Tauri 2 + React 19 + Radix UI + Tailwind CSS + xterm.js**. Desktop GUI by default, `--cli` for classic terminal REPL. No daemon, no runtime dependency — bring any model and go.
+
+> **Current status:** The **CLI REPL** (`aineer --cli` or `aineer`) is the **mature, full-featured interface** with 40+ built-in tools, streaming tool execution, multi-provider AI, plugins, MCP, and more. The **Desktop GUI** provides settings, theme switching, integrated terminal (xterm.js), model selection, and cache management; desktop AI chat is under active development.
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/andeya/aineer/main/docs/images/ScreenShot_01.png" alt="Aineer REPL screenshot" width="780">
@@ -35,7 +37,7 @@ Most AI coding CLIs lock you into a single provider. Claude Code requires Anthro
 | **Zero-token-cost** ([free access to major models](#token-free-gateway-free-access-to-major-ai-models)) |     **Yes**      |       No       |       No        |      No      |
 | **Zero-config local AI** (auto-detect Ollama)                                                           |     **Yes**      |       No       |  `--oss` flag   | Manual setup |
 | **Single app** (no runtime deps)                                                                        |  **Rust+Tauri**  |    Node.js     |     Node.js     |    Python    |
-| **Multimodal input** (`@image.png`, clipboard paste, drag-and-drop)                                     |     **Yes**      |      Yes       |     Limited     |   Limited    |
+| **Multimodal input** (`@image.png`, clipboard paste)                                                    |     **Yes**      |      Yes       |     Limited     |   Limited    |
 | **MCP protocol** (external tool integration)                                                            |     **Yes**      |      Yes       |       Yes       |     Yes      |
 | **Plugin system** + agents + skills                                                                     |     **Yes**      |      Yes       |       No        |      No      |
 | **Permission modes** (read-only → full access)                                                          |     **Yes**      |      Yes       |       Yes       |   Partial    |
@@ -44,7 +46,6 @@ Most AI coding CLIs lock you into a single provider. Claude Code requires Anthro
 | **Vim mode** in REPL                                                                                    |     **Yes**      |       No       |       No        |      No      |
 | **CI/CD ready** (JSON output, tool allowlists)                                                          |     **Yes**      |      Yes       |       Yes       |   Limited    |
 | **Context caching** (Gemini cachedContents, Anthropic prompt cache)                                     |     **Yes**      | Anthropic only |       No        |      No      |
-| **Model-based compaction** (LLM-summarized context compression)                                         |     **Yes**      |      Yes       |       No        |      No      |
 | **Streaming tool executor** (parallel tools, sibling abort, progress events)                            |     **Yes**      |      Yes       |       No        |      No      |
 | **Permission rules** (glob-based allow/deny matrix per tool)                                            |     **Yes**      |      Yes       |   Allowlists    |      No      |
 
@@ -54,12 +55,11 @@ Most AI coding CLIs lock you into a single provider. Claude Code requires Anthro
 - **Zero token cost** — pair with [Token Free Gateway](https://github.com/andeya/token-free-gateway) to use Claude, ChatGPT, Gemini, DeepSeek, and 10+ more models for free — no API key purchase needed.
 - **Zero-config local AI** — start Ollama, run `aineer`. Auto-detects local models and picks the best one.
 - **Instant setup** — `brew install` or `cargo install`. One Rust binary, no runtime dependencies.
-- **Multimodal input** — attach images via `@photo.png`, paste from clipboard (`Ctrl+V` / `/image`), or drag-and-drop into the terminal. Works with Anthropic, OpenAI, and any multimodal-capable provider.
+- **Multimodal input** — attach images via `@photo.png`, paste from clipboard (`Ctrl+V` / `/image`). Works with Anthropic, OpenAI, and any multimodal-capable provider.
 - **Graceful degradation** — models without function calling automatically fall back to text-only mode.
 - **Project memory** — `.aineer/AINEER.md` gives the AI persistent context about your codebase. Commit it to share with your team.
-- **Adaptive terminal UI** — welcome panel and separator line reflow in real time as the window resizes. Ultra-narrow terminals collapse to a single-column layout; the input line redraws in place without flicker. Works on macOS, Linux, and Windows (Windows Terminal / ConPTY).
+- **Adaptive terminal UI** — welcome panel and separator line reflow in real time as the window resizes. Ultra-narrow terminals collapse to a single-column layout; the input line redraws in place without flicker.
 - **Smart context caching** — Gemini's `cachedContents` API and Anthropic's prompt cache are managed automatically, reducing latency and token costs for long sessions.
-- **Model-based compaction** — when conversation context overflows, an LLM call summarizes history (with heuristic fallback), preserving key decisions and file modifications.
 - **Streaming tool execution** — tools start as soon as their parameters arrive, with parallel execution for safe tools, automatic sibling abort on bash failure, and real-time progress events.
 - **Fine-grained permission rules** — glob-pattern `always-allow`/`always-deny`/`always-ask` rules per tool and input, beyond the three permission modes.
 
@@ -77,6 +77,7 @@ Most AI coding CLIs lock you into a single provider. Claude Code requires Anthro
 - [Self-Update](#self-update)
 - [Troubleshooting](#troubleshooting)
 - [Reference](#reference)
+- [Roadmap](#roadmap)
 - [License](#license)
 
 ---
@@ -108,9 +109,9 @@ cargo install aineer                           # Cargo (from crates.io)
 git clone https://github.com/andeya/aineer.git
 cd aineer
 bun install                                    # Install frontend dependencies
-cargo tauri build                              # Build Tauri desktop app
+cargo tauri build                              # Build Tauri desktop app (GUI + CLI)
 # Or for CLI-only:
-cargo install --path crates/cli --locked
+cargo install --path app --locked
 ```
 
 **Prerequisites:** Rust toolchain, [Bun](https://bun.sh), and platform-specific [Tauri dependencies](https://v2.tauri.app/start/prerequisites/).
@@ -753,70 +754,96 @@ Configure `geminiCache` in settings for intelligent context caching with Gemini 
 
 ### Built-in tools
 
-| Category            | Tool               | Description                                                                                                            |
-| ------------------- | ------------------ | ---------------------------------------------------------------------------------------------------------------------- |
-| **File I/O**        | `read_file`        | Read file contents (text, PDF text extraction, image base64)                                                           |
-|                     | `write_file`       | Create or overwrite files (atomic writes, mtime tracking)                                                              |
-|                     | `edit_file`        | Targeted string replacement with conflict detection                                                                    |
-|                     | `glob_search`      | Find files by glob pattern (.gitignore-aware)                                                                          |
-|                     | `grep_search`      | Search file contents with regex (ripgrep-powered)                                                                      |
-| **Shell**           | `bash`             | Execute shell commands with timeout and background support                                                             |
-|                     | `PowerShell`       | Execute PowerShell commands (Windows / cross-platform)                                                                 |
-|                     | `REPL`             | Run code in Python, Node, or shell                                                                                     |
-| **Web**             | `WebFetch`         | Fetch and summarize web pages                                                                                          |
-|                     | `WebSearch`        | Web search via DuckDuckGo                                                                                              |
-| **Notebook**        | `NotebookEdit`     | Edit Jupyter notebook cells                                                                                            |
-| **Agent**           | `Agent`            | Launch sub-agents for parallel tasks                                                                                   |
-|                     | `SendUserMessage`  | Send a message to the user                                                                                             |
-| **LSP**             | `Lsp`              | Language server operations (hover, completion, go-to-definition, references, symbols, rename, formatting, diagnostics) |
-| **Task management** | `TaskCreate`       | Create a background task with optional command                                                                         |
-|                     | `TaskGet`          | Get task status and output                                                                                             |
-|                     | `TaskList`         | List all tasks                                                                                                         |
-|                     | `TaskUpdate`       | Update task title, description, or status                                                                              |
-|                     | `TaskStop`         | Stop a running task                                                                                                    |
-| **Plan mode**       | `EnterPlanMode`    | Enter read-only planning mode                                                                                          |
-|                     | `ExitPlanMode`     | Exit planning mode                                                                                                     |
-| **Git worktree**    | `EnterWorktree`    | Create and enter an isolated git worktree                                                                              |
-|                     | `ExitWorktree`     | Exit and optionally clean up worktree                                                                                  |
-| **Cron**            | `CronCreate`       | Create a managed cron job                                                                                              |
-|                     | `CronDelete`       | Delete a managed cron job                                                                                              |
-|                     | `CronList`         | List managed cron jobs                                                                                                 |
-| **MCP resources**   | `ListMcpResources` | List available MCP resources                                                                                           |
-|                     | `ReadMcpResource`  | Read an MCP resource by URI                                                                                            |
-|                     | `MCPSearch`        | Full-text search across MCP resources                                                                                  |
-| **Collaboration**   | `TeamCreate`       | Create a named agent team                                                                                              |
-|                     | `TeamDelete`       | Delete an agent team                                                                                                   |
-|                     | `SendMessage`      | Send a message to an agent or team                                                                                     |
-|                     | `SlashCommand`     | Invoke a registered slash command                                                                                      |
-| **Misc**            | `TodoWrite`        | Manage structured task lists                                                                                           |
-|                     | `Skill`            | Execute skill prompts                                                                                                  |
-|                     | `ToolSearch`       | Search available tools                                                                                                 |
-|                     | `Config`           | Read/write config values                                                                                               |
-|                     | `StructuredOutput` | Return structured JSON                                                                                                 |
-|                     | `Sleep`            | Pause execution for a duration                                                                                         |
+| Category                           | Tool               | Description                                                                                                            |
+| ---------------------------------- | ------------------ | ---------------------------------------------------------------------------------------------------------------------- |
+| **File I/O**                       | `read_file`        | Read file contents (text, PDF text extraction, image base64)                                                           |
+|                                    | `write_file`       | Create or overwrite files (atomic writes, mtime tracking)                                                              |
+|                                    | `edit_file`        | Targeted string replacement with conflict detection                                                                    |
+|                                    | `glob_search`      | Find files by glob pattern (.gitignore-aware)                                                                          |
+|                                    | `grep_search`      | Search file contents with regex (ripgrep-powered)                                                                      |
+| **Shell**                          | `bash`             | Execute shell commands with timeout and background support                                                             |
+|                                    | `PowerShell`       | Execute PowerShell commands (Windows / cross-platform)                                                                 |
+|                                    | `REPL`             | Run code in Python, Node, or shell                                                                                     |
+| **Web**                            | `WebFetch`         | Fetch and summarize web pages                                                                                          |
+|                                    | `WebSearch`        | Web search via DuckDuckGo                                                                                              |
+| **Notebook**                       | `NotebookEdit`     | Edit Jupyter notebook cells                                                                                            |
+| **Agent**                          | `Agent`            | Launch sub-agents for parallel tasks                                                                                   |
+|                                    | `SendUserMessage`  | Send a message to the user                                                                                             |
+| **LSP**                            | `Lsp`              | Language server operations (hover, completion, go-to-definition, references, symbols, rename, formatting, diagnostics) |
+| **Task management**                | `TaskCreate`       | Create a background task with optional command                                                                         |
+|                                    | `TaskGet`          | Get task status and output                                                                                             |
+|                                    | `TaskList`         | List all tasks                                                                                                         |
+|                                    | `TaskUpdate`       | Update task title, description, or status                                                                              |
+|                                    | `TaskStop`         | Stop a running task                                                                                                    |
+| **Plan mode**                      | `EnterPlanMode`    | Enter read-only planning mode                                                                                          |
+|                                    | `ExitPlanMode`     | Exit planning mode                                                                                                     |
+| **Git worktree**                   | `EnterWorktree`    | Create and enter an isolated git worktree                                                                              |
+|                                    | `ExitWorktree`     | Exit and optionally clean up worktree                                                                                  |
+| **Cron**                           | `CronCreate`       | Create a managed cron job                                                                                              |
+|                                    | `CronDelete`       | Delete a managed cron job                                                                                              |
+|                                    | `CronList`         | List managed cron jobs                                                                                                 |
+| **MCP resources**                  | `ListMcpResources` | List available MCP resources                                                                                           |
+|                                    | `ReadMcpResource`  | Read an MCP resource by URI                                                                                            |
+|                                    | `MCPSearch`        | Full-text search across MCP resources                                                                                  |
+| **Collaboration** _(experimental)_ | `TeamCreate`       | Create a named agent team                                                                                              |
+|                                    | `TeamDelete`       | Delete an agent team                                                                                                   |
+|                                    | `SendMessage`      | Send a message to an agent or team                                                                                     |
+|                                    | `SlashCommand`     | Invoke a registered slash command                                                                                      |
+| **Misc**                           | `TodoWrite`        | Manage structured task lists                                                                                           |
+|                                    | `Skill`            | Execute skill prompts                                                                                                  |
+|                                    | `ToolSearch`       | Search available tools                                                                                                 |
+|                                    | `Config`           | Read/write config values                                                                                               |
+|                                    | `StructuredOutput` | Return structured JSON                                                                                                 |
+|                                    | `Sleep`            | Pause execution for a duration                                                                                         |
 
 ### Crate structure
 
 The `aineer` crate (in `app/`) is the Tauri 2 desktop application that bundles a GUI and CLI mode. All other crates are internal dependencies.
 
-| Crate                    | Role                                                              |
-| ------------------------ | ----------------------------------------------------------------- |
+| Crate                    | Role                                                                                           |
+| ------------------------ | ---------------------------------------------------------------------------------------------- |
 | `aineer`                 | Tauri 2 desktop app — GUI (default) or CLI (`--cli`) mode, includes PTY manager (portable-pty) |
-| `aineer-cli`             | CLI mode library (embedded in `aineer`, provides REPL)            |
-| `aineer-protocol`        | Shared types, events, credentials                                 |
-| `aineer-api`             | AI provider API clients                                           |
-| `aineer-provider`        | Provider registry (multi-provider management)                     |
-| `aineer-engine`          | Agent engine (conversation, planning, execution)                  |
-| `aineer-gateway`         | Embedded OpenAI-compatible model gateway                          |
-| `aineer-settings`        | Unified settings system (3-layer merge: user/project/local)       |
-| `aineer-memory`          | Memory system (project knowledge, user preferences, decision log) |
-| `aineer-mcp`             | MCP protocol client & transport                                   |
-| `aineer-tools`           | Tool definitions & execution                                      |
-| `aineer-plugins`         | Plugin system and hooks                                           |
-| `aineer-lsp`             | LSP client integration                                            |
-| `aineer-channels`        | Multi-channel delivery (Lark/WeChat/WhatsApp bots)                |
-| `aineer-auto-update`     | Self-update mechanism                                             |
-| `aineer-release-channel` | Release channel management (dev/nightly/preview/stable)           |
+| `aineer-cli`             | CLI mode library (embedded in `aineer`, provides REPL)                                         |
+| `aineer-protocol`        | Shared types, events, credentials                                                              |
+| `aineer-api`             | AI provider API clients                                                                        |
+| `aineer-provider`        | Provider registry (multi-provider management)                                                  |
+| `aineer-engine`          | Agent engine (conversation, planning, execution)                                               |
+| `aineer-gateway`         | Embedded OpenAI-compatible model gateway                                                       |
+| `aineer-settings`        | Unified settings system (3-layer merge: user/project/local)                                    |
+| `aineer-memory`          | Memory system (project knowledge persistence)                                                  |
+| `aineer-mcp`             | MCP protocol client & transport                                                                |
+| `aineer-tools`           | Tool definitions & execution                                                                   |
+| `aineer-plugins`         | Plugin system and hooks                                                                        |
+| `aineer-lsp`             | LSP client integration                                                                         |
+| `aineer-channels`        | Multi-channel adapter trait _(planned)_                                                        |
+| `aineer-auto-update`     | Self-update mechanism                                                                          |
+| `aineer-release-channel` | Release channel management (dev/nightly/preview/stable)                                        |
+
+---
+
+## Roadmap
+
+Aineer is under active development. The table below distinguishes what works today from what is planned.
+
+| Area                                                       | Status           | Notes                                                               |
+| ---------------------------------------------------------- | ---------------- | ------------------------------------------------------------------- |
+| CLI REPL + all slash commands                              | **Stable**       | Full-featured interactive experience                                |
+| 40+ built-in tools                                         | **Stable**       | File I/O, shell, web, LSP, agents, tasks, cron, worktree, MCP, etc. |
+| Multi-provider AI (Anthropic, OpenAI, xAI, Ollama, custom) | **Stable**       | Credential chains, auto-detect, fallback                            |
+| Streaming tool executor                                    | **Stable**       | Parallel execution, sibling abort, progress events                  |
+| Permission system                                          | **Stable**       | 3 modes + fine-grained glob rules                                   |
+| MCP protocol (stdio, sse, http, ws)                        | **Stable**       |                                                                     |
+| Plugin system + hooks                                      | **Stable**       |                                                                     |
+| Sessions & auto-resume                                     | **Stable**       |                                                                     |
+| Self-update (CLI + desktop)                                | **Stable**       |                                                                     |
+| Context caching (Gemini + Anthropic)                       | **Stable**       |                                                                     |
+| Desktop GUI — settings, themes, terminal, cache            | **Stable**       | Full settings UI with CodeMirror JSON editor                        |
+| Desktop GUI — model selection                              | **Stable**       | Status bar + settings page                                          |
+| Desktop GUI — system tray                                  | **Stable**       | Minimize to tray on close                                           |
+| Desktop GUI — AI chat                                      | **In progress**  | Shell + terminal work; AI chat provider integration WIP             |
+| Collaboration tools (TeamCreate, SendMessage)              | **Experimental** | In-process registry                                                 |
+| Multi-channel delivery (Lark, WeChat, WhatsApp bots)       | **Planned**      | Adapter trait defined, implementations not yet built                |
+| LLM-summarized context compaction                          | **Available**    | Engine support exists; CLI `/compact` uses heuristic by default     |
 
 ---
 

@@ -3,7 +3,7 @@
 </p>
 <h1 align="center">aineer</h1>
 <p align="center">
-  <em>你的多 Provider AI 编程助手 — 单一二进制，任意模型，零锁定。</em>
+  <em>代理式开发环境 — Shell、AI、Agent 三位一体。</em>
 </p>
 
 <p align="center">
@@ -17,9 +17,11 @@
 
 ---
 
-**Aineer** 是首个 **ADE（代理式开发环境）**——AI Agent 不是功能，它**就是**环境。Shell 命令、AI 对话和 Agent 自主执行在统一信息流中自然交织。它读取工作区、理解项目上下文，帮你编写、重构、调试和交付代码。
+**Aineer** 是一个 **ADE（代理式开发环境）**——Shell 命令、AI 对话和 Agent 自主执行在统一信息流中自然交织。它读取工作区、理解项目上下文，帮你编写、重构、调试和交付代码。
 
-安全 Rust 构建，基于 **Tauri 2 + React 19 + shadcn/ui + Prompt Kit + xterm.js**。默认桌面 GUI 模式，`--cli` 可切换经典终端模式。无守护进程，无运行时依赖——带上任意模型即可开始。
+安全 Rust 构建，基于 **Tauri 2 + React 19 + Radix UI + Tailwind CSS + xterm.js**。默认桌面 GUI 模式，`--cli` 可切换经典终端 REPL。无守护进程，无运行时依赖——带上任意模型即可开始。
+
+> **当前状态：** **CLI REPL**（`aineer --cli` 或 `aineer`）是**成熟的、功能完整的交互界面**，拥有 40+ 内置工具、流式工具执行、多 Provider AI、插件系统、MCP 协议等全部能力。**桌面 GUI** 提供主题切换、设置面板、集成终端（xterm.js）、模型选择、缓存管理等功能；桌面端 AI 对话功能正在积极开发中。
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/andeya/aineer/main/docs/images/ScreenShot_01.png" alt="Aineer REPL 截图" width="780">
@@ -35,7 +37,7 @@
 | **零 Token 成本**（[免费使用主流模型](#token-free-gateway免费使用主流-ai-模型)） |    **支持**    |    不支持    |     不支持      |   不支持   |
 | **零配置本地 AI**（自动检测 Ollama）                                             |    **支持**    |    不支持    |  `--oss` 参数   | 需手动配置 |
 | **单一应用**（无运行时依赖）                                                     | **Rust+Tauri** |   Node.js    |     Node.js     |   Python   |
-| **多模态输入**（`@image.png`、剪贴板粘贴、拖拽上传）                             |    **支持**    |     支持     |      有限       |    有限    |
+| **多模态输入**（`@image.png`、剪贴板粘贴）                                       |    **支持**    |     支持     |      有限       |    有限    |
 | **MCP 协议**（外部工具集成）                                                     |    **支持**    |     支持     |      支持       |    支持    |
 | **插件系统** + Agent + Skill                                                     |    **支持**    |     支持     |     不支持      |   不支持   |
 | **权限模式**（只读 → 完全访问）                                                  |    **支持**    |     支持     |      支持       |    部分    |
@@ -44,7 +46,6 @@
 | **Vim 模式**                                                                     |    **支持**    |    不支持    |     不支持      |   不支持   |
 | **CI/CD 就绪**（JSON 输出、工具白名单）                                          |    **支持**    |     支持     |      支持       |    有限    |
 | **上下文缓存**（Gemini cachedContents、Anthropic prompt cache）                  |    **支持**    | 仅 Anthropic |     不支持      |   不支持   |
-| **基于模型的压缩**（LLM 总结历史上下文）                                         |    **支持**    |     支持     |     不支持      |   不支持   |
 | **流式工具执行**（并行工具、兄弟中止、进度事件）                                 |    **支持**    |     支持     |     不支持      |   不支持   |
 | **权限规则矩阵**（按工具和输入的 glob 匹配 allow/deny 规则）                     |    **支持**    |     支持     |   白名单模式    |   不支持   |
 
@@ -54,12 +55,11 @@
 - **零 Token 成本** — 搭配 [Token Free Gateway](https://github.com/andeya/token-free-gateway) 网关，免费使用 Claude、ChatGPT、Gemini、DeepSeek 等 10+ 主流模型，无需购买任何 API Key。
 - **零配置本地 AI** — 启动 Ollama，运行 `aineer`。自动检测本地模型并选择最适合编程的那个。
 - **即刻启动** — `brew install` 或 `cargo install`。一个 Rust 二进制文件，无运行时依赖。
-- **多模态输入** — 通过 `@photo.png` 附加图片、从剪贴板粘贴（`Ctrl+V` / `/image`）或将文件拖拽到终端。支持 Anthropic、OpenAI 及所有兼容多模态的 Provider。
+- **多模态输入** — 通过 `@photo.png` 附加图片、从剪贴板粘贴（`Ctrl+V` / `/image`）。支持 Anthropic、OpenAI 及所有兼容多模态的 Provider。
 - **优雅降级** — 不支持 function calling 的模型自动降级为纯文本模式。
 - **项目记忆** — `.aineer/AINEER.md` 让 AI 拥有关于代码库的持久上下文。提交到仓库，与团队共享。
-- **自适应终端 UI** — 欢迎面板和分割线随窗口宽度实时调整。超窄终端自动切换为单列布局；拖动窗口时输入行原位重绘，无闪烁。兼容 macOS、Linux 和 Windows（Windows Terminal / ConPTY）。
+- **自适应终端 UI** — 欢迎面板和分割线随窗口宽度实时调整。超窄终端自动切换为单列布局；拖动窗口时输入行原位重绘，无闪烁。
 - **智能上下文缓存** — 自动管理 Gemini 的 `cachedContents` API 和 Anthropic 的 prompt cache，降低长会话的延迟和 Token 成本。
-- **基于模型的压缩** — 当对话上下文溢出时，使用 LLM 调用总结历史（带启发式回退），保留关键决策和文件修改记录。
 - **流式工具执行** — 工具参数到达即启动执行，安全工具并行运行，bash 失败自动中止兄弟进程，实时进度事件反馈。
 - **精细权限规则** — 支持按工具和输入模式的 glob 匹配 `always-allow`/`always-deny`/`always-ask` 规则矩阵，超越三种基础权限模式。
 
@@ -77,6 +77,7 @@
 - [自动更新](#自动更新)
 - [常见问题](#常见问题)
 - [参考](#参考)
+- [路线图](#路线图)
 - [许可证](#许可证)
 
 ---
@@ -108,9 +109,9 @@ cargo install aineer                           # Cargo（从 crates.io）
 git clone https://github.com/andeya/aineer.git
 cd aineer
 bun install                                    # 安装前端依赖
-cargo tauri build                              # 构建 Tauri 桌面应用
+cargo tauri build                              # 构建 Tauri 桌面应用（GUI + CLI）
 # 或仅构建 CLI：
-cargo install --path crates/cli --locked
+cargo install --path app --locked
 ```
 
 **前置条件：** Rust 工具链、[Bun](https://bun.sh)、以及平台相关的 [Tauri 依赖](https://v2.tauri.app/start/prerequisites/)。
@@ -615,7 +616,7 @@ Aineer 沿目录树向上查找并加载所有匹配的指令文件：
 /plugin disable my-plugin           # 禁用
 ```
 
-> **完整插件开发指南：** [`crates/plugins/README_CN.md`](crates/plugins/README_CN.md)
+> **完整插件开发指南：** [`crates/plugins/README.md`](crates/plugins/README.md)
 
 ### Agent 与 Skill
 
@@ -757,70 +758,96 @@ Aineer 在接近模型上下文限制时自动压缩。也可手动触发：
 
 ### 内置工具
 
-| 分类             | 工具               | 说明                                                                     |
-| ---------------- | ------------------ | ------------------------------------------------------------------------ |
-| **文件 I/O**     | `read_file`        | 读取文件内容（文本、PDF 文本提取、图片 base64）                          |
-|                  | `write_file`       | 创建或覆盖文件（原子写入，mtime 追踪）                                   |
-|                  | `edit_file`        | 精准字符串替换，支持冲突检测                                             |
-|                  | `glob_search`      | 按 Glob 模式查找文件（.gitignore 感知）                                  |
-|                  | `grep_search`      | 正则搜索文件内容（基于 ripgrep 核心）                                    |
-| **Shell**        | `bash`             | 执行 Shell 命令（超时、后台执行）                                        |
-|                  | `PowerShell`       | 执行 PowerShell 命令（Windows / 跨平台）                                 |
-|                  | `REPL`             | 运行 Python、Node 或 Shell 代码                                          |
-| **Web**          | `WebFetch`         | 抓取并摘要网页                                                           |
-|                  | `WebSearch`        | DuckDuckGo 搜索                                                          |
-| **Notebook**     | `NotebookEdit`     | 编辑 Jupyter Notebook                                                    |
-| **Agent**        | `Agent`            | 启动子 Agent 进行并行任务                                                |
-|                  | `SendUserMessage`  | 向用户发送消息                                                           |
-| **LSP**          | `Lsp`              | 语言服务器操作（悬浮、补全、跳转定义、引用、符号、重命名、格式化、诊断） |
-| **任务管理**     | `TaskCreate`       | 创建后台任务（可选命令）                                                 |
-|                  | `TaskGet`          | 获取任务状态和输出                                                       |
-|                  | `TaskList`         | 列出所有任务                                                             |
-|                  | `TaskUpdate`       | 更新任务标题、描述或状态                                                 |
-|                  | `TaskStop`         | 停止运行中的任务                                                         |
-| **规划模式**     | `EnterPlanMode`    | 进入只读规划模式                                                         |
-|                  | `ExitPlanMode`     | 退出规划模式                                                             |
-| **Git Worktree** | `EnterWorktree`    | 创建并进入隔离的 git worktree                                            |
-|                  | `ExitWorktree`     | 退出并可选清理 worktree                                                  |
-| **定时任务**     | `CronCreate`       | 创建托管的 cron 任务                                                     |
-|                  | `CronDelete`       | 删除托管的 cron 任务                                                     |
-|                  | `CronList`         | 列出托管的 cron 任务                                                     |
-| **MCP 资源**     | `ListMcpResources` | 列出可用的 MCP 资源                                                      |
-|                  | `ReadMcpResource`  | 按 URI 读取 MCP 资源                                                     |
-|                  | `MCPSearch`        | 全文搜索 MCP 资源                                                        |
-| **协作**         | `TeamCreate`       | 创建命名 Agent 团队                                                      |
-|                  | `TeamDelete`       | 删除 Agent 团队                                                          |
-|                  | `SendMessage`      | 向 Agent 或团队发送消息                                                  |
-|                  | `SlashCommand`     | 调用已注册的 slash 命令                                                  |
-| **其他**         | `TodoWrite`        | 管理结构化任务列表                                                       |
-|                  | `Skill`            | 执行 Skill 模板                                                          |
-|                  | `ToolSearch`       | 搜索可用工具                                                             |
-|                  | `Config`           | 读写配置值                                                               |
-|                  | `StructuredOutput` | 返回结构化 JSON                                                          |
-|                  | `Sleep`            | 暂停执行指定时长                                                         |
+| 分类                | 工具               | 说明                                                                     |
+| ------------------- | ------------------ | ------------------------------------------------------------------------ |
+| **文件 I/O**        | `read_file`        | 读取文件内容（文本、PDF 文本提取、图片 base64）                          |
+|                     | `write_file`       | 创建或覆盖文件（原子写入，mtime 追踪）                                   |
+|                     | `edit_file`        | 精准字符串替换，支持冲突检测                                             |
+|                     | `glob_search`      | 按 Glob 模式查找文件（.gitignore 感知）                                  |
+|                     | `grep_search`      | 正则搜索文件内容（基于 ripgrep 核心）                                    |
+| **Shell**           | `bash`             | 执行 Shell 命令（超时、后台执行）                                        |
+|                     | `PowerShell`       | 执行 PowerShell 命令（Windows / 跨平台）                                 |
+|                     | `REPL`             | 运行 Python、Node 或 Shell 代码                                          |
+| **Web**             | `WebFetch`         | 抓取并摘要网页                                                           |
+|                     | `WebSearch`        | DuckDuckGo 搜索                                                          |
+| **Notebook**        | `NotebookEdit`     | 编辑 Jupyter Notebook                                                    |
+| **Agent**           | `Agent`            | 启动子 Agent 进行并行任务                                                |
+|                     | `SendUserMessage`  | 向用户发送消息                                                           |
+| **LSP**             | `Lsp`              | 语言服务器操作（悬浮、补全、跳转定义、引用、符号、重命名、格式化、诊断） |
+| **任务管理**        | `TaskCreate`       | 创建后台任务（可选命令）                                                 |
+|                     | `TaskGet`          | 获取任务状态和输出                                                       |
+|                     | `TaskList`         | 列出所有任务                                                             |
+|                     | `TaskUpdate`       | 更新任务标题、描述或状态                                                 |
+|                     | `TaskStop`         | 停止运行中的任务                                                         |
+| **规划模式**        | `EnterPlanMode`    | 进入只读规划模式                                                         |
+|                     | `ExitPlanMode`     | 退出规划模式                                                             |
+| **Git Worktree**    | `EnterWorktree`    | 创建并进入隔离的 git worktree                                            |
+|                     | `ExitWorktree`     | 退出并可选清理 worktree                                                  |
+| **定时任务**        | `CronCreate`       | 创建托管的 cron 任务                                                     |
+|                     | `CronDelete`       | 删除托管的 cron 任务                                                     |
+|                     | `CronList`         | 列出托管的 cron 任务                                                     |
+| **MCP 资源**        | `ListMcpResources` | 列出可用的 MCP 资源                                                      |
+|                     | `ReadMcpResource`  | 按 URI 读取 MCP 资源                                                     |
+|                     | `MCPSearch`        | 全文搜索 MCP 资源                                                        |
+| **协作** _(实验性)_ | `TeamCreate`       | 创建命名 Agent 团队                                                      |
+|                     | `TeamDelete`       | 删除 Agent 团队                                                          |
+|                     | `SendMessage`      | 向 Agent 或团队发送消息                                                  |
+|                     | `SlashCommand`     | 调用已注册的 slash 命令                                                  |
+| **其他**            | `TodoWrite`        | 管理结构化任务列表                                                       |
+|                     | `Skill`            | 执行 Skill 模板                                                          |
+|                     | `ToolSearch`       | 搜索可用工具                                                             |
+|                     | `Config`           | 读写配置值                                                               |
+|                     | `StructuredOutput` | 返回结构化 JSON                                                          |
+|                     | `Sleep`            | 暂停执行指定时长                                                         |
 
 ### Crate 结构
 
 `aineer` crate（位于 `app/`）是 Tauri 2 桌面应用，同时包含 GUI 和 CLI 模式。其余 crate 为内部依赖。
 
-| Crate                    | 角色                                                |
-| ------------------------ | --------------------------------------------------- |
+| Crate                    | 角色                                                                                 |
+| ------------------------ | ------------------------------------------------------------------------------------ |
 | `aineer`                 | Tauri 2 桌面应用 — GUI（默认）或 CLI（`--cli`）模式，内置 PTY 管理器（portable-pty） |
-| `aineer-cli`             | CLI 模式库（嵌入 `aineer`，提供 REPL 交互）         |
-| `aineer-protocol`        | 共享类型、事件、凭证                                |
-| `aineer-api`             | AI Provider API 客户端                              |
-| `aineer-provider`        | Provider 注册表（多 Provider 管理）                 |
-| `aineer-engine`          | Agent 引擎（对话、规划、执行）                      |
-| `aineer-gateway`         | 嵌入式 OpenAI 兼容网关                              |
-| `aineer-settings`        | 统一设置系统（3 层合并：user/project/local）        |
-| `aineer-memory`          | 记忆系统（项目知识 + 用户偏好 + 决策日志）          |
-| `aineer-mcp`             | MCP 协议客户端与传输层                              |
-| `aineer-tools`           | 工具定义与执行                                      |
-| `aineer-plugins`         | 插件系统和 Hook                                     |
-| `aineer-lsp`             | LSP 客户端集成                                      |
-| `aineer-channels`        | 多渠道触达（飞书/微信/WhatsApp bot）                |
-| `aineer-auto-update`     | 自动更新机制                                        |
-| `aineer-release-channel` | 发布渠道管理（dev/nightly/preview/stable）          |
+| `aineer-cli`             | CLI 模式库（嵌入 `aineer`，提供 REPL 交互）                                          |
+| `aineer-protocol`        | 共享类型、事件、凭证                                                                 |
+| `aineer-api`             | AI Provider API 客户端                                                               |
+| `aineer-provider`        | Provider 注册表（多 Provider 管理）                                                  |
+| `aineer-engine`          | Agent 引擎（对话、规划、执行）                                                       |
+| `aineer-gateway`         | 嵌入式 OpenAI 兼容网关                                                               |
+| `aineer-settings`        | 统一设置系统（3 层合并：user/project/local）                                         |
+| `aineer-memory`          | 记忆系统（项目知识持久化）                                                           |
+| `aineer-mcp`             | MCP 协议客户端与传输层                                                               |
+| `aineer-tools`           | 工具定义与执行                                                                       |
+| `aineer-plugins`         | 插件系统和 Hook                                                                      |
+| `aineer-lsp`             | LSP 客户端集成                                                                       |
+| `aineer-channels`        | 多渠道适配器接口 _(规划中)_                                                          |
+| `aineer-auto-update`     | 自动更新机制                                                                         |
+| `aineer-release-channel` | 发布渠道管理（dev/nightly/preview/stable）                                           |
+
+---
+
+## 路线图
+
+Aineer 正在积极开发中。下表区分了当前已实现的功能与规划中的功能。
+
+| 功能领域                                                 | 状态       | 说明                                                           |
+| -------------------------------------------------------- | ---------- | -------------------------------------------------------------- |
+| CLI REPL + 全部 slash 命令                               | **稳定**   | 完整的交互体验                                                 |
+| 40+ 内置工具                                             | **稳定**   | 文件 I/O、Shell、Web、LSP、Agent、任务、Cron、Worktree、MCP 等 |
+| 多 Provider AI（Anthropic、OpenAI、xAI、Ollama、自定义） | **稳定**   | 凭据链、自动检测、回退                                         |
+| 流式工具执行器                                           | **稳定**   | 并行执行、兄弟中止、进度事件                                   |
+| 权限系统                                                 | **稳定**   | 3 种模式 + 精细 glob 规则                                      |
+| MCP 协议（stdio、sse、http、ws）                         | **稳定**   |                                                                |
+| 插件系统 + Hook                                          | **稳定**   |                                                                |
+| 会话与自动恢复                                           | **稳定**   |                                                                |
+| 自动更新（CLI + 桌面）                                   | **稳定**   |                                                                |
+| 上下文缓存（Gemini + Anthropic）                         | **稳定**   |                                                                |
+| 桌面 GUI — 设置、主题、终端、缓存                        | **稳定**   | 完整设置 UI，含 CodeMirror JSON 编辑器                         |
+| 桌面 GUI — 模型选择                                      | **稳定**   | 状态栏 + 设置页                                                |
+| 桌面 GUI — 系统托盘                                      | **稳定**   | 关闭时最小化到托盘                                             |
+| 桌面 GUI — AI 对话                                       | **开发中** | Shell + 终端已就绪；AI 对话 Provider 集成进行中                |
+| 协作工具（TeamCreate、SendMessage）                      | **实验性** | 进程内注册表                                                   |
+| 多渠道触达（飞书、微信、WhatsApp bot）                   | **规划中** | 适配器接口已定义，实现尚未构建                                 |
+| LLM 总结式上下文压缩                                     | **可用**   | 引擎已支持；CLI `/compact` 默认使用启发式策略                  |
 
 ---
 
