@@ -54,6 +54,9 @@ pub struct SettingsContent {
     // Sandbox
     pub sandbox: Option<SandboxConfig>,
 
+    // Window behaviour
+    pub close_to_tray: Option<bool>,
+
     // Advanced
     pub auto_compact: Option<bool>,
     pub max_context_tokens: Option<u32>,
