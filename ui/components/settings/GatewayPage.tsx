@@ -96,85 +96,83 @@ export function GatewayPage({
   const isRunning = status?.running ?? false;
 
   return (
-    <>
-      <Section title={t.settings.clawGateway}>
-        <p className="mb-4 text-[10px] text-muted-foreground">{t.settings.gatewayDesc}</p>
+    <Section title={t.settings.clawGateway}>
+      <p className="mb-4 text-[10px] text-muted-foreground">{t.settings.gatewayDesc}</p>
 
-        <Field label={t.settings.enableGateway}>
-          <div className="flex items-center gap-3">
-            <Toggle checked={enabled} onChange={handleToggle} />
+      <Field label={t.settings.enableGateway}>
+        <div className="flex items-center gap-3">
+          <Toggle checked={enabled} onChange={handleToggle} />
+          <span
+            className={cn(
+              "flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-medium",
+              isRunning
+                ? "bg-success/10 text-success"
+                : "bg-muted-foreground/10 text-muted-foreground",
+            )}
+          >
             <span
               className={cn(
-                "flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-medium",
-                isRunning
-                  ? "bg-success/10 text-success"
-                  : "bg-muted-foreground/10 text-muted-foreground",
+                "h-1.5 w-1.5 rounded-full",
+                isRunning ? "bg-success" : "bg-muted-foreground",
               )}
-            >
-              <span
-                className={cn(
-                  "h-1.5 w-1.5 rounded-full",
-                  isRunning ? "bg-success" : "bg-muted-foreground",
-                )}
-              />
-              {isRunning ? t.settings.gatewayRunning : t.settings.gatewayStopped}
-            </span>
-          </div>
-        </Field>
-
-        <Field label={t.settings.listenAddress} hint={t.settings.listenAddressHint}>
-          <TextInput value={listenAddr} onChange={handleAddrChange} placeholder="127.0.0.1:8090" />
-        </Field>
-
-        <Field label={t.settings.gatewayDefaultModel}>
-          {catalogModelOptions.length > 0 ? (
-            <Select
-              fullWidth
-              value={gw.defaultModel ?? ""}
-              options={modelSelectOptions}
-              onChange={handleModelChange}
-              placeholder={t.settings.modelPlaceholder}
             />
-          ) : (
-            <TextInput
-              value={gw.defaultModel ?? ""}
-              onChange={handleModelChange}
-              placeholder={t.settings.modelPlaceholder}
-            />
-          )}
-        </Field>
+            {isRunning ? t.settings.gatewayRunning : t.settings.gatewayStopped}
+          </span>
+        </div>
+      </Field>
 
-        <Field label={t.settings.baseUrl}>
-          <div className="flex items-center gap-2">
-            <code className="flex-1 rounded-md border border-border bg-muted px-2.5 py-1.5 font-mono text-xs">
-              {baseUrl}
-            </code>
-            <button
-              type="button"
-              onClick={handleCopy}
-              className={cn(
-                "flex items-center gap-1 rounded-md border border-border px-2.5 py-1.5 text-[10px] transition-colors",
-                copied
-                  ? "border-success text-success"
-                  : "text-muted-foreground hover:bg-accent hover:text-foreground",
-              )}
-            >
-              {copied ? (
-                <>
-                  <Check className="h-3 w-3" />
-                  {t.settings.copied}
-                </>
-              ) : (
-                <>
-                  <Copy className="h-3 w-3" />
-                  {t.settings.copyUrl}
-                </>
-              )}
-            </button>
-          </div>
-          <p className="mt-1.5 text-[10px] text-muted-foreground">{t.settings.gatewayTip}</p>
-        </Field>
-      </Section>
-    </>
+      <Field label={t.settings.listenAddress} hint={t.settings.listenAddressHint}>
+        <TextInput value={listenAddr} onChange={handleAddrChange} placeholder="127.0.0.1:8090" />
+      </Field>
+
+      <Field label={t.settings.gatewayDefaultModel}>
+        {catalogModelOptions.length > 0 ? (
+          <Select
+            fullWidth
+            value={gw.defaultModel ?? ""}
+            options={modelSelectOptions}
+            onChange={handleModelChange}
+            placeholder={t.settings.modelPlaceholder}
+          />
+        ) : (
+          <TextInput
+            value={gw.defaultModel ?? ""}
+            onChange={handleModelChange}
+            placeholder={t.settings.modelPlaceholder}
+          />
+        )}
+      </Field>
+
+      <Field label={t.settings.baseUrl}>
+        <div className="flex items-center gap-2">
+          <code className="flex-1 rounded-md border border-border bg-muted px-2.5 py-1.5 font-mono text-xs">
+            {baseUrl}
+          </code>
+          <button
+            type="button"
+            onClick={handleCopy}
+            className={cn(
+              "flex items-center gap-1 rounded-md border border-border px-2.5 py-1.5 text-[10px] transition-colors",
+              copied
+                ? "border-success text-success"
+                : "text-muted-foreground hover:bg-accent hover:text-foreground",
+            )}
+          >
+            {copied ? (
+              <>
+                <Check className="h-3 w-3" />
+                {t.settings.copied}
+              </>
+            ) : (
+              <>
+                <Copy className="h-3 w-3" />
+                {t.settings.copyUrl}
+              </>
+            )}
+          </button>
+        </div>
+        <p className="mt-1.5 text-[10px] text-muted-foreground">{t.settings.gatewayTip}</p>
+      </Field>
+    </Section>
   );
 }
