@@ -1,5 +1,5 @@
-import { Check, Copy } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Check, Copy, Loader2 } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Select } from "@/components/ui/select";
 import { useI18n } from "@/lib/i18n";
 import { modelGroupsToSelectOptions, withCurrentModelOption } from "@/lib/model-options";
@@ -15,6 +15,56 @@ import {
 import { cn } from "@/lib/utils";
 import { Field, Section, TextInput, Toggle } from "./shared";
 
+type StatusKey = "running" | "starting" | "stopped" | "error";
+
+function useGatewayStatus() {
+  const [status, setStatus] = useState<GatewayStatusInfo | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const refresh = useCallback(async () => {
+    try {
+      const s = await getGatewayStatus();
+      setStatus(s);
+      return s;
+    } catch {
+      setStatus(null);
+      return null;
+    }
+  }, []);
+
+  const startPolling = useCallback(() => {
+    if (pollRef.current) return;
+    pollRef.current = setInterval(async () => {
+      const s = await refresh();
+      const key = s?.status as StatusKey | undefined;
+      if (key && key !== "starting") {
+        if (pollRef.current) {
+          clearInterval(pollRef.current);
+          pollRef.current = null;
+        }
+      }
+    }, 800);
+  }, [refresh]);
+
+  const stopPolling = useCallback(() => {
+    if (pollRef.current) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => () => stopPolling(), [stopPolling]);
+
+  return { status, refresh, startPolling, stopPolling };
+}
+
+const STATUS_STYLE: Record<StatusKey, { dot: string; badge: string }> = {
+  running: { dot: "bg-success", badge: "bg-success/10 text-success" },
+  starting: { dot: "bg-amber-500 animate-pulse", badge: "bg-amber-500/10 text-amber-600" },
+  stopped: { dot: "bg-muted-foreground", badge: "bg-muted-foreground/10 text-muted-foreground" },
+  error: { dot: "bg-destructive", badge: "bg-destructive/10 text-destructive" },
+};
+
 export function GatewayPage({
   settings,
   onSave,
@@ -27,27 +77,20 @@ export function GatewayPage({
   const enabled = gw.enabled ?? false;
   const listenAddr = gw.listenAddr ?? "127.0.0.1:8090";
 
-  const [status, setStatus] = useState<GatewayStatusInfo | null>(null);
+  const { status, refresh, startPolling } = useGatewayStatus();
   const [copied, setCopied] = useState(false);
   const [modelGroups, setModelGroups] = useState<ModelGroupData[]>([]);
 
   const baseUrl = `http://${listenAddr}/v1`;
 
-  const refreshStatus = useCallback(async () => {
-    try {
-      const s = await getGatewayStatus();
-      setStatus(s);
-    } catch {
-      setStatus(null);
-    }
-  }, []);
-
   useEffect(() => {
-    refreshStatus();
+    refresh().then((s) => {
+      if (s?.status === "starting") startPolling();
+    });
     listModelGroups()
       .then(setModelGroups)
       .catch(() => setModelGroups([]));
-  }, [refreshStatus]);
+  }, [refresh, startPolling]);
 
   const catalogModelOptions = useMemo(
     () => modelGroupsToSelectOptions(modelGroups, true),
@@ -65,15 +108,17 @@ export function GatewayPage({
       try {
         if (on) {
           await startGateway();
+          startPolling();
         } else {
           await stopGateway();
+          await refresh();
         }
-        await refreshStatus();
       } catch (err) {
         console.error("Gateway toggle failed:", err);
+        await refresh();
       }
     },
-    [gw, onSave, refreshStatus],
+    [gw, onSave, refresh, startPolling],
   );
 
   const handleAddrChange = useCallback(
@@ -96,7 +141,15 @@ export function GatewayPage({
     setTimeout(() => setCopied(false), 2000);
   }, [baseUrl]);
 
-  const isRunning = status?.running ?? false;
+  const statusKey: StatusKey = (status?.status as StatusKey) ?? "stopped";
+  const style = STATUS_STYLE[statusKey] ?? STATUS_STYLE.stopped;
+
+  const statusLabel: Record<StatusKey, string> = {
+    running: t.settings.gatewayRunning,
+    starting: t.settings.gatewayStarting,
+    stopped: t.settings.gatewayStopped,
+    error: t.settings.gatewayError,
+  };
 
   return (
     <Section title={t.settings.clawGateway}>
@@ -108,18 +161,15 @@ export function GatewayPage({
           <span
             className={cn(
               "flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-medium",
-              isRunning
-                ? "bg-success/10 text-success"
-                : "bg-muted-foreground/10 text-muted-foreground",
+              style.badge,
             )}
           >
-            <span
-              className={cn(
-                "h-1.5 w-1.5 rounded-full",
-                isRunning ? "bg-success" : "bg-muted-foreground",
-              )}
-            />
-            {isRunning ? t.settings.gatewayRunning : t.settings.gatewayStopped}
+            {statusKey === "starting" ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            ) : (
+              <span className={cn("h-1.5 w-1.5 rounded-full", style.dot)} />
+            )}
+            {statusLabel[statusKey]}
           </span>
         </div>
       </Field>

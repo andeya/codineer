@@ -74,7 +74,14 @@ impl GatewayServer {
             return Ok(());
         }
 
-        let addr: SocketAddr = self.config.listen_addr.parse()?;
+        let addr: SocketAddr = match self.config.listen_addr.parse() {
+            Ok(a) => a,
+            Err(e) => {
+                self.status_tx.send_replace(GatewayStatus::Error);
+                return Err(e.into());
+            }
+        };
+
         let state = Arc::new(AppState {
             config: self.config.clone(),
             webai: self.webai.clone(),
@@ -86,10 +93,18 @@ impl GatewayServer {
             .route("/v1/models", get(models_handler))
             .with_state(state);
 
-        tracing::info!("Aineer Gateway listening on {}", addr);
         self.status_tx.send_replace(GatewayStatus::Starting);
 
-        let listener = tokio::net::TcpListener::bind(addr).await?;
+        let listener = match tokio::net::TcpListener::bind(addr).await {
+            Ok(l) => l,
+            Err(e) => {
+                tracing::error!("Gateway failed to bind {addr}: {e}");
+                self.status_tx.send_replace(GatewayStatus::Error);
+                return Err(e.into());
+            }
+        };
+
+        tracing::info!("Aineer Gateway listening on {}", addr);
         self.status_tx.send_replace(GatewayStatus::Running);
 
         if let Err(e) = axum::serve(listener, app).await {
