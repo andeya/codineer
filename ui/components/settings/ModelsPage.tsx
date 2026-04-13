@@ -1,9 +1,18 @@
-import { ChevronRight, Globe, Key, Plus, X } from "lucide-react";
+import { ChevronRight, Globe, Key, LogIn, Plus, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Select } from "@/components/ui/select";
 import { useI18n } from "@/lib/i18n";
 import { modelGroupsToSelectOptions, withCurrentModelOption } from "@/lib/model-options";
-import { getApiKey, listModelGroups, type ModelGroupData, setApiKey } from "@/lib/tauri";
+import {
+  getApiKey,
+  listModelGroups,
+  type ModelGroupData,
+  setApiKey,
+  type WebAiProviderInfo,
+  webaiListAuthenticated,
+  webaiListProviders,
+  webaiStartAuth,
+} from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 import { BUILTIN_PROVIDERS } from "./constants";
 import { Field, NumberInput, Section, TextInput, Toggle } from "./shared";
@@ -109,6 +118,8 @@ export function ModelsPage({ settings, onSave }: PageProps) {
   const [newFallback, setNewFallback] = useState("");
   const [apiKeyInput, setApiKeyInput] = useState<{ provider: string; value: string } | null>(null);
   const [modelGroups, setModelGroups] = useState<ModelGroupData[]>([]);
+  const [webaiProviders, setWebaiProviders] = useState<WebAiProviderInfo[]>([]);
+  const [webaiAuthenticated, setWebaiAuthenticated] = useState<Set<string>>(new Set());
 
   const fallbackModels = settings.fallbackModels ?? [];
   const aliases = settings.modelAliases ?? {};
@@ -118,6 +129,12 @@ export function ModelsPage({ settings, onSave }: PageProps) {
     listModelGroups()
       .then(setModelGroups)
       .catch(() => setModelGroups([]));
+    Promise.all([webaiListProviders(), webaiListAuthenticated()])
+      .then(([pList, aList]) => {
+        setWebaiProviders(pList);
+        setWebaiAuthenticated(new Set(aList));
+      })
+      .catch(() => {});
   }, []);
 
   const catalogModelOptions = useMemo(() => modelGroupsToSelectOptions(modelGroups), [modelGroups]);
@@ -268,6 +285,54 @@ export function ModelsPage({ settings, onSave }: PageProps) {
                 </span>
               </div>
             ))}
+          </div>
+        )}
+
+        {webaiProviders.length > 0 && (
+          <div className="mt-4">
+            <h4 className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+              Web AI — {t.settings.free}
+            </h4>
+            <div className="space-y-1.5">
+              {webaiProviders.map((wp) => {
+                const authed = webaiAuthenticated.has(wp.id);
+                return (
+                  <div
+                    key={wp.id}
+                    className="flex items-center gap-2 rounded border border-border px-2.5 py-2 text-xs"
+                  >
+                    <span
+                      className={cn("h-2 w-2 rounded-full", authed ? "bg-success" : "bg-muted")}
+                    />
+                    <span className="w-28 font-medium">{wp.name}</span>
+                    <span className="flex-1 text-[10px] text-muted-foreground">
+                      {wp.models.length} {t.settings.modelsCount}
+                    </span>
+                    {!authed && (
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          try {
+                            await webaiStartAuth(wp.id);
+                            const aList = await webaiListAuthenticated();
+                            setWebaiAuthenticated(new Set(aList));
+                          } catch {
+                            /* user may cancel */
+                          }
+                        }}
+                        className="flex items-center gap-1 rounded px-2 py-0.5 text-[10px] text-muted-foreground hover:bg-accent hover:text-foreground"
+                      >
+                        <LogIn className="h-3 w-3" />
+                        {t.settings.login}
+                      </button>
+                    )}
+                    {authed && (
+                      <span className="text-[10px] text-success">{t.settings.loggedIn}</span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )}
       </Section>
