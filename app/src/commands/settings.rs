@@ -2,7 +2,7 @@ use crate::error::{AppError, AppResult};
 use aineer_settings::schema::SettingsContent;
 use aineer_settings::SettingsStore;
 use serde::Serialize;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Mutex;
 
@@ -10,6 +10,7 @@ use std::sync::Mutex;
 pub struct ModelGroup {
     pub provider: String,
     pub models: Vec<String>,
+    pub available: bool,
 }
 
 /// Built-in provider definitions with well-known models.
@@ -34,6 +35,47 @@ fn builtin_providers() -> Vec<(&'static str, Vec<&'static str>)> {
     ]
 }
 
+/// Check whether a built-in provider has credentials configured.
+fn is_builtin_available(name: &str, settings: &SettingsContent) -> bool {
+    // Local providers are always available
+    if name == "ollama" {
+        return true;
+    }
+
+    let key_name = format!("{}_API_KEY", name.to_uppercase());
+
+    // Check settings env section (keys saved via set_api_key)
+    if let Some(env) = &settings.env {
+        if env.get(&key_name).is_some_and(|v| !v.is_empty()) {
+            return true;
+        }
+    }
+
+    // Check providers section for inline api_key or api_key_env
+    if let Some(providers) = &settings.providers {
+        if let Some(cfg) = providers.get(name) {
+            if cfg.api_key.as_ref().is_some_and(|k| !k.is_empty()) {
+                return true;
+            }
+            if let Some(env_name) = &cfg.api_key_env {
+                if std::env::var(env_name).is_ok() {
+                    return true;
+                }
+                if let Some(env) = &settings.env {
+                    if env.get(env_name).is_some_and(|v| !v.is_empty()) {
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+
+    // Check real environment variable
+    std::env::var(&key_name)
+        .ok()
+        .is_some_and(|v| !v.is_empty())
+}
+
 pub fn build_model_groups(settings: &SettingsContent) -> Vec<ModelGroup> {
     let user_providers: BTreeMap<String, Vec<String>> = settings
         .providers
@@ -46,7 +88,7 @@ pub fn build_model_groups(settings: &SettingsContent) -> Vec<ModelGroup> {
         .unwrap_or_default();
 
     let mut groups: Vec<ModelGroup> = Vec::new();
-    let mut seen = std::collections::HashSet::new();
+    let mut seen = HashSet::new();
 
     // Built-in providers first (user config can override their model lists)
     for (name, default_models) in builtin_providers() {
@@ -64,16 +106,18 @@ pub fn build_model_groups(settings: &SettingsContent) -> Vec<ModelGroup> {
             groups.push(ModelGroup {
                 provider: name.to_string(),
                 models,
+                available: is_builtin_available(name, settings),
             });
         }
     }
 
-    // User-defined providers not in builtins
+    // User-defined custom providers (available if base_url is configured)
     for (name, models) in &user_providers {
         if !seen.contains(name) && !models.is_empty() {
             groups.push(ModelGroup {
                 provider: name.clone(),
                 models: models.clone(),
+                available: true,
             });
         }
     }
@@ -197,6 +241,9 @@ pub async fn list_model_groups(
 
     if let Some(handle) = crate::app_handle() {
         let engine = aineer_webai::WebAiEngine::new(handle.clone());
+        let auth_set: HashSet<String> =
+            aineer_webai::webauth::list_authenticated().into_iter().collect();
+
         for provider in engine.list_providers() {
             let short = provider.id.strip_suffix("-web").unwrap_or(&provider.id);
             let models: Vec<String> = engine
@@ -208,6 +255,7 @@ pub async fn list_model_groups(
                 groups.push(ModelGroup {
                     provider: format!("webai/{short}"),
                     models,
+                    available: auth_set.contains(&provider.id),
                 });
             }
         }

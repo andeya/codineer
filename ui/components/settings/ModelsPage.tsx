@@ -22,6 +22,7 @@ function ProviderRow({
   id,
   name,
   envKey,
+  modelCount,
   apiKeyInput,
   onStartEdit,
   onCancelEdit,
@@ -31,6 +32,7 @@ function ProviderRow({
   id: string;
   name: string;
   envKey: string;
+  modelCount: number;
   apiKeyInput: { provider: string; value: string } | null;
   onStartEdit: () => void;
   onCancelEdit: () => void;
@@ -61,7 +63,12 @@ function ProviderRow({
           status === "unknown" && "bg-warning",
         )}
       />
-      <span className="w-28 font-medium">{name}</span>
+      <span className={cn("w-28 font-medium", status === "missing" && "text-muted-foreground")}>
+        {name}
+      </span>
+      <span className="text-[10px] text-muted-foreground">
+        {modelCount} {t.settings.modelsCount}
+      </span>
 
       {isEditing ? (
         <div className="flex flex-1 items-center gap-1">
@@ -137,7 +144,10 @@ export function ModelsPage({ settings, onSave }: PageProps) {
       .catch(() => {});
   }, []);
 
-  const catalogModelOptions = useMemo(() => modelGroupsToSelectOptions(modelGroups), [modelGroups]);
+  const catalogModelOptions = useMemo(
+    () => modelGroupsToSelectOptions(modelGroups, true),
+    [modelGroups],
+  );
   const modelSelectOptions = useMemo(
     () => withCurrentModelOption(catalogModelOptions, settings.model),
     [catalogModelOptions, settings.model],
@@ -252,19 +262,25 @@ export function ModelsPage({ settings, onSave }: PageProps) {
 
       <Section title={t.settings.providers}>
         <div className="space-y-2">
-          {BUILTIN_PROVIDERS.map((bp) => (
-            <ProviderRow
-              key={bp.id}
-              id={bp.id}
-              name={bp.name}
-              envKey={bp.envKey}
-              apiKeyInput={apiKeyInput}
-              onStartEdit={() => setApiKeyInput({ provider: bp.id, value: "" })}
-              onCancelEdit={() => setApiKeyInput(null)}
-              onSaveKey={handleSetKey}
-              onChangeInput={(v) => setApiKeyInput((prev) => (prev ? { ...prev, value: v } : null))}
-            />
-          ))}
+          {BUILTIN_PROVIDERS.map((bp) => {
+            const group = modelGroups.find((g) => g.provider === bp.id);
+            return (
+              <ProviderRow
+                key={bp.id}
+                id={bp.id}
+                name={bp.name}
+                envKey={bp.envKey}
+                modelCount={group?.models.length ?? 0}
+                apiKeyInput={apiKeyInput}
+                onStartEdit={() => setApiKeyInput({ provider: bp.id, value: "" })}
+                onCancelEdit={() => setApiKeyInput(null)}
+                onSaveKey={handleSetKey}
+                onChangeInput={(v) =>
+                  setApiKeyInput((prev) => (prev ? { ...prev, value: v } : null))
+                }
+              />
+            );
+          })}
         </div>
 
         {Object.keys(providers).length > 0 && (

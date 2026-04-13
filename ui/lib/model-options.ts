@@ -5,10 +5,15 @@ export interface ModelSelectOption {
   label: string;
 }
 
-/** Flatten `list_model_groups` payload into select options (`provider/model`). */
-export function modelGroupsToSelectOptions(groups: ModelGroupData[]): ModelSelectOption[] {
+/** Flatten `list_model_groups` payload into select options (`provider/model`).
+ *  When `onlyAvailable` is true, groups with `available === false` are skipped. */
+export function modelGroupsToSelectOptions(
+  groups: ModelGroupData[],
+  onlyAvailable = false,
+): ModelSelectOption[] {
   const opts: ModelSelectOption[] = [];
   for (const g of groups) {
+    if (onlyAvailable && !g.available) continue;
     for (const m of g.models) {
       const id = `${g.provider}/${m}`;
       opts.push({ value: id, label: id });

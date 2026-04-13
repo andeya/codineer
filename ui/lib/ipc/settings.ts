@@ -90,6 +90,7 @@ export interface AppInfo {
 export interface ModelGroupData {
   provider: string;
   models: string[];
+  available: boolean;
 }
 
 export const getAppInfo = () => call<AppInfo>("get_app_info");

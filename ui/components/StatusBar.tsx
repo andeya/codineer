@@ -178,7 +178,7 @@ function StatusBarModelSelect({
   const { t } = useI18n();
 
   const options = useMemo(() => {
-    const base = modelGroupsToSelectOptions(groups ?? []);
+    const base = modelGroupsToSelectOptions(groups ?? [], true);
     return withCurrentModelOption(base, model);
   }, [groups, model]);
 

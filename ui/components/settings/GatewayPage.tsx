@@ -49,7 +49,10 @@ export function GatewayPage({
       .catch(() => setModelGroups([]));
   }, [refreshStatus]);
 
-  const catalogModelOptions = useMemo(() => modelGroupsToSelectOptions(modelGroups), [modelGroups]);
+  const catalogModelOptions = useMemo(
+    () => modelGroupsToSelectOptions(modelGroups, true),
+    [modelGroups],
+  );
   const modelSelectOptions = useMemo(
     () => withCurrentModelOption(catalogModelOptions, gw.defaultModel),
     [catalogModelOptions, gw.defaultModel],
