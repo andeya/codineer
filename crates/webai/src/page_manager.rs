@@ -5,6 +5,7 @@ use tauri::{AppHandle, WebviewUrl, WebviewWindowBuilder};
 
 use crate::error::{WebAiError, WebAiResult};
 use crate::page::WebAiPage;
+use crate::WEBVIEW_USER_AGENT;
 
 /// JS injected into every WebAI page to provide a ready-check helper.
 /// The Capability `webai-remote-ipc` ensures `__TAURI__` is available on
@@ -89,6 +90,7 @@ impl WebAiPageManager {
         let window = WebviewWindowBuilder::new(&self.app_handle, &label, WebviewUrl::External(url))
             .title(format!("WebAI - {provider_id}"))
             .visible(false)
+            .user_agent(WEBVIEW_USER_AGENT)
             .initialization_script(BRIDGE_INIT_JS)
             .build()
             .map_err(|e| WebAiError::WindowCreation(e.to_string()))?;

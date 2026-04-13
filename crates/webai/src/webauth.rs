@@ -5,6 +5,7 @@ use tokio::sync::oneshot;
 use crate::auth_store;
 use crate::error::{WebAiError, WebAiResult};
 use crate::provider::ProviderConfig;
+use crate::WEBVIEW_USER_AGENT;
 
 /// Credentials captured from a webauth session.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -33,6 +34,7 @@ pub async fn start_webauth(
     let window = WebviewWindowBuilder::new(app_handle, &label, url)
         .title(format!("Login to {} — Aineer WebAuth", config.name))
         .inner_size(1024.0, 768.0)
+        .user_agent(WEBVIEW_USER_AGENT)
         .build()
         .map_err(|e| WebAiError::WindowCreation(e.to_string()))?;
 
