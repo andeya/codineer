@@ -20,6 +20,13 @@ pub enum StreamDelta<'a> {
     Thinking(&'a str),
 }
 
+/// Owned copy of [`StreamDelta`] for desktop hooks (e.g. Tauri emit).
+#[derive(Debug, Clone)]
+pub enum DesktopStreamDelta {
+    Text(String),
+    Thinking(String),
+}
+
 pub(crate) struct StreamState {
     renderer: TerminalRenderer,
     markdown_stream: MarkdownStreamState,
@@ -93,7 +100,7 @@ impl StreamState {
                         write_flush(out, &rendered)?;
                     }
                     on_delta(StreamDelta::Thinking(&thinking));
-                    self.events.push(AssistantEvent::TextDelta(thinking));
+                    self.events.push(AssistantEvent::ThinkingDelta(thinking));
                 }
                 ContentBlockDelta::SignatureDelta { .. } => {}
                 _ => {}
@@ -138,6 +145,7 @@ impl StreamState {
         if !self.saw_stop
             && self.events.iter().any(|event| {
                 matches!(event, AssistantEvent::TextDelta(text) if !text.is_empty())
+                    || matches!(event, AssistantEvent::ThinkingDelta(text) if !text.is_empty())
                     || matches!(event, AssistantEvent::ToolUse { .. })
             })
         {
@@ -180,6 +188,7 @@ pub(super) async fn stream_with_client(
     let events = state.ensure_stop_event();
     let has_body = events.iter().any(|event| {
         matches!(event, AssistantEvent::TextDelta(t) if !t.is_empty())
+            || matches!(event, AssistantEvent::ThinkingDelta(t) if !t.is_empty())
             || matches!(event, AssistantEvent::ToolUse { .. })
     });
 
@@ -230,6 +239,7 @@ where
     let events = state.ensure_stop_event();
     let has_body = events.iter().any(|event| {
         matches!(event, AssistantEvent::TextDelta(t) if !t.is_empty())
+            || matches!(event, AssistantEvent::ThinkingDelta(t) if !t.is_empty())
             || matches!(event, AssistantEvent::ToolUse { .. })
     });
 
@@ -283,7 +293,7 @@ pub(crate) fn push_output_block(
                 .and_then(|()| out.flush())
                 .map_err(|error| RuntimeError::new(error.to_string()))?;
             on_delta(StreamDelta::Thinking(&thinking));
-            events.push(AssistantEvent::TextDelta(thinking));
+            events.push(AssistantEvent::ThinkingDelta(thinking));
         }
         OutputContentBlock::RedactedThinking { .. } => {}
         _ => {}

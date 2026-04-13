@@ -77,6 +77,8 @@ impl LiveCli {
             progress_reporter: None,
             mcp_manager: Arc::clone(&self.mcp_manager),
             preloaded_state: None,
+            desktop_stream_hook: None,
+            stream_cancel: None,
         }
     }
 
@@ -100,6 +102,8 @@ impl LiveCli {
             progress_reporter: None,
             mcp_manager: Arc::clone(&mcp_manager),
             preloaded_state: None,
+            desktop_stream_hook: None,
+            stream_cancel: None,
         })?;
         let lsp_manager = env::current_dir()
             .ok()

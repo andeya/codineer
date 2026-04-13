@@ -4,19 +4,22 @@
 use std::fmt::Write;
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use aineer_engine::{
     assistant_text_from_stream_events, ContentBlock, ConversationMessage, PermissionMode, Session,
     TurnSummary,
 };
 
+pub use crate::runtime_client::DesktopStreamDelta;
+
 use crate::bootstrap::{build_runtime_plugin_state_for_cwd, build_system_prompt_for_cwd};
 use crate::cli::create_mcp_manager;
 use crate::error::CliError;
 use crate::max_tokens_for_model;
 use crate::runtime_client::{
-    build_runtime, convert_messages, stream_with_client_deltas, ModelResolver, RuntimeParams,
+    build_runtime, convert_messages, stream_with_client_deltas, DesktopStreamHook, ModelResolver,
+    RuntimeParams,
 };
 
 pub use crate::runtime_client::StreamDelta;
@@ -26,6 +29,32 @@ pub use crate::runtime_client::StreamDelta;
 pub struct ShellContextSnippet {
     pub command: String,
     pub output: String,
+}
+
+/// One turn in the desktop chat history (OpenAI-style roles).
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ChatHistoryTurn {
+    pub role: String,
+    pub content: String,
+}
+
+fn chat_turns_to_messages(turns: &[ChatHistoryTurn]) -> Vec<ConversationMessage> {
+    turns
+        .iter()
+        .filter_map(|t| {
+            let body = t.content.trim();
+            if body.is_empty() {
+                return None;
+            }
+            match t.role.to_lowercase().as_str() {
+                "user" => Some(ConversationMessage::user_text(body)),
+                "assistant" => Some(ConversationMessage::assistant(vec![ContentBlock::Text {
+                    text: body.to_string(),
+                }])),
+                _ => None,
+            }
+        })
+        .collect()
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -108,6 +137,7 @@ pub async fn stream_desktop_chat(
     model_override: Option<&str>,
     message: &str,
     shell_context: &[ShellContextSnippet],
+    prior_turns: &[ChatHistoryTurn],
     cancel: Arc<AtomicBool>,
     on_delta: impl FnMut(StreamDelta<'_>),
 ) -> Result<String, DesktopStreamError> {
@@ -118,9 +148,10 @@ pub async fn stream_desktop_chat(
 
     let system_prompt = build_system_prompt_for_cwd(cwd)?;
     let user_text = user_message_with_shell_context(message, shell_context);
-    let conv_msgs = vec![ConversationMessage::user_blocks(vec![ContentBlock::Text {
+    let mut conv_msgs = chat_turns_to_messages(prior_turns);
+    conv_msgs.push(ConversationMessage::user_blocks(vec![ContentBlock::Text {
         text: user_text,
-    }])];
+    }]));
     let api_messages = convert_messages(&conv_msgs);
 
     let request = aineer_api::MessageRequest {
@@ -141,11 +172,16 @@ pub async fn stream_desktop_chat(
 
 /// Run one agent turn with tools enabled. Uses `PermissionMode::Allow` so the GUI does not block
 /// on stdin prompts (GUI approval flow is TODO).
+///
+/// `on_delta` receives each streamed text / thinking chunk (same semantics as desktop chat).
 pub fn run_desktop_agent_turn(
     cwd: &Path,
     model_override: Option<&str>,
     goal: &str,
     shell_context: &[ShellContextSnippet],
+    prior_turns: &[ChatHistoryTurn],
+    cancel: Arc<AtomicBool>,
+    on_delta: Box<dyn FnMut(DesktopStreamDelta) + Send>,
 ) -> Result<String, DesktopStreamError> {
     let (runtime_config, tool_registry, model_to_resolve) =
         resolve_model_for_cwd(cwd, model_override)?;
@@ -153,8 +189,13 @@ pub fn run_desktop_agent_turn(
     let goal_text = user_message_with_shell_context(goal, shell_context);
     let mcp_manager = create_mcp_manager();
 
+    let mut session = Session::new();
+    session.messages = chat_turns_to_messages(prior_turns);
+
+    let hook: DesktopStreamHook = Arc::new(Mutex::new(on_delta));
+
     let build = build_runtime(RuntimeParams {
-        session: Session::new(),
+        session,
         model: model_to_resolve,
         system_prompt,
         enable_tools: true,
@@ -164,6 +205,8 @@ pub fn run_desktop_agent_turn(
         progress_reporter: None,
         mcp_manager,
         preloaded_state: Some((runtime_config, tool_registry)),
+        desktop_stream_hook: Some(hook),
+        stream_cancel: Some(cancel),
     })?;
 
     let mut runtime = build.runtime;

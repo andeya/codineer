@@ -5,6 +5,7 @@ mod stream;
 mod tool_executor;
 
 use std::collections::HashSet;
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -35,7 +36,11 @@ pub(crate) use model::{
 };
 pub(crate) use permission::{permission_policy, CliPermissionPrompter};
 pub(crate) use stream::stream_with_client_deltas;
+pub use stream::DesktopStreamDelta;
 pub use stream::StreamDelta;
+
+/// Mutex-wrapped callback for each streamed text/thinking chunk (desktop agent path).
+pub(crate) type DesktopStreamHook = Arc<Mutex<dyn FnMut(DesktopStreamDelta) + Send>>;
 #[allow(unused_imports)]
 pub(crate) use stream::{push_output_block, response_to_events, write_flush};
 pub(crate) use tool_executor::CliToolExecutor;
@@ -53,6 +58,9 @@ pub(crate) struct RuntimeParams {
     /// Pre-loaded config + tool registry (skips `build_runtime_plugin_state`).
     /// Used by the desktop path where `cwd` differs from `env::current_dir()`.
     pub(crate) preloaded_state: Option<(aineer_engine::RuntimeConfig, GlobalToolRegistry)>,
+    /// Desktop agent: emit text/thinking chunks while the runtime streams.
+    pub(crate) desktop_stream_hook: Option<DesktopStreamHook>,
+    pub(crate) stream_cancel: Option<Arc<AtomicBool>>,
 }
 
 pub(crate) struct RuntimeBuildResult {
@@ -75,6 +83,8 @@ pub(crate) fn build_runtime(params: RuntimeParams) -> CliResult<RuntimeBuildResu
         progress_reporter,
         mcp_manager,
         preloaded_state,
+        desktop_stream_hook,
+        stream_cancel,
     } = params;
     let (runtime_config, tool_registry) = match preloaded_state {
         Some(state) => state,
@@ -131,6 +141,8 @@ pub(crate) fn build_runtime(params: RuntimeParams) -> CliResult<RuntimeBuildResu
             cached_mcp_tools: Arc::clone(&cached_mcp_tools),
             activated_tools: Arc::clone(&activated_tools),
             cache_lock: CacheLock::default(),
+            desktop_stream_hook,
+            stream_cancel,
         },
         CliToolExecutor::new(
             allowed_tools.clone(),
@@ -178,6 +190,8 @@ pub(crate) struct DefaultRuntimeClient {
     /// Aligns tool cache refresh with a 1h window so TTL expiry does not
     /// invalidate the MCP tool list mid-session.
     cache_lock: CacheLock,
+    desktop_stream_hook: Option<DesktopStreamHook>,
+    stream_cancel: Option<Arc<AtomicBool>>,
 }
 
 impl DefaultRuntimeClient {
@@ -281,6 +295,43 @@ impl DefaultRuntimeClient {
             || lower.contains("capacity")
             || lower.contains("overloaded")
     }
+
+    fn dispatch_stream(
+        &mut self,
+        client: &ProviderClient,
+        message_request: &MessageRequest,
+    ) -> Result<Vec<AssistantEvent>, RuntimeError> {
+        let cancel = self
+            .stream_cancel
+            .clone()
+            .unwrap_or_else(|| Arc::new(AtomicBool::new(false)));
+        if let Some(hook) = &self.desktop_stream_hook {
+            self.runtime.block_on(async {
+                stream::stream_with_client_deltas(client, message_request, cancel, |d| {
+                    let owned = match d {
+                        StreamDelta::Text(t) => stream::DesktopStreamDelta::Text(t.to_string()),
+                        StreamDelta::Thinking(t) => {
+                            stream::DesktopStreamDelta::Thinking(t.to_string())
+                        }
+                    };
+                    if let Ok(mut g) = hook.lock() {
+                        (*g)(owned);
+                    }
+                })
+                .await
+            })
+        } else {
+            self.runtime.block_on(async {
+                stream::stream_with_client(
+                    client,
+                    message_request,
+                    self.emit_output,
+                    self.progress_reporter.as_ref(),
+                )
+                .await
+            })
+        }
+    }
 }
 
 impl ApiClient for DefaultRuntimeClient {
@@ -293,19 +344,12 @@ impl ApiClient for DefaultRuntimeClient {
             progress_reporter.mark_model_phase();
         }
         let message_request = self.build_message_request(&request);
+        let client = self.client.clone();
 
         let is_custom = self.client.provider_kind() == ProviderKind::Custom;
         let has_tools = message_request.tools.is_some();
 
-        let result = self.runtime.block_on(async {
-            stream::stream_with_client(
-                &self.client,
-                &message_request,
-                self.emit_output,
-                self.progress_reporter.as_ref(),
-            )
-            .await
-        });
+        let result = self.dispatch_stream(&client, &message_request);
 
         if is_custom && has_tools {
             if let Err(ref err) = result {
@@ -317,15 +361,7 @@ impl ApiClient for DefaultRuntimeClient {
                         tool_choice: None,
                         ..message_request.clone()
                     };
-                    return self.runtime.block_on(async {
-                        stream::stream_with_client(
-                            &self.client,
-                            &fallback_request,
-                            self.emit_output,
-                            self.progress_reporter.as_ref(),
-                        )
-                        .await
-                    });
+                    return self.dispatch_stream(&client, &fallback_request);
                 }
             }
         }
@@ -336,7 +372,8 @@ impl ApiClient for DefaultRuntimeClient {
                 && Self::should_try_model_fallback(&primary_err.to_string())
             {
                 let primary_model = self.model.clone();
-                for (fb_model, fb_client) in &self.fallback_models {
+                let fallbacks = self.fallback_models.clone();
+                for (fb_model, fb_client) in &fallbacks {
                     if fb_model == &primary_model {
                         continue;
                     }
@@ -349,15 +386,8 @@ impl ApiClient for DefaultRuntimeClient {
                         max_tokens: max_tokens_for_model(fb_model),
                         ..message_request.clone()
                     };
-                    let fb_result = self.runtime.block_on(async {
-                        stream::stream_with_client(
-                            fb_client,
-                            &fb_request,
-                            self.emit_output,
-                            self.progress_reporter.as_ref(),
-                        )
-                        .await
-                    });
+                    let fb_c = fb_client.clone();
+                    let fb_result = self.dispatch_stream(&fb_c, &fb_request);
                     if fb_result.is_ok() {
                         eprintln!("[info] switched to fallback model {fb_model}");
                         self.model = fb_model.clone();
