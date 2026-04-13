@@ -162,6 +162,33 @@ const en = {
     pasteApiKey: "Paste API key...",
     setKey: "Set Key",
     localNoKey: "Local (no key needed)",
+    free: "Free",
+    login: "Login",
+    logout: "Logout",
+    loginAll: "Login All",
+    logoutAll: "Logout All",
+    loggedIn: "Logged in",
+    notLoggedIn: "Not logged in",
+    nModels: "{0} models",
+    webAiDesc: "Use your existing web accounts to access AI models for free — no API key needed.",
+
+    // Web AI page
+    webAi: "Web AI",
+
+    // Claw Gateway page
+    clawGateway: "Claw Gateway",
+    gatewayDesc: "OpenAI-compatible proxy for all providers. Use in Cursor, Continue, or any tool.",
+    enableGateway: "Enable Gateway",
+    listenAddress: "Listen Address",
+    listenAddressHint: "The address and port the gateway listens on (e.g. 127.0.0.1:8090).",
+    gatewayDefaultModel: "Default Model",
+    gatewayStatus: "Status",
+    gatewayRunning: "Running",
+    gatewayStopped: "Stopped",
+    baseUrl: "Base URL",
+    copyUrl: "Copy URL",
+    copied: "Copied!",
+    gatewayTip: "Use this URL in Cursor, Continue, or any OpenAI-compatible tool.",
 
     // Terminal
     shellSection: "Shell",
