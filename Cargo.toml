@@ -90,3 +90,7 @@ unused_braces = "allow"
 # Baseline: enable all Clippy lints at `warn`; CI promotes warnings to errors with `-D warnings`.
 # Pedantic / nursery are opt-in per crate or module to keep noise low.
 all = { level = "warn", priority = -1 }
+
+# Patched wry: avoid panicking on nil WKWebView.URL / navigation request.URL (macOS WebKit).
+[patch.crates-io]
+wry = { path = "patches/wry" }
