@@ -7,17 +7,21 @@ import { AboutPage } from "./AboutPage";
 import { AppearancePage } from "./AppearancePage";
 import { CachePage } from "./CachePage";
 import { NAV_ICONS, NAV_PAGES } from "./constants";
+import { GatewayPage } from "./GatewayPage";
 import { JsonPage } from "./JsonPage";
 import { ModelsPage } from "./ModelsPage";
 import { SafetyPage } from "./SafetyPage";
 import { TerminalPage } from "./TerminalPage";
 import type { SettingsPage } from "./types";
+import { WebAiPage } from "./WebAiPage";
 
 function useNavItems() {
   const { t } = useI18n();
   const labels: Record<string, string> = {
     appearance: t.settings.appearance,
     models: t.settings.modelsIntelligence,
+    webai: t.settings.webAi,
+    gateway: t.settings.clawGateway,
     terminal: t.settings.terminal,
     safety: t.settings.safety,
     cache: t.settings.cache,
@@ -72,6 +76,8 @@ export function SettingsShell({
         )}
         {page === "appearance" && <AppearancePage settings={settings} onSave={save} />}
         {page === "models" && <ModelsPage settings={settings} onSave={save} />}
+        {page === "webai" && <WebAiPage />}
+        {page === "gateway" && <GatewayPage settings={settings} onSave={save} />}
         {page === "terminal" && <TerminalPage settings={settings} onSave={save} />}
         {page === "safety" && <SafetyPage settings={settings} onSave={save} />}
         {page === "cache" && <CachePage />}
