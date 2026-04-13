@@ -1,4 +1,4 @@
-import { Check, ExternalLink, Globe, Loader2, LogIn, LogOut, X } from "lucide-react";
+import { Check, Globe, Loader2, LogIn, LogOut, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useI18n } from "@/lib/i18n";
 import {
