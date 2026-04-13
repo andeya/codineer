@@ -516,8 +516,10 @@ impl ApiClient for ProviderRuntimeClient {
                                 input.push_str(&partial_json);
                             }
                         }
-                        ContentBlockDelta::ThinkingDelta { .. }
-                        | ContentBlockDelta::SignatureDelta { .. } => {}
+                        ContentBlockDelta::ThinkingDelta { thinking } if !thinking.is_empty() => {
+                            events.push(AssistantEvent::ThinkingDelta(thinking));
+                        }
+                        ContentBlockDelta::SignatureDelta { .. } => {}
                         _ => {}
                     },
                     ApiStreamEvent::ContentBlockStop(stop) => {
@@ -544,6 +546,7 @@ impl ApiClient for ProviderRuntimeClient {
             if !saw_stop
                 && events.iter().any(|event| {
                     matches!(event, AssistantEvent::TextDelta(text) if !text.is_empty())
+                        || matches!(event, AssistantEvent::ThinkingDelta(text) if !text.is_empty())
                         || matches!(event, AssistantEvent::ToolUse { .. })
                 })
             {

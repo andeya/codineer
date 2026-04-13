@@ -37,6 +37,7 @@ pub fn assistant_text_from_stream_events(events: Vec<AssistantEvent>) -> String 
         .into_iter()
         .filter_map(|event| match event {
             AssistantEvent::TextDelta(text) => Some(text),
+            AssistantEvent::ThinkingDelta(_) => None,
             _ => None,
         })
         .collect()
@@ -46,6 +47,8 @@ pub fn assistant_text_from_stream_events(events: Vec<AssistantEvent>) -> String 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AssistantEvent {
     TextDelta(String),
+    /// Model reasoning tokens; not merged into session assistant text blocks.
+    ThinkingDelta(String),
     ToolUse {
         id: String,
         name: String,
@@ -683,6 +686,7 @@ fn build_assistant_message(
     for event in events {
         match event {
             AssistantEvent::TextDelta(delta) => text.push_str(&delta),
+            AssistantEvent::ThinkingDelta(_) => {}
             AssistantEvent::ToolUse { id, name, input } => {
                 flush_text_block(&mut text, &mut blocks);
                 blocks.push(ContentBlock::ToolUse { id, name, input });
