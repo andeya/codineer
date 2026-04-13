@@ -8,6 +8,7 @@ pub mod version;
 
 use crate::error::{AppError, AppResult};
 use aineer_release_channel::ReleaseChannel;
+use aineer_webai::WebAiEngine;
 use commands::{
     agent, ai, auto_update, cache, channels, files, gateway, git, lsp, mcp, memory, plugins,
     session as session_cmd, settings, shell, slash_commands, webai,
@@ -121,6 +122,8 @@ pub fn run_desktop() {
         .setup(move |app| {
             let _ = APP_HANDLE.set(app.handle().clone());
 
+            app.manage(WebAiEngine::new(app.handle().clone()));
+
             create_main_window(app)?;
 
             #[cfg(target_os = "macos")]
@@ -189,6 +192,9 @@ pub fn run_desktop() {
             settings::get_api_key,
             settings::set_api_key,
             settings::list_model_groups,
+            settings::upsert_provider,
+            settings::remove_provider,
+            settings::fetch_provider_models,
             // Files
             files::get_project_root,
             files::list_dir,
@@ -246,6 +252,9 @@ pub fn run_desktop() {
             webai::webai_start_auth,
             webai::webai_list_authenticated,
             webai::webai_logout,
+            webai::webai_list_pages,
+            webai::webai_close_page,
+            webai::webai_close_all_pages,
             // App-level
             get_close_to_tray,
             set_close_to_tray,

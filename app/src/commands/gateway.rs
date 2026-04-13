@@ -1,10 +1,11 @@
-#[allow(unused_imports)]
-use crate::error::{AppError, AppResult};
+use crate::error::AppResult;
 use aineer_gateway::{GatewayConfig, GatewayServer, GatewayStatus};
 use aineer_webai::WebAiEngine;
 use serde::Serialize;
 use std::sync::Arc;
 use tokio::sync::Mutex;
+
+type WebAiEngineState<'a> = tauri::State<'a, WebAiEngine>;
 
 pub struct ManagedGateway {
     inner: Arc<Mutex<Option<Arc<GatewayServer>>>>,
@@ -30,6 +31,7 @@ pub struct GatewayStatusInfo {
 pub async fn start_gateway(
     state: tauri::State<'_, ManagedGateway>,
     settings_state: tauri::State<'_, super::settings::ManagedSettings>,
+    webai_engine: WebAiEngineState<'_>,
 ) -> AppResult<GatewayStatusInfo> {
     let mut guard = state.inner.lock().await;
     if let Some(ref server) = *guard {
@@ -60,10 +62,7 @@ pub async fn start_gateway(
     };
     let listen_addr = config.listen_addr.clone();
     let mut gateway = GatewayServer::new(config);
-
-    if let Some(handle) = crate::app_handle() {
-        gateway = gateway.with_webai(WebAiEngine::new(handle.clone()));
-    }
+    gateway = gateway.with_webai((*webai_engine).clone());
     let server = Arc::new(gateway);
     server.mark_starting();
     let server_clone = Arc::clone(&server);

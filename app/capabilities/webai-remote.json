@@ -33,6 +33,7 @@
       "https://*.perplexity.ai/*",
       "https://qwen.ai/*",
       "https://*.qwen.ai/*",
+      "https://chat.qwen.ai/*",
       "https://qianwen.com/*",
       "https://*.qianwen.com/*",
       "https://xiaomimimo.com/*",

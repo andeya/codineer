@@ -1,8 +1,8 @@
 use crate::error::{AppError, AppResult};
-use aineer_settings::schema::SettingsContent;
+use aineer_settings::schema::{CustomProviderConfig, SettingsContent};
 use aineer_settings::SettingsStore;
 use serde::Serialize;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
@@ -13,116 +13,57 @@ pub struct ModelGroup {
     pub available: bool,
 }
 
-/// Built-in provider definitions with well-known models.
-/// Users can override or extend these via settings.json `providers` section.
-fn builtin_providers() -> Vec<(&'static str, Vec<&'static str>)> {
-    vec![
-        (
-            "anthropic",
-            vec![
-                "claude-sonnet-4-20250514",
-                "claude-opus-4-20250514",
-                "claude-haiku-4-20250514",
-            ],
-        ),
-        ("openai", vec!["gpt-4o", "gpt-4o-mini", "o3", "o4-mini"]),
-        ("google", vec!["gemini-2.5-pro", "gemini-2.5-flash"]),
-        ("deepseek", vec!["deepseek-chat", "deepseek-reasoner"]),
-        ("xai", vec!["grok-3", "grok-3-mini"]),
-        ("ollama", vec!["qwen3-coder", "llama3.1", "codellama"]),
-        ("openrouter", vec![]),
-        ("groq", vec![]),
-    ]
+fn is_local_url(url: &str) -> bool {
+    let lower = url.to_ascii_lowercase();
+    lower.contains("localhost") || lower.contains("127.0.0.1") || lower.contains("[::1]")
 }
 
-/// Check whether a built-in provider has credentials configured.
-fn is_builtin_available(name: &str, settings: &SettingsContent) -> bool {
-    // Local providers are always available
-    if name == "ollama" {
+fn is_provider_available(
+    name: &str,
+    cfg: &CustomProviderConfig,
+    settings: &SettingsContent,
+) -> bool {
+    if is_local_url(&cfg.base_url) {
         return true;
     }
 
-    let key_name = format!("{}_API_KEY", name.to_uppercase());
+    if cfg.api_key.as_ref().is_some_and(|k| !k.is_empty()) {
+        return true;
+    }
 
-    // Check settings env section (keys saved via set_api_key)
+    if let Some(env_name) = &cfg.api_key_env {
+        if std::env::var(env_name).ok().is_some_and(|v| !v.is_empty()) {
+            return true;
+        }
+        if let Some(env) = &settings.env {
+            if env.get(env_name).is_some_and(|v| !v.is_empty()) {
+                return true;
+            }
+        }
+    }
+
+    let key_name = format!("{}_API_KEY", name.to_uppercase());
     if let Some(env) = &settings.env {
         if env.get(&key_name).is_some_and(|v| !v.is_empty()) {
             return true;
         }
     }
-
-    // Check providers section for inline api_key or api_key_env
-    if let Some(providers) = &settings.providers {
-        if let Some(cfg) = providers.get(name) {
-            if cfg.api_key.as_ref().is_some_and(|k| !k.is_empty()) {
-                return true;
-            }
-            if let Some(env_name) = &cfg.api_key_env {
-                if std::env::var(env_name).is_ok() {
-                    return true;
-                }
-                if let Some(env) = &settings.env {
-                    if env.get(env_name).is_some_and(|v| !v.is_empty()) {
-                        return true;
-                    }
-                }
-            }
-        }
-    }
-
-    // Check real environment variable
-    std::env::var(&key_name)
-        .ok()
-        .is_some_and(|v| !v.is_empty())
+    std::env::var(&key_name).ok().is_some_and(|v| !v.is_empty())
 }
 
 pub fn build_model_groups(settings: &SettingsContent) -> Vec<ModelGroup> {
-    let user_providers: BTreeMap<String, Vec<String>> = settings
-        .providers
-        .as_ref()
-        .map(|p| {
-            p.iter()
-                .map(|(name, cfg)| (name.clone(), cfg.models.clone()))
-                .collect()
+    let Some(providers) = settings.providers.as_ref() else {
+        return vec![];
+    };
+
+    providers
+        .iter()
+        .map(|(name, cfg)| ModelGroup {
+            provider: name.clone(),
+            models: cfg.models.clone(),
+            available: is_provider_available(name, cfg, settings),
         })
-        .unwrap_or_default();
-
-    let mut groups: Vec<ModelGroup> = Vec::new();
-    let mut seen = HashSet::new();
-
-    // Built-in providers first (user config can override their model lists)
-    for (name, default_models) in builtin_providers() {
-        seen.insert(name.to_string());
-        let models = if let Some(user_models) = user_providers.get(name) {
-            if user_models.is_empty() {
-                default_models.iter().map(|s| s.to_string()).collect()
-            } else {
-                user_models.clone()
-            }
-        } else {
-            default_models.iter().map(|s| s.to_string()).collect()
-        };
-        if !models.is_empty() {
-            groups.push(ModelGroup {
-                provider: name.to_string(),
-                models,
-                available: is_builtin_available(name, settings),
-            });
-        }
-    }
-
-    // User-defined custom providers (available if base_url is configured)
-    for (name, models) in &user_providers {
-        if !seen.contains(name) && !models.is_empty() {
-            groups.push(ModelGroup {
-                provider: name.clone(),
-                models: models.clone(),
-                available: true,
-            });
-        }
-    }
-
-    groups
+        .collect()
 }
 
 pub struct ManagedSettings {
@@ -241,8 +182,9 @@ pub async fn list_model_groups(
 
     if let Some(handle) = crate::app_handle() {
         let engine = aineer_webai::WebAiEngine::new(handle.clone());
-        let auth_set: HashSet<String> =
-            aineer_webai::webauth::list_authenticated().into_iter().collect();
+        let auth_set: HashSet<String> = aineer_webai::webauth::list_authenticated()
+            .into_iter()
+            .collect();
 
         for provider in engine.list_providers() {
             let short = provider.id.strip_suffix("-web").unwrap_or(&provider.id);
@@ -284,4 +226,44 @@ pub async fn set_api_key(
         .map_err(|e| AppError::Settings(e.to_string()))?;
 
     Ok(())
+}
+
+#[tauri::command]
+pub async fn upsert_provider(
+    state: tauri::State<'_, ManagedSettings>,
+    id: String,
+    config: serde_json::Value,
+) -> AppResult<()> {
+    let updates = serde_json::json!({
+        "providers": { id: config }
+    });
+    state.save_and_reload(&updates).map_err(AppError::Settings)
+}
+
+#[tauri::command]
+pub async fn remove_provider(
+    state: tauri::State<'_, ManagedSettings>,
+    id: String,
+) -> AppResult<()> {
+    let merged = state.merged().map_err(AppError::Settings)?;
+    let mut providers = merged.providers.clone().unwrap_or_default();
+    providers.remove(&id);
+
+    let providers_json =
+        serde_json::to_value(&providers).map_err(|e| AppError::Settings(e.to_string()))?;
+    let updates = serde_json::json!({
+        "providers": providers_json
+    });
+    state.save_and_reload(&updates).map_err(AppError::Settings)
+}
+
+#[tauri::command]
+pub async fn fetch_provider_models(
+    base_url: String,
+    api_key: Option<String>,
+    headers: Option<std::collections::BTreeMap<String, String>>,
+) -> AppResult<Vec<String>> {
+    aineer_api::fetch_remote_model_ids(&base_url, api_key.as_deref(), headers.as_ref())
+        .await
+        .map_err(|e| AppError::Settings(e.to_string()))
 }

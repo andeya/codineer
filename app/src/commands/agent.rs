@@ -5,8 +5,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, LazyLock, Mutex};
 use tauri::Emitter;
 
-use aineer_cli::desktop::{self, ShellContextSnippet};
+use aineer_cli::desktop::{self, ChatHistoryTurn, DesktopStreamDelta, ShellContextSnippet};
 
+use super::ai::AiStreamDelta;
 use super::next_block_id;
 
 /// Active agent tasks: `block_id` -> cancel flag (set by `stop_agent`).
@@ -22,17 +23,13 @@ pub struct AgentRequest {
     pub model: Option<String>,
     #[serde(default)]
     pub shell_context: Vec<ShellContextSnippet>,
-}
-
-#[derive(Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct AgentEvent {
-    block_id: u64,
-    kind: String,
-    data: String,
+    /// Prior chat turns (same shape as desktop chat) for multi-turn agent context.
+    #[serde(default)]
+    pub chat_history: Vec<ChatHistoryTurn>,
 }
 
 /// Run one agent turn (tools enabled, `PermissionMode::Allow` — GUI stdin prompts are not used).
+/// Streams text/thinking via `ai_stream_delta` (same channel as Chat) then `done: true`.
 #[tauri::command]
 pub async fn start_agent(app: tauri::AppHandle, request: AgentRequest) -> AppResult<u64> {
     let block_id = next_block_id();
@@ -40,6 +37,7 @@ pub async fn start_agent(app: tauri::AppHandle, request: AgentRequest) -> AppRes
     let goal = request.goal.clone();
     let model = request.model.clone();
     let shell_context = request.shell_context.clone();
+    let chat_history = request.chat_history.clone();
 
     tracing::info!(
         "start_agent: block_id={block_id}, cwd={}, goal_len={}",
@@ -57,29 +55,58 @@ pub async fn start_agent(app: tauri::AppHandle, request: AgentRequest) -> AppRes
 
     let app_clone = app.clone();
     tokio::task::spawn_blocking(move || {
-        let result = desktop::run_desktop_agent_turn(&cwd, model.as_deref(), &goal, &shell_context);
+        let app_emit = app_clone.clone();
+        let bid = block_id;
+        let cancel_turn = Arc::clone(&cancel);
 
-        let (kind, data) = match result {
-            Ok(text) => ("text".to_string(), text),
-            Err(e) => ("error".to_string(), e.to_string()),
-        };
+        let result = desktop::run_desktop_agent_turn(
+            &cwd,
+            model.as_deref(),
+            &goal,
+            &shell_context,
+            &chat_history,
+            cancel_turn,
+            Box::new(move |d: DesktopStreamDelta| {
+                let (kind, delta) = match d {
+                    DesktopStreamDelta::Text(s) => ("text", s),
+                    DesktopStreamDelta::Thinking(s) => ("thinking", s),
+                };
+                let _ = app_emit.emit(
+                    "ai_stream_delta",
+                    AiStreamDelta {
+                        block_id: bid,
+                        delta,
+                        kind: kind.to_string(),
+                        done: false,
+                    },
+                );
+            }),
+        );
 
-        let _ = app_clone.emit(
-            "agent_event",
-            AgentEvent {
-                block_id,
-                kind,
-                data,
-            },
-        );
-        let _ = app_clone.emit(
-            "agent_event",
-            AgentEvent {
-                block_id,
-                kind: "done".into(),
-                data: String::new(),
-            },
-        );
+        match result {
+            Ok(_) => {
+                let _ = app_clone.emit(
+                    "ai_stream_delta",
+                    AiStreamDelta {
+                        block_id: bid,
+                        delta: String::new(),
+                        kind: String::new(),
+                        done: true,
+                    },
+                );
+            }
+            Err(e) => {
+                let _ = app_clone.emit(
+                    "ai_stream_delta",
+                    AiStreamDelta {
+                        block_id: bid,
+                        delta: format!("**Error:** {e}"),
+                        kind: "text".into(),
+                        done: true,
+                    },
+                );
+            }
+        }
 
         if let Ok(mut map) = AGENT_ABORT.lock() {
             map.remove(&block_id);
@@ -91,13 +118,13 @@ pub async fn start_agent(app: tauri::AppHandle, request: AgentRequest) -> AppRes
 
 #[tauri::command]
 pub async fn approve_tool(block_id: u64) -> AppResult<()> {
-    tracing::info!("approve_tool: block_id={block_id} (no-op until GUI approval is wired)");
+    tracing::info!(block_id, "approve_tool (no-op until GUI approval is wired)");
     Ok(())
 }
 
 #[tauri::command]
 pub async fn deny_tool(block_id: u64) -> AppResult<()> {
-    tracing::info!("deny_tool: block_id={block_id} (no-op until GUI approval is wired)");
+    tracing::info!(block_id, "deny_tool (no-op until GUI approval is wired)");
     Ok(())
 }
 
