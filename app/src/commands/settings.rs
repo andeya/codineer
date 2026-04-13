@@ -193,7 +193,27 @@ pub async fn list_model_groups(
     state: tauri::State<'_, ManagedSettings>,
 ) -> AppResult<Vec<ModelGroup>> {
     let merged = state.merged().map_err(AppError::Settings)?;
-    Ok(build_model_groups(&merged))
+    let mut groups = build_model_groups(&merged);
+
+    if let Some(handle) = crate::app_handle() {
+        let engine = aineer_webai::WebAiEngine::new(handle.clone());
+        for provider in engine.list_providers() {
+            let short = provider.id.strip_suffix("-web").unwrap_or(&provider.id);
+            let models: Vec<String> = engine
+                .list_models(&provider.id)
+                .into_iter()
+                .map(|m| m.id)
+                .collect();
+            if !models.is_empty() {
+                groups.push(ModelGroup {
+                    provider: format!("webai/{short}"),
+                    models,
+                });
+            }
+        }
+    }
+
+    Ok(groups)
 }
 
 #[tauri::command]
