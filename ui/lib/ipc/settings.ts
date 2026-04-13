@@ -102,3 +102,23 @@ export const getApiKey = (provider: string) => call<string | null>("get_api_key"
 export const setApiKey = (provider: string, key: string) =>
   call<void>("set_api_key", { provider, key });
 export const listModelGroups = () => call<ModelGroupData[]>("list_model_groups");
+
+// ── WebAI ──
+
+export interface WebAiProviderInfo {
+  id: string;
+  name: string;
+  models: WebAiModelInfo[];
+}
+
+export interface WebAiModelInfo {
+  id: string;
+  name: string;
+  default: boolean;
+}
+
+export const webaiListProviders = () => call<WebAiProviderInfo[]>("webai_list_providers");
+export const webaiListAuthenticated = () => call<string[]>("webai_list_authenticated");
+export const webaiStartAuth = (providerId: string) =>
+  call<string>("webai_start_auth", { providerId });
+export const webaiLogout = (providerId: string) => call<void>("webai_logout", { providerId });

@@ -1,4 +1,14 @@
-import { Braces, Database, Globe, Info, Palette, Shield, Sparkles, Terminal } from "lucide-react";
+import {
+  Braces,
+  Database,
+  Globe,
+  Info,
+  Network,
+  Palette,
+  Shield,
+  Sparkles,
+  Terminal,
+} from "lucide-react";
 import type { SettingsPage } from "./types";
 
 export const NAV_ICONS: Record<SettingsPage, typeof Palette> = {
@@ -12,11 +22,15 @@ export const NAV_ICONS: Record<SettingsPage, typeof Palette> = {
   cache: Database,
   json: Braces,
   about: Info,
+  webai: Globe,
+  gateway: Network,
 };
 
 export const NAV_PAGES: SettingsPage[] = [
   "appearance",
   "models",
+  "webai",
+  "gateway",
   "terminal",
   "safety",
   "cache",

@@ -11,7 +11,9 @@ export type SettingsPage =
   | "safety"
   | "cache"
   | "json"
-  | "about";
+  | "about"
+  | "webai"
+  | "gateway";
 
 export interface PageProps {
   settings: AppSettings;

@@ -73,6 +73,8 @@ export type {
   RulesConfig,
   SandboxConfig,
   TerminalSettings,
+  WebAiModelInfo,
+  WebAiProviderInfo,
 } from "./settings";
 export {
   getApiKey,
@@ -83,6 +85,10 @@ export {
   setApiKey,
   setCloseToTray,
   updateSettings,
+  webaiListAuthenticated,
+  webaiListProviders,
+  webaiLogout,
+  webaiStartAuth,
 } from "./settings";
 export type {
   CommandOutput,
