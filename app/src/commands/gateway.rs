@@ -29,6 +29,7 @@ pub struct GatewayStatusInfo {
 #[tauri::command]
 pub async fn start_gateway(
     state: tauri::State<'_, ManagedGateway>,
+    settings_state: tauri::State<'_, super::settings::ManagedSettings>,
 ) -> AppResult<GatewayStatusInfo> {
     let mut guard = state.inner.lock().await;
     if let Some(ref server) = *guard {
@@ -41,7 +42,16 @@ pub async fn start_gateway(
         }
     }
 
-    let config = GatewayConfig::default();
+    let config = if let Ok(merged) = settings_state.merged() {
+        let gw = merged.gateway.unwrap_or_default();
+        GatewayConfig {
+            enabled: gw.enabled.unwrap_or(true),
+            listen_addr: gw.listen_addr.unwrap_or_else(|| "127.0.0.1:8090".into()),
+            default_model: gw.default_model,
+        }
+    } else {
+        GatewayConfig::default()
+    };
     let listen_addr = config.listen_addr.clone();
     let mut gateway = GatewayServer::new(config);
 
