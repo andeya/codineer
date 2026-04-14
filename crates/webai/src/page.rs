@@ -87,6 +87,31 @@ impl WebAiPage {
         &self.window
     }
 
+    /// Quick session-validity check by fetching the given URL with cookies.
+    ///
+    /// Uses JS `AbortController` to cap the in-browser fetch at 8 seconds so a
+    /// hanging network request cannot block the caller.  The Rust-side
+    /// `evaluate` timeout is set to 10 seconds as a safety net.
+    pub async fn check_session_via_fetch(&self, url: &str) -> WebAiResult<bool> {
+        let url_js = serde_json::to_string(url).unwrap_or_else(|_| "\"\"".into());
+        let js = format!(
+            r#"
+const c = new AbortController();
+const t = setTimeout(() => c.abort(), 8000);
+try {{
+    const r = await fetch({url_js}, {{ credentials: 'include', signal: c.signal }});
+    clearTimeout(t);
+    return r.ok;
+}} catch(e) {{
+    clearTimeout(t);
+    return false;
+}}
+"#
+        );
+        self.evaluate::<bool>(&js, Some(Duration::from_secs(10)))
+            .await
+    }
+
     /// Execute `js` in the WebView and return the deserialized result.
     ///
     /// The JS code should evaluate to a value (returned from an async IIFE).
@@ -121,7 +146,7 @@ impl WebAiPage {
             }
         });
 
-        let wrapped = Self::wrap_eval_js(&req_id, js);
+        let wrapped = Self::wrap_eval_js(&req_id, js, timeout);
         if let Err(e) = self.window.eval(&wrapped) {
             self.window.unlisten(listener_id);
             return Err(WebAiError::Eval(e.to_string()));
@@ -217,16 +242,35 @@ impl WebAiPage {
     }
 
     /// Wrap user JS so the result is emitted back via Tauri event.
-    fn wrap_eval_js(req_id: &str, js: &str) -> String {
+    ///
+    /// Includes a JS-level timeout (`__JS_TIMEOUT_MS`) that races against the
+    /// user code.  If the user's `await fetch(...)` or any other promise hangs
+    /// indefinitely, the timeout fires first and emits an error back to Rust,
+    /// preventing the `evaluate` call from waiting until the Rust-side timeout
+    /// (120s) expires silently.
+    fn wrap_eval_js(req_id: &str, js: &str, timeout: Duration) -> String {
+        let rust_ms = timeout.as_millis() as u64;
+        let js_timeout_ms = rust_ms.saturating_sub(2000).max(3000).min(rust_ms);
         format!(
             r#"(async () => {{
+  const __rid = '{req_id}';
+  const __emit = window.__TAURI__.event.emit.bind(window.__TAURI__.event);
+  let __done = false;
+  const __finish = async (ok, data, error) => {{
+    if (__done) return;
+    __done = true;
+    await __emit('{EVAL_RESULT_EVENT}', {{ requestId: __rid, ok, data, error }});
+  }};
+  const __timer = setTimeout(() => {{
+    __finish(false, null, 'JS execution timed out ({js_timeout_ms}ms)');
+  }}, {js_timeout_ms});
   try {{
     const __r = await (async () => {{ {js} }})();
-    await window.__TAURI__.event.emit('{EVAL_RESULT_EVENT}',
-      {{ requestId: '{req_id}', ok: true, data: __r }});
+    clearTimeout(__timer);
+    await __finish(true, __r, null);
   }} catch(__e) {{
-    await window.__TAURI__.event.emit('{EVAL_RESULT_EVENT}',
-      {{ requestId: '{req_id}', ok: false, error: __e.message || String(__e) }});
+    clearTimeout(__timer);
+    await __finish(false, null, __e.message || String(__e));
   }}
 }})();"#
         )
