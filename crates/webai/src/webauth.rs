@@ -10,16 +10,28 @@ use crate::provider::ProviderConfig;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WebAuthCredentials {
     pub provider_id: String,
+    /// Whether expected session cookies were found in the WebView cookie store
+    /// at the moment the user closed the login window.
+    #[serde(default = "default_true")]
+    pub session_verified: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 /// JS injected into every webauth page.
 ///
-/// Two responsibilities:
+/// Three responsibilities:
 /// 1. **Compatibility check** — probes for named capture groups
 ///    (`(?<name>...)`) which require Safari 16.4+ / macOS 13+.  When the
 ///    check fails an overlay replaces the (blank) page with a friendly
 ///    message, the login URL, and a copy-to-clipboard button.
-/// 2. **Banner** — when the page IS compatible, a bottom bar reminds the
+/// 2. **Crash recovery** — a global `onerror` handler catches `SyntaxError`
+///    from the site's own JS bundle (e.g. when the site uses newer regex
+///    features the WebView engine doesn't support), and a 5-second blank-page
+///    watchdog triggers the fallback overlay if the site fails to render.
+/// 3. **Banner** — when the page IS compatible, a bottom bar reminds the
 ///    user to close the window after login.
 const WEBAUTH_INIT_JS: &str = r#"
 (function(){
@@ -180,13 +192,24 @@ const WEBAUTH_INIT_JS: &str = r#"
     b.appendChild(t);b.appendChild(d);document.body.appendChild(b);
   }
 
+  /* ── catch site JS crashes (e.g. Claude on macOS 12) even when our
+       own compat check passes — the site's bundle may use newer syntax ── */
+  window.onerror=function(msg){
+    if(msg&&(msg.indexOf('SyntaxError')!==-1||msg.indexOf('regular expression')!==-1)){
+      showFallback();return true;
+    }
+  };
+
+  /* ── blank-page watchdog: if the site fails to render within 5s,
+       assume its JS crashed and show fallback ── */
+  var _watchdog=setTimeout(function(){
+    if(document.body&&document.body.children.length<=1){
+      showFallback();
+    }
+  },5000);
+
   /* ── entry point ── */
   if(!compat){
-    window.onerror=function(msg){
-      if(msg&&(msg.indexOf('SyntaxError')!==-1||msg.indexOf('regular expression')!==-1)){
-        showFallback();return true;
-      }
-    };
     showFallback();
   } else {
     showBanner();
@@ -205,6 +228,10 @@ const WEBAUTH_INIT_JS: &str = r#"
 ///
 /// Using the system browser would NOT work: Safari/Chrome have a separate
 /// cookie jar from WKWebView.
+///
+/// Returns `WebAuthCredentials` with `session_verified` indicating whether
+/// the expected session cookies were found in the WebView cookie store after
+/// the user closed the login window.
 pub async fn start_webauth(
     app_handle: &AppHandle,
     config: &ProviderConfig,
@@ -225,12 +252,17 @@ pub async fn start_webauth(
         .parse()
         .map_err(|e| WebAiError::WindowCreation(format!("invalid URL: {e}")))?;
 
-    let window = WebviewWindowBuilder::new(app_handle, &label, WebviewUrl::External(url))
-        .title(format!("Login to {} — Aineer", config.name))
-        .inner_size(1024.0, 768.0)
-        .resizable(true)
-        .center()
-        .initialization_script(WEBAUTH_INIT_JS)
+    let mut builder =
+        WebviewWindowBuilder::new(app_handle, &label, WebviewUrl::External(url.clone()))
+            .title(format!("Login to {} — Aineer", config.name))
+            .inner_size(1024.0, 768.0)
+            .resizable(true)
+            .center()
+            .initialization_script(WEBAUTH_INIT_JS);
+    if let Some(ua) = crate::browser_user_agent() {
+        builder = builder.user_agent(ua);
+    }
+    let window = builder
         .build()
         .map_err(|e| WebAiError::WindowCreation(e.to_string()))?;
 
@@ -245,7 +277,41 @@ pub async fn start_webauth(
     let (tx, rx) = oneshot::channel::<()>();
     let tx = std::sync::Mutex::new(Some(tx));
 
+    // Verify session cookies before the window is destroyed.
+    let cookie_names = config.session_cookie_names.clone();
+    let cookie_url = url;
+    let win_for_cookies = window.clone();
+    let (cookie_tx, cookie_rx) = oneshot::channel::<bool>();
+    let cookie_tx = std::sync::Mutex::new(Some(cookie_tx));
+
     window.on_window_event(move |event| {
+        if let tauri::WindowEvent::CloseRequested { .. } = event {
+            // Read cookies while the WebView is still alive.
+            let verified = if !cookie_names.is_empty() {
+                match win_for_cookies.cookies_for_url(cookie_url.clone()) {
+                    Ok(cookies) => {
+                        let found = cookies
+                            .iter()
+                            .any(|c| cookie_names.iter().any(|n| c.name() == n));
+                        tracing::info!(
+                            found,
+                            cookie_count = cookies.len(),
+                            "webauth: cookie verification on close"
+                        );
+                        found
+                    }
+                    Err(e) => {
+                        tracing::warn!(error = %e, "webauth: failed to read cookies on close");
+                        true // optimistic: assume login worked
+                    }
+                }
+            } else {
+                true // no cookie names configured, assume success
+            };
+            if let Some(sender) = cookie_tx.lock().unwrap().take() {
+                let _ = sender.send(verified);
+            }
+        }
         if let tauri::WindowEvent::Destroyed = event {
             if let Some(sender) = tx.lock().unwrap().take() {
                 let _ = sender.send(());
@@ -254,20 +320,27 @@ pub async fn start_webauth(
     });
 
     let _ = rx.await;
+    let session_verified = cookie_rx.await.unwrap_or(true);
 
-    // Record that the user has authenticated with this provider.
-    // The actual session cookies live in WKWebView's shared WKWebsiteDataStore
-    // and are automatically available to hidden webai-* pages.
-    let creds = WebAuthCredentials {
+    Ok(WebAuthCredentials {
         provider_id: config.id.clone(),
+        session_verified,
+    })
+}
+
+/// Persist the credential marker after verifying auth actually succeeded.
+///
+/// Called by the app layer after `start_webauth` returns and an optional
+/// `check_session` probe confirms the login cookies are present.
+pub fn confirm_credentials(app_handle: &AppHandle, provider_id: &str) -> WebAiResult<()> {
+    let creds = WebAuthCredentials {
+        provider_id: provider_id.to_string(),
+        session_verified: true,
     };
-
-    auth_store::save_credentials(&config.id, &creds)?;
-    tracing::info!(provider = %config.id, "WebAuth credentials saved");
-
-    let _ = app_handle.emit("webai-auth-changed", &config.id);
-
-    Ok(creds)
+    auth_store::save_credentials(provider_id, &creds)?;
+    tracing::info!(provider = %provider_id, "WebAuth credentials saved");
+    let _ = app_handle.emit("webai-auth-changed", provider_id);
+    Ok(())
 }
 
 /// List all providers that have saved credentials.
