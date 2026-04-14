@@ -1,4 +1,5 @@
 use crate::error::{AppError, AppResult};
+use aineer_webai::WebAiEngine;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -9,6 +10,8 @@ use aineer_cli::desktop::{self, ChatHistoryTurn, DesktopStreamDelta, ShellContex
 
 use super::ai::AiStreamDelta;
 use super::next_block_id;
+
+type WebAiEngineState<'a> = tauri::State<'a, WebAiEngine>;
 
 /// Active agent tasks: `block_id` -> cancel flag (set by `stop_agent`).
 static AGENT_ABORT: LazyLock<Mutex<HashMap<u64, Arc<AtomicBool>>>> =
@@ -31,7 +34,12 @@ pub struct AgentRequest {
 /// Run one agent turn (tools enabled, `PermissionMode::Allow` — GUI stdin prompts are not used).
 /// Streams text/thinking via `ai_stream_delta` (same channel as Chat) then `done: true`.
 #[tauri::command]
-pub async fn start_agent(app: tauri::AppHandle, request: AgentRequest) -> AppResult<u64> {
+pub async fn start_agent(
+    app: tauri::AppHandle,
+    webai_engine: WebAiEngineState<'_>,
+    settings_state: tauri::State<'_, super::settings::ManagedSettings>,
+    request: AgentRequest,
+) -> AppResult<u64> {
     let block_id = next_block_id();
     let cwd = super::workspace_cwd_from(request.cwd.as_deref());
     let goal = request.goal.clone();
@@ -51,6 +59,63 @@ pub async fn start_agent(app: tauri::AppHandle, request: AgentRequest) -> AppRes
             .lock()
             .map_err(|e| AppError::Agent(format!("agent registry lock poisoned: {e}")))?;
         map.insert(block_id, Arc::clone(&cancel));
+    }
+
+    // Route webai models to the WebAI engine (same as send_ai_message).
+    if let Some((provider_name, specific_model)) =
+        model.as_deref().and_then(WebAiEngine::parse_webai_model)
+    {
+        let provider_name = provider_name.to_string();
+        let model_id = specific_model.unwrap_or("").to_string();
+        let app_clone = app.clone();
+        let engine = (*webai_engine).clone();
+
+        if let Ok(merged) = settings_state.merged() {
+            if let Some(secs) = merged.webai_idle_timeout {
+                engine.set_idle_timeout_secs(secs as u64);
+            }
+            if let Some(secs) = merged.webai_page_load_timeout {
+                engine.set_page_load_timeout_secs(secs as u64);
+            }
+        }
+
+        tokio::spawn(async move {
+            let emit_delta = |delta: &str, kind: &str, done: bool| {
+                let _ = app_clone.emit(
+                    "ai_stream_delta",
+                    AiStreamDelta {
+                        block_id,
+                        delta: delta.to_string(),
+                        kind: kind.to_string(),
+                        done,
+                    },
+                );
+            };
+
+            tracing::info!(block_id, %provider_name, %model_id, "webai agent stream started");
+            match engine.send_raw(&provider_name, &model_id, &goal).await {
+                Ok(mut rx) => {
+                    while let Some(chunk) = rx.recv().await {
+                        if cancel.load(Ordering::Relaxed) {
+                            tracing::info!(block_id, "webai agent stream cancelled");
+                            break;
+                        }
+                        emit_delta(&chunk, "text", false);
+                    }
+                    emit_delta("", "", true);
+                }
+                Err(e) => {
+                    tracing::warn!(block_id, %provider_name, %e, "webai agent send_raw failed");
+                    emit_delta(&format!("**Error:** {e}"), "text", true);
+                }
+            }
+
+            if let Ok(mut map) = AGENT_ABORT.lock() {
+                map.remove(&block_id);
+            }
+        });
+
+        return Ok(block_id);
     }
 
     let app_clone = app.clone();

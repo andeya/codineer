@@ -73,6 +73,17 @@ pub async fn webai_start_auth(
         .await
         .map_err(|e| AppError::Gateway(format!("webauth failed: {e}")))?;
 
+    if creds.session_verified {
+        aineer_webai::webauth::confirm_credentials(handle, &creds.provider_id)
+            .map_err(|e| AppError::Gateway(format!("failed to save credentials: {e}")))?;
+        tracing::info!(provider = %provider_id, "webauth: session verified via cookie probe");
+    } else {
+        tracing::warn!(
+            provider = %provider_id,
+            "webauth: session cookies not found — credentials NOT saved"
+        );
+    }
+
     Ok(creds.provider_id)
 }
 
@@ -82,9 +93,25 @@ pub async fn webai_list_authenticated() -> AppResult<Vec<String>> {
 }
 
 #[tauri::command]
-pub async fn webai_logout(provider_id: String) -> AppResult<()> {
+pub async fn webai_check_session(
+    engine: WebAiEngineState<'_>,
+    provider_id: String,
+) -> AppResult<bool> {
+    engine
+        .check_session(&provider_id)
+        .await
+        .map_err(|e| AppError::Gateway(format!("session check failed: {e}")))
+}
+
+#[tauri::command]
+pub async fn webai_logout(engine: WebAiEngineState<'_>, provider_id: String) -> AppResult<()> {
+    // Close the hidden WebView page so stale session state is discarded.
+    engine.close_page(&provider_id).await;
+
+    // Remove the credential marker file.
     aineer_webai::webauth::logout(&provider_id)
         .map_err(|e| AppError::Gateway(format!("logout failed: {e}")))?;
+
     if let Some(handle) = crate::app_handle() {
         let _ = handle.emit("webai-auth-changed", &provider_id);
     }

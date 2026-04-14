@@ -251,6 +251,7 @@ pub fn run_desktop() {
             webai::webai_list_providers,
             webai::webai_start_auth,
             webai::webai_list_authenticated,
+            webai::webai_check_session,
             webai::webai_logout,
             webai::webai_list_pages,
             webai::webai_close_page,
